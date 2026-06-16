@@ -1,0 +1,32 @@
+# Claude Code
+.claude/settings-local.json
+.qe/tasks/
+.qe/checklists/
+.qe/analysis/
+TASK_REQUEST_*.md
+VERIFY_CHECKLIST_*.md
+ANALYSIS_*.md
+
+# Build
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# Env
+.env
+
+# Runtime / tooling (transient)
+.run/
+.omx/
+
+# QE framework session-transient data
+.qe/state/
+.qe/context/
+.qe/agent-results/
+.qe/agent-triggers/
+.qe/.archive/

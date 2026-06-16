@@ -1,0 +1,16 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: backend-gateway
+  profiles:
+    active: local
+
+gateway:
+  routes:
+    application-url: http://localhost:8081
+    batch-url: http://localhost:8082
+
+jwt:
+  secret: ${JWT_SECRET:change-me-please-use-a-strong-32byte-min-secret-key-0123456789}

@@ -1,0 +1,4 @@
+// 프레임워크 비의존 순수 Kotlin 모듈 (model + port 인터페이스)
+dependencies {
+    implementation project(':support:util')
+}

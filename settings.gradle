@@ -1,0 +1,17 @@
+rootProject.name = 'backend-init'
+
+// core
+include 'core:application'
+include 'core:batch'
+include 'core:gateway'
+include 'core:domain'
+
+// client
+include 'client:storage-file'
+
+// storage
+include 'storage:mybatis'
+
+// support
+include 'support:util'
+include 'support:logging'

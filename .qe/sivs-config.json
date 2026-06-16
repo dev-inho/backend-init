@@ -1,0 +1,6 @@
+{
+  "spec": { "engine": "codex" },
+  "implement": { "engine": "claude" },
+  "verify": { "engine": "codex" },
+  "supervise": { "engine": "claude" }
+}
