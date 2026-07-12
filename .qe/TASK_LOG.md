@@ -18,3 +18,4 @@
 | 2026-06-16 | 기능 레이어 실구현 (722b2eac) | ✅ 대부분완료 | Validation/코루틴(Flow·async)/Redis캐시/JWT 런타임 검증 OK. Spring Batch 잡 동작 OK이나 메타테이블 영속화는 Boot4/Batch6 Resourceless 기본 이슈로 보류 |
 | 2026-07-12 | 저장소 비판적 검토 (a9a78824) | ✅ 완료 | type: analysis, 산출물 ANALYSIS_a9a78824.md — 15건(CRITICAL 2/HIGH 4/MEDIUM 4/LOW 5), Verify(codex) 팩트체크 수정 후 PASS, Supervision PASS |
 | 2026-07-12 | 보안 하드닝 (82a27a58) | ✅ 완료 | type: code, CRITICAL 2건+HIGH 1건 해소. 테스트 15/15(ASCII 샌드박스, 한글 경로 NFD 빌드 불가), Verify(codex) PASS, Security WARN(잔여 3건 보류), Supervision PASS |
+| 2026-07-12 | 잔여 보안 리스크 해소 (069b12bb) | ✅ 완료 | type: code, WARN 3·4·5 전부 해소(Redis rate limit Lua 원자화·denyAll·when-authorized) + 400/415 보존 + fail-closed 테스트. 28/28 테스트, Verify(codex) 1차 FAIL→Lua 수정→PASS, Security WARN(잔여: 프록시 뒤 IP key — 토폴로지 확정 후), Supervision PASS |

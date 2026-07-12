@@ -66,4 +66,20 @@ class SecurityConfigTest {
             .exchange()
             .expectStatus().isUnauthorized
     }
+
+    @Test
+    fun `path not explicitly permitted or authenticated is denied by the denyAll fallback`() {
+        // /actuator/info는 익명 허용 목록에 없고 /api/** 도 아니므로 anyExchange().denyAll() 폴백에 걸려야 한다.
+        webTestClient.get().uri("/actuator/info")
+            .exchange()
+            .expectStatus().is4xxClientError()
+    }
+
+    @Test
+    fun `GET to the auth token path is not covered by the anonymous permit and is denied`() {
+        // 익명 허용은 POST /api/auth/token 한정이므로 GET은 authenticated()/denyAll 대상이다.
+        webTestClient.get().uri("/api/auth/token")
+            .exchange()
+            .expectStatus().is4xxClientError()
+    }
 }

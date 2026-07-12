@@ -27,6 +27,8 @@ import reactor.core.publisher.Mono
  *
  * - `/actuator/health`, `POST /api/auth/token`: 익명 허용
  * - 그 외 /api 하위 전체 경로: Authorization Bearer JWT 인증 필수
+ * - 명시적으로 허용/인증 대상으로 지정되지 않은 나머지 요청은 전부 거부한다
+ *   (fail-closed 폴백, 최소 표면 원칙 — `/actuator/info` 등은 익명 허용하지 않는다)
  */
 @Configuration
 @EnableWebFluxSecurity
@@ -63,7 +65,7 @@ class SecurityConfig(
                     .pathMatchers("/actuator/health").permitAll()
                     .pathMatchers(HttpMethod.POST, "/api/auth/token").permitAll()
                     .pathMatchers("/api/**").authenticated()
-                    .anyExchange().permitAll()
+                    .anyExchange().denyAll()
             }
             .addFilterAt(jwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
             .build()
