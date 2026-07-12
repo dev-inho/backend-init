@@ -19,3 +19,5 @@
 | 2026-07-12 | 저장소 비판적 검토 (a9a78824) | ✅ 완료 | type: analysis, 산출물 ANALYSIS_a9a78824.md — 15건(CRITICAL 2/HIGH 4/MEDIUM 4/LOW 5), Verify(codex) 팩트체크 수정 후 PASS, Supervision PASS |
 | 2026-07-12 | 보안 하드닝 (82a27a58) | ✅ 완료 | type: code, CRITICAL 2건+HIGH 1건 해소. 테스트 15/15(ASCII 샌드박스, 한글 경로 NFD 빌드 불가), Verify(codex) PASS, Security WARN(잔여 3건 보류), Supervision PASS |
 | 2026-07-12 | 잔여 보안 리스크 해소 (069b12bb) | ✅ 완료 | type: code, WARN 3·4·5 전부 해소(Redis rate limit Lua 원자화·denyAll·when-authorized) + 400/415 보존 + fail-closed 테스트. 28/28 테스트, Verify(codex) 1차 FAIL→Lua 수정→PASS, Security WARN(잔여: 프록시 뒤 IP key — 토폴로지 확정 후), Supervision PASS |
+| 2026-07-13 | Phase 1 support:util 재설계 (e76b15bf) | ✅ 완료 | type: code, support-redesign G001~G007, Atomic Wave 8 teammate. 신규 유틸 8종(확장·상수·Outcome·페이징·재시도·마스킹). 전체 185 테스트(util 161) 0 실패, NFR-01/02 준수. Verify(codex) hung→중단, Supervision PASS(1 advisory: orEmpty stdlib 중복) |
+| 2026-07-13 | Persistence 경계 정리 (26a49bc4) | ✅ 완료 | type: code, `core:domain` 순수성 테스트, MyBatis adapter `mybatis` profile 격리, upsert 저장 구현, profile wiring 테스트. `./gradlew clean test` PASS, Verify(codex-inline) PASS |
