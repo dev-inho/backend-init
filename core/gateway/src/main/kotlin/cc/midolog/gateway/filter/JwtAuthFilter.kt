@@ -1,5 +1,6 @@
 package cc.midolog.gateway.filter
 
+import cc.midolog.util.JwtSecretValidator
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.security.Keys
 import org.springframework.beans.factory.annotation.Value
@@ -17,13 +18,16 @@ import javax.crypto.SecretKey
  * 게이트웨이 JWT 검증 필터.
  * - /api/auth, /actuator, /batch 하위: 통과(인증 불필요)
  * - 그 외 /api 하위: Authorization Bearer 토큰 필수, 검증 실패 시 401
+ *
+ * 시크릿은 기동 시 [JwtSecretValidator]로 검증하며, 규칙(32바이트 이상,
+ * 빈 값·알려진 기본값 거부)을 위반하면 fail-fast 한다.
  */
 @Component
 @Order(1)
 class JwtAuthFilter(
     @Value("\${jwt.secret}") secret: String,
 ) : WebFilter {
-    private val key: SecretKey = Keys.hmacShaKeyFor(secret.toByteArray())
+    private val key: SecretKey = Keys.hmacShaKeyFor(JwtSecretValidator.validate(secret).toByteArray())
 
     override fun filter(exchange: ServerWebExchange, chain: WebFilterChain): Mono<Void> {
         val path = exchange.request.path.value()

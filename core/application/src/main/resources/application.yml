@@ -31,4 +31,4 @@ management:
       show-details: always
 
 jwt:
-  secret: ${JWT_SECRET:change-me-please-use-a-strong-32byte-min-secret-key-0123456789}
+  secret: ${JWT_SECRET}
