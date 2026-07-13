@@ -1,4 +1,4 @@
-package cc.midolog.common.exception
+package cc.midolog.web.exception
 
 /** 비즈니스/API 예외. ErrorCode로 HTTP 상태와 메시지를 결정한다. */
 class ApiException(

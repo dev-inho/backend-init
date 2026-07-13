@@ -2,6 +2,7 @@ package cc.midolog.common.handler
 
 import cc.midolog.common.security.JwtProvider
 import cc.midolog.web.auth.AuthController
+import cc.midolog.web.handler.GlobalExceptionHandler
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest

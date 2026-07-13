@@ -1,9 +1,9 @@
 package cc.midolog.web.sample
 
 import cc.midolog.business.service.SampleService
-import cc.midolog.common.exception.ApiException
-import cc.midolog.common.response.ApiResponse
 import cc.midolog.sample.model.Sample
+import cc.midolog.web.exception.ApiException
+import cc.midolog.web.response.ApiResponse
 import cc.midolog.web.sample.dto.CreateSampleRequest
 import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping

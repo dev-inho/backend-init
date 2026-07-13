@@ -1,8 +1,8 @@
-package cc.midolog.common.handler
+package cc.midolog.web.handler
 
-import cc.midolog.common.exception.ApiException
-import cc.midolog.common.exception.ErrorCode
-import cc.midolog.common.response.ApiResponse
+import cc.midolog.web.exception.ApiException
+import cc.midolog.web.exception.ErrorCode
+import cc.midolog.web.response.ApiResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler

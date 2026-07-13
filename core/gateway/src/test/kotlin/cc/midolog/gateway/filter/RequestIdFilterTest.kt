@@ -1,6 +1,7 @@
 package cc.midolog.gateway.filter
 
 import cc.midolog.logging.LoggingMdc
+import cc.midolog.web.filter.RequestIdFilter
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -9,6 +10,11 @@ import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import org.springframework.mock.web.server.MockServerWebExchange
 import reactor.core.publisher.Mono
 
+/**
+ * gateway가 사용하는 트랜잭션 ID 필터는 support:web의 [RequestIdFilter]로 이전되었다.
+ * 이 테스트는 이전 후에도 gateway가 기대하는 회귀 없는 동작(형식검증·UUID 생성·전파)을
+ * 그대로 유지하는지 확인한다.
+ */
 class RequestIdFilterTest {
 
     private val filter = RequestIdFilter()

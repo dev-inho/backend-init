@@ -1,4 +1,4 @@
-package cc.midolog.common.response
+package cc.midolog.web.response
 
 /** 표준 API 응답 봉투. */
 data class ApiResponse<T>(

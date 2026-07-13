@@ -1,4 +1,4 @@
-package cc.midolog.gateway.filter
+package cc.midolog.web.filter
 
 import cc.midolog.logging.LoggingMdc
 import org.slf4j.MDC

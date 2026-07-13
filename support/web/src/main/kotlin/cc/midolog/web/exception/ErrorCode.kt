@@ -1,4 +1,4 @@
-package cc.midolog.common.exception
+package cc.midolog.web.exception
 
 import org.springframework.http.HttpStatus
 
