@@ -1,6 +1,6 @@
 package cc.midolog
 
-import cc.midolog.gateway.logging.ReactorMdc
+import cc.midolog.logging.ReactorMdc
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 

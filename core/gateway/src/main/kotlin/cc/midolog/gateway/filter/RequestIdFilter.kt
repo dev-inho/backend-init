@@ -1,5 +1,6 @@
 package cc.midolog.gateway.filter
 
+import cc.midolog.logging.LoggingMdc
 import org.slf4j.MDC
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Component
@@ -20,7 +21,7 @@ import java.util.UUID
 class RequestIdFilter : WebFilter {
 
     companion object {
-        const val HEADER = "X-Request-Id"
+        const val HEADER = LoggingMdc.REQUEST_ID
         const val MAX_LENGTH = 128
 
         /** 허용 문자: 영숫자, 하이픈, 언더스코어 (로그 인젝션 방지). */

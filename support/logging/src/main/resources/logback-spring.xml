@@ -1,12 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level [%X{X-Request-Id:-}] %logger{36} - %msg%n</pattern>
-        </encoder>
-    </appender>
+    <conversionRule conversionWord="mask" converterClass="cc.midolog.logging.MaskingMessageConverter"/>
 
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </root>
+    <springProfile name="local">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level [%X{X-Request-Id:-}] %logger{36} - %mask%n</pattern>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <pattern>
+                        <pattern>
+                            {
+                              "message": "%mask"
+                            }
+                        </pattern>
+                    </pattern>
+                    <mdc>
+                        <includeMdcKeyName>X-Request-Id</includeMdcKeyName>
+                    </mdc>
+                    <timestamp/>
+                    <logLevel/>
+                    <loggerName/>
+                </providers>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
 </configuration>

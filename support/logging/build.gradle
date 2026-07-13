@@ -9,5 +9,11 @@ dependencyManagement {
 }
 
 dependencies {
+    implementation project(':support:util')
+
     implementation 'ch.qos.logback:logback-classic'
+    implementation 'io.projectreactor:reactor-core'
+    implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
+
+    testImplementation 'io.projectreactor:reactor-test'
 }
