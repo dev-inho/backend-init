@@ -5,4 +5,10 @@
     <select id="selectById" resultType="map">
         SELECT id, name FROM sample WHERE id = #{id}
     </select>
+
+    <insert id="upsert">
+        INSERT INTO sample (id, name)
+        VALUES (#{id}, #{name})
+        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+    </insert>
 </mapper>

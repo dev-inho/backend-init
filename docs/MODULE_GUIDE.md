@@ -1,6 +1,6 @@
 # 모듈 가이드 (Module Guide)
 
-Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 8개 모듈별 책임, 패키지 구조, 의존성 정의 가이드.
+Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 10개 모듈별 책임, 패키지 구조, 의존성 정의 가이드.
 
 ---
 
@@ -23,8 +23,10 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 8개 모
 | **Core Batch** | `core:batch` | 배치/스케줄 작업 부트스트랩 | `core:domain`, `support:*` |
 | **Client Storage File** | `client:storage-file` | 로컬 파일 저장 어댑터 | `core:domain` |
 | **Storage MyBatis** | `storage:mybatis` | MyBatis + PostgreSQL 저장소 구현 | `core:domain`, `support:util`, `mybatis-spring-boot-starter` |
+| **Storage JPA** | `storage:jpa` | Spring Data JPA + PostgreSQL 저장소 구현 | `core:domain`, `support:util`, `spring-boot-starter-data-jpa` |
 | **Support Util** | `support:util` | 순수 Kotlin 유틸 (IdGenerator, 확장함수 등) | - |
 | **Support Logging** | `support:logging` | 로깅 설정 (logback-classic, logback-spring.xml) | `spring-boot-dependencies` |
+| **Support Web** | `support:web` | 공통 WebFlux 필터, API 응답, 예외 처리 | `support:logging`, `webflux` |
 
 ---
 
@@ -125,7 +127,7 @@ cc.midolog
 
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`, `support:logging`
-- `runtimeOnly`: `client:storage-file`, `storage:mybatis` (어댑터는 런타임에만 주입)
+- `runtimeOnly`: `client:storage-file`, `storage:mybatis`, `storage:jpa` (어댑터는 런타임에만 주입)
 - **Spring Boot**: `webflux`, `security`, `data-redis-reactive`
 - **라이브러리**: `jjwt:0.12.6`, `spring-security-oauth2-jose`
 
@@ -138,6 +140,7 @@ dependencies {
     
     runtimeOnly project(':client:storage-file')
     runtimeOnly project(':storage:mybatis')
+    runtimeOnly project(':storage:jpa')
     
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -159,21 +162,23 @@ dependencies {
 ```
 cc.midolog.gateway
 ├── filter
-│   ├── RequestIdFilter.kt
 │   ├── JwtAuthFilter.kt
-│   └── RateLimitFilter.kt
+│   └── AuthTokenRateLimitFilter.kt
 ├── config
-│   └── RouteConfig.kt
+│   ├── RouteConfig.kt
+│   └── WebClientConfig.kt
 ├── handler
+│   ├── HeaderSanitizer.kt
 │   └── ProxyHandler.kt
 └── GatewayApplication.kt (부트 클래스)
 ```
 
+`RequestIdFilter`, `HttpLoggingFilter`, 공통 API 응답/예외 처리는 `support:web`에 둔다. Gateway는 `support:web`에 의존해 공통 필터를 사용한다.
+
 **부트 클래스**: `cc.midolog.GatewayApplication`
 
 **주요 의존성**:
-- `implementation`: `support:logging`
-- **Spring Cloud**: `spring-cloud-starter-gateway`, `spring-cloud-starter-config` (검토 중)
+- `implementation`: `support:logging`, `support:util`, `support:web`
 - **Spring Boot**: `webflux`
 - **라이브러리**: `jjwt:0.12.6`, `spring-boot-starter-data-redis-reactive`
 
@@ -181,8 +186,9 @@ cc.midolog.gateway
 ```groovy
 dependencies {
     implementation project(':support:logging')
-    
-    implementation 'org.springframework.cloud:spring-cloud-starter-gateway'
+    implementation project(':support:util')
+    implementation project(':support:web')
+
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
@@ -192,6 +198,20 @@ dependencies {
     testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5'
 }
 ```
+
+### Runtime Profile 원칙
+
+- `application.yml`은 `spring.profiles.active`를 설정하지 않는다.
+- 로컬 기본값은 각 모듈의 `application-local.yml`에 둔다.
+- 실행자는 `SPRING_PROFILES_ACTIVE=local,mybatis`, `local,jpa`, `local`처럼 필요한 profile을 명시한다.
+- 운영 환경은 환경변수나 secret manager로 `JWT_SECRET`, DB, Redis, Gateway route 값을 주입한다.
+
+### Platform Option 원칙
+
+- Gateway 다중 application 라우팅은 `gateway.routes.application-urls`가 있을 때만 라운드로빈으로 동작한다. 값이 없으면 `gateway.routes.application-url` 단일 target을 유지한다.
+- Gateway request visibility는 `gateway.request-visibility.enabled=true`일 때만 filter/store/controller bean이 등록된다.
+- request visibility는 method, path, status, request id, timestamp, duration만 저장한다. body, Authorization header, secret 값은 저장하지 않는다.
+- Config Server와 OpenTelemetry는 기본 모듈이 아니라 후속 optional 확장으로 둔다.
 
 ---
 
@@ -214,7 +234,7 @@ cc.midolog.batch
 
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`, `support:logging`
-- `runtimeOnly`: `storage:mybatis`
+- `runtimeOnly`: `storage:mybatis` (현재 batch persistence는 MyBatis 기준)
 - **Spring Boot**: `batch`, `data-jpa` (필요 시)
 
 **build.gradle 예시**:
@@ -312,7 +332,130 @@ dependencies {
 
 ---
 
-### 7. support:util
+### 7. storage:jpa
+**책임**: Spring Data JPA + PostgreSQL 저장소 구현. JPA entity, repository, mapper, adapter를 domain 밖에 격리한다.
+도메인은 어노테이션 없는 plain data class로 유지하고, `storage:jpa/build.gradle`의 DSL에서 JPA 생성 대상을 선언한다.
+
+**패키지 구조**:
+```
+cc.midolog.storage.jpa.<context>
+├── *JpaEntity.kt              # generated: JPA 저장소 전용 entity
+├── *JpaRepository.kt          # generated: Spring Data repository
+├── *JpaMapper.kt              # generated: domain model <-> JPA entity 변환
+└── Jpa*RepositoryAdapter.kt   # hand-written: *RepositoryPort 구현
+```
+
+**현재 sample/user 구조**:
+```
+cc.midolog.storage.jpa.sample
+└── JpaSampleRepositoryAdapter.kt
+
+cc.midolog.storage.jpa.user
+└── JpaUserRepositoryAdapter.kt
+
+cc.midolog.storage.jpa.config
+└── JpaStorageConfig.kt
+```
+
+`SampleJpaEntity`, `UserJpaEntity` 같은 entity/repository/mapper 타입은 `generateJpaDslSources` task가 build directory에 생성한다.
+
+**주요 의존성**:
+- `implementation`: `core:domain`, `support:util`
+- **JPA**: `spring-boot-starter-data-jpa`
+- **Database**: `org.postgresql:postgresql`
+- **Test**: `spring-boot-starter-data-jpa-test`, `com.h2database:h2`
+
+**build.gradle 예시**:
+```groovy
+def jpaEntitySpecs = [
+    [
+        domainClass: 'cc.midolog.sample.model.Sample',
+        table      : 'sample',
+        id         : 'id',
+    ],
+    [
+        domainClass: 'cc.midolog.user.model.User',
+        table      : 'app_user',
+        id         : 'id',
+        fields     : [
+            displayName: [column: 'display_name'],
+        ],
+    ],
+    [
+        domainClass: 'cc.midolog.sample.model.ScalarSample',
+        table      : 'scalar_sample',
+        id         : 'id',
+        fields     : [
+            displayName: [column: 'display_name'],
+            nickname   : [nullable: true],
+            status     : [enum: 'STRING'],
+            code       : [
+                column     : 'code_value',
+                storageType: 'String',
+                converter  : 'cc.midolog.storage.jpa.sample.ScalarSampleCodeJpaConverter',
+            ],
+        ],
+    ],
+    [
+        domainClass: 'cc.midolog.sample.model.RelationParent',
+        table      : 'relation_parent',
+        id         : 'id',
+        relations  : [
+            children: [
+                type    : 'oneToMany',
+                target  : 'cc.midolog.sample.model.RelationChild',
+                mappedBy: 'parent',
+                toDomain: 'emptyList',
+            ],
+        ],
+    ],
+    [
+        domainClass: 'cc.midolog.sample.model.RelationChild',
+        table      : 'relation_child',
+        id         : 'id',
+        fields     : [
+            parentId: [relation: 'parent'],
+        ],
+        relations  : [
+            parent: [
+                type            : 'manyToOne',
+                target          : 'cc.midolog.sample.model.RelationParent',
+                sourceField     : 'parentId',
+                joinColumn      : 'parent_id',
+                referencedColumn: 'id',
+            ],
+        ],
+    ],
+]
+
+dependencies {
+    implementation project(':core:domain')
+    implementation project(':support:util')
+
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+    testRuntimeOnly 'com.h2database:h2'
+}
+```
+
+**Profile 원칙**:
+- `JpaSampleRepositoryAdapter`, `JpaUserRepositoryAdapter`와 JPA repository scan은 `jpa` profile에서만 활성화한다.
+- 운영 실행에서는 `mybatis`와 `jpa` persistence profile을 동시에 켜지 않는다.
+- JPA `@Entity`, `@Table`, Spring Data repository는 `storage:jpa` 내부에만 둔다.
+- domain model에 필드를 추가하면 생성 task가 JPA entity/mapper 필드를 따라 생성한다. table/id 변경은 `jpaEntitySpecs`에서 관리한다.
+- `storage/jpa/build.gradle`은 DSL 선언과 Gradle wiring만 관리하고, generator 구현은 `storage/jpa/gradle/jpa-dsl-generator.gradle`에 둔다.
+- scalar DSL은 `column`, `nullable`, `enum: 'STRING'`, `storageType` + `converter`를 지원한다.
+- value-object converter는 `toStorage(domainType): storageType`, `toDomain(storageType): domainType` 함수를 제공한다.
+- relation DSL은 `manyToOne`, `oneToMany`, `target`, `sourceField`, `joinColumn`, `referencedColumn`, `mappedBy`를 지원한다.
+- relation fetch는 `FetchType.LAZY`로 생성한다.
+- mapper는 deep graph persistence를 자동 수행하지 않는다. `oneToMany`는 `toDomain: 'emptyList'`처럼 explicit shallow policy로 lazy proxy 접근과 무한 재귀를 피한다.
+- unsupported DSL 선언은 generated Kotlin compile error가 아니라 generator validation `GradleException`으로 실패해야 한다. 메시지는 domain class와 field/relation 이름을 포함해야 한다.
+- generated source는 Gradle build directory 아래에만 생성된다. `storage/jpa/src/main/kotlin`에는 adapter/config/converter 같은 hand-written persistence code만 둔다.
+- 현재 relation DSL은 simple parent-child relation만 지원한다. many-to-many, cascade remove, orphan removal, arbitrary deep graph persistence는 범위 밖이다.
+
+### 8. support:util
 **책임**: 순수 Kotlin 유틸. IdGenerator, 확장함수, 공통 헬퍼.
 
 **패키지 구조**:
@@ -345,7 +488,7 @@ dependencies {
 
 ---
 
-### 8. support:logging
+### 9. support:logging
 **책임**: 로깅 설정. logback-classic, logback-spring.xml을 통한 통일된 로깅 프로필.
 
 **패키지 구조**:
@@ -374,6 +517,26 @@ dependencies {
 ---
 
 ## 헥사고날 의존 규칙
+
+### 새 도메인 추가 절차
+
+`user` 도메인은 새 업무 도메인을 추가할 때 따를 기준 예제다. `sample`은 smoke/regression 용도로 남겨 두고, 실제 업무 흐름은 `user`처럼 별도 bounded context로 추가한다.
+
+1. `core:domain`에 `<context>.model.*` domain data class와 `<context>.port.repository.*RepositoryPort`를 추가한다.
+2. `core:application`에 application service를 추가하고, concrete storage import 없이 domain port만 주입한다.
+3. REST API가 필요하면 `web.<context>` controller와 DTO를 추가한다. controller는 request/response 변환만 담당하고 저장 구현을 직접 알지 않는다.
+4. MyBatis를 지원하려면 `storage:mybatis`에 mapper interface, XML mapper, `@Profile("mybatis")` repository adapter를 추가한다.
+5. JPA를 지원하려면 `storage:jpa/build.gradle`의 `jpaEntitySpecs`에 domain class/table/id/field 매핑을 선언하고, `@Profile("jpa")` repository adapter를 추가한다.
+6. 같은 port contract를 MyBatis/JPA adapter 모두에 적용하는 테스트를 추가하고, profile wiring 테스트에서 profile별 port bean이 하나만 등록되는지 검증한다.
+7. `core:domain` purity test가 Spring/JPA/MyBatis annotation 유입을 막는지 확인한 뒤 `./gradlew test`를 실행한다.
+
+보안 주의: `user` 예제는 persistence 구조 예시이며 인증 구현이 아니다. 비밀번호 저장, password hashing, refresh token, session, role/permission 정책은 별도 보안 설계와 테스트 없이 템플릿 예제로 추가하지 않는다.
+
+### MyBatis/JPA 선택 기준
+
+- MyBatis는 SQL을 명시적으로 통제해야 하거나 기존 PostgreSQL 쿼리/튜닝 자산을 그대로 쓰는 서비스에 적합하다. mapper XML과 adapter 테스트로 SQL 경계를 검증한다.
+- JPA는 단순 CRUD 중심 도메인과 Spring Data repository 생태계를 활용할 때 적합하다. 이 프로젝트에서는 domain model을 오염시키지 않기 위해 `storage:jpa/build.gradle` DSL로 JPA entity/repository/mapper를 생성한다.
+- 두 구현은 같은 repository port contract를 만족해야 한다. 운영 profile은 `mybatis` 또는 `jpa` 중 하나만 활성화한다.
 
 ### 계층별 의존 방향
 ```
@@ -412,6 +575,7 @@ include 'client:storage-file'
 
 // Storage
 include 'storage:mybatis'
+include 'storage:jpa'
 
 // Support
 include 'support:util'
@@ -421,7 +585,7 @@ include 'support:logging'
 ### 빌드 순서
 1. `support:util` → `support:logging` (의존도 없음)
 2. `core:domain` (support만 의존)
-3. `client:storage-file`, `storage:mybatis` (domain 의존)
+3. `client:storage-file`, `storage:mybatis`, `storage:jpa` (domain 의존)
 4. `core:application`, `core:gateway`, `core:batch` (위 모두 의존 가능)
 
 Gradle은 자동으로 의존도를 계산하여 올바른 순서로 빌드합니다.

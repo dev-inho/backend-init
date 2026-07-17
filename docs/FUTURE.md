@@ -1,6 +1,6 @@
 # 향후 설계 (Future Work)
 
-> **중요 안내**: 아래 항목은 **설계만** 하며 이번 마일스톤에서 구현하지 않습니다.
+> **중요 안내**: 아래 항목은 선택 기능입니다. 기본 실행에서는 비활성화하거나 문서화된 보류 상태로 둡니다.
 
 ---
 
@@ -14,7 +14,8 @@
   - 세션, 상태 데이터는 Redis 등 외부 캐시/저장소로 위임
   - 요청 처리 간 독립성 확보
 - **분산 라우팅**: 게이트웨이가 들어온 요청을 다중 인스턴스로 분산
-  - 라운드로빈, 가중치 기반 등 로드밸런싱 전략 적용
+  - 현재 최소 구현은 `gateway.routes.application-urls` 기반 라운드로빈
+  - 가중치 기반, health-check 제외, service discovery는 후속 확장
   - 또는 외부 로드밸런서(AWS ALB, Nginx 등) 활용
 
 ### 고려사항
@@ -23,7 +24,7 @@
 - **무중단 배포(Blue-Green Deployment)**: 서버 업데이트 중 서비스 지속성 확보
 
 ### 상태
-📌 **설계만** — 구현 미연기
+✅ **최소 구현 완료** — Gateway 내부 라운드로빈은 optional 설정으로 제공. 외부 LB/service discovery와 health-check 기반 제외는 후속.
 
 ---
 
@@ -46,7 +47,7 @@
 - **보안**: 설정 서버 접근 제어(SSL/TLS, 인증)
 
 ### 상태
-📌 **도입 검토 + 설계만** — 구현 미연기
+📌 **보류 결정** — 현재 baseline은 환경변수와 secret manager 주입이다. Config Server는 여러 배포 환경/인스턴스에서 설정 변경 전파가 운영 병목이 될 때 별도 task로 도입한다.
 
 ---
 
@@ -58,11 +59,10 @@
 ### 설계 개요
 - **요청 로그 수집**: 게이트웨이 필터/미들웨어에서 요청 정보 기록
   - 메서드, URL, 응답 코드, 타임스탬프, 트랜잭션 ID 등
-- **저장소**: 수집된 요청 정보를 인메모리 또는 Redis에 저장
+- **저장소**: 현재 최소 구현은 bounded in-memory store
 - **조회 UI**: 
-  - Spring Boot Actuator 커스텀 엔드포인트 제공
-  - 간단한 HTML 대시보드 또는 경량 웹 UI
-  - 필터/검색 기능: 트랜잭션 ID, 시간 범위 등으로 요청 조회
+  - `/internal/gateway/requests` JSON endpoint 제공
+  - HTML 대시보드와 Redis-backed 분산 store는 후속 확장
 
 ### 고려사항
 - **저장소 선택**: 인메모리(간편, 서버 재시작 시 소실) vs. Redis(분산, 지속성)
@@ -71,7 +71,7 @@
 - **성능**: 요청 로깅이 게이트웨이 성능에 미치는 영향 최소화
 
 ### 상태
-📌 **설계만** — 구현 미연기 (상세 라우팅/트랜잭션 ID는 `./GATEWAY.md` 참조)
+✅ **최소 구현 완료** — 기본 비활성화. `GATEWAY_REQUEST_VISIBILITY_ENABLED=true`일 때만 최근 요청 event를 조회한다. 상세 설정은 `./GATEWAY.md` 참조.
 
 ---
 
@@ -94,10 +94,31 @@
 - **비동기 작업**: ThreadLocal 기반 MDC는 비동기 작업에서 소실 위험 → 명시적 전달 필요
 - **성능**: MDC 바인딩/언바인딩 오버헤드 최소화
 - **외부 라이브러리**: Spring Cloud Sleuth 등 분산 추적 라이브러리 고려
+- **OpenTelemetry**: exporter/collector 운영 전제가 생기므로 현재는 보류하고 request id 기반 추적을 baseline으로 둔다.
 - **로그 저장/분석**: 중앙 집중식 로깅(ELK Stack 등)과 연동 시 트랜잭션 ID 기반 검색
 
 ### 상태
-📌 **기본 설계** — 게이트웨이 필터는 Phase 3에서 구현 예정
+📌 **초기 구현 완료 + OpenTelemetry 보류** — `support:web`의 요청 ID 필터와 `support:logging`의 MDC/마스킹 로깅은 구현되어 있으며, OpenTelemetry exporter/collector 연동은 별도 운영 가치가 확인될 때 optional module로 추가한다.
+
+---
+
+## 5. CI 품질 게이트
+
+### 목적
+템플릿 사용자가 새 프로젝트를 시작할 때 최소 품질 기준을 자동 검증한다.
+
+### 현재 기준
+- 필수: `./gradlew test`
+- 권장: Gateway proxy regression test, profile config regression test 유지
+
+### 향후 추가 후보
+- dependency vulnerability scan
+- secret scan
+- architecture rule test
+- Docker Compose 기반 PostgreSQL/Redis smoke test
+
+### 상태
+✅ **초기 CI workflow 추가** — 현재 템플릿은 `./gradlew test`를 필수 품질 게이트로 사용하고, GitHub Actions에서는 dependency/security scan을 별도 workflow로 실행한다. organization별 정책, threshold, SARIF 업로드, PR required check 지정은 후속 운영 정책으로 확정한다.
 
 ---
 
@@ -109,4 +130,4 @@
 
 ---
 
-**마지막 갱신**: 2026-06-15
+**마지막 갱신**: 2026-07-17

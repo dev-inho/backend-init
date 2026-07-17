@@ -169,12 +169,14 @@ client/storage-file/
 - Domain Port 구현(Adapter)
 
 **모듈**
-- **storage:mybatis** — Mybatis 기반 데이터 접근
+- **storage:mybatis** — MyBatis 기반 데이터 접근
+- **storage:jpa** — Spring Data JPA 기반 데이터 접근
 
 **특징**
-- Domain Entity를 DB Schema에 매핑
+- Domain model을 저장소 전용 schema/entity/mapper에 매핑
 - Domain Port(Repository) 구현
-- SQL Query 관리
+- MyBatis SQL query 또는 JPA repository 관리
+- Persistence 구현은 profile로 하나만 선택
 
 **예시 구조**
 ```
@@ -188,7 +190,24 @@ storage/mybatis/
 │   └── MybatisUserRepositoryAdapter.kt  (Domain Port 구현)
 └── entity/
     └── UserEntity.kt  (DB Mapping)
+
+storage/jpa/
+├── config/
+│   └── JpaStorageConfig.kt
+├── sample/
+│   ├── SampleJpaEntity.kt
+│   ├── SampleJpaRepository.kt
+│   ├── SampleJpaMapper.kt
+│   └── JpaSampleRepositoryAdapter.kt  (Domain Port 구현)
+└── README.md
 ```
+
+**Domain/entity 분리 원칙**
+- `core:domain`에는 Plain Kotlin/Java model과 port만 둔다.
+- JPA `@Entity`, `@Table`, Spring Data repository는 `storage:jpa` 내부에만 둔다.
+- MyBatis mapper interface와 XML mapper는 `storage:mybatis` 내부에만 둔다.
+- `core:application`은 `SampleRepositoryPort` 같은 domain port만 사용하고 구체 storage 구현을 main source에서 import하지 않는다.
+- 운영 실행에서는 `mybatis`와 `jpa` profile을 동시에 켜지 않는다.
 
 ### 2.7 Support (cc.midolog.support.*)
 
@@ -269,7 +288,7 @@ class CreateUserUseCase(
     }
 }
 
-// Runtime: Mybatis 구현이나 Mock 구현 중 하나가 주입됨
+// Runtime: MyBatis, JPA, Mock 구현 중 하나가 주입됨
 // @Bean fun userRepository(): UserRepository = MybatisUserRepositoryAdapter(...)
 ```
 
@@ -293,6 +312,7 @@ graph TD
     D["Domain<br/>(core:domain)"]
     F["Client:Storage<br/>(client:storage-file)"]
     G["Storage:Mybatis<br/>(storage:mybatis)"]
+    J["Storage:JPA<br/>(storage:jpa)"]
     H["Support:Logging<br/>(support:logging)"]
     I["Support:Util<br/>(support:util)"]
     
@@ -301,6 +321,7 @@ graph TD
     B -->|depends| D
     B -->|runtimeOnly| F
     B -->|runtimeOnly| G
+    B -->|runtimeOnly| J
     B -->|depends| H
     B -->|depends| I
     C -->|depends| D
@@ -311,6 +332,8 @@ graph TD
     F -->|depends| I
     G -->|depends| D
     G -->|depends| I
+    J -->|depends| D
+    J -->|depends| I
     D -->|depends| I
     
     style D fill:#e1f5ff
@@ -321,6 +344,7 @@ graph TD
     style C fill:#fff3e0
     style F fill:#f1f8e9
     style G fill:#f1f8e9
+    style J fill:#f1f8e9
 ```
 
 **범례**
@@ -491,7 +515,8 @@ fun onUserCreated(event: UserCreatedEvent) {
 2단계: 기초 계층 빌드
 ├─ core:domain
 ├─ client:storage-file
-└─ storage:mybatis
+├─ storage:mybatis
+└─ storage:jpa
 
 3단계: 실행 계층 빌드
 ├─ core:application

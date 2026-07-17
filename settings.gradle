@@ -11,6 +11,7 @@ include 'client:storage-file'
 
 // storage
 include 'storage:mybatis'
+include 'storage:jpa'
 
 // support
 include 'support:util'

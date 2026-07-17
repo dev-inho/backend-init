@@ -12,6 +12,7 @@ dependencies {
 
     runtimeOnly project(':client:storage-file')
     runtimeOnly project(':storage:mybatis')
+    runtimeOnly project(':storage:jpa')
 
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'io.projectreactor.kotlin:reactor-kotlin-extensions'
@@ -30,4 +31,6 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test'
     testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation project(':storage:mybatis')
+    testImplementation project(':storage:jpa')
 }

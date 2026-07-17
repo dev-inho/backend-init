@@ -19,8 +19,16 @@ object HeaderSanitizer {
 
     fun sanitize(source: HttpHeaders): HttpHeaders {
         val cleaned = HttpHeaders()
+        val connectionScoped = source[HttpHeaders.CONNECTION]
+            .orEmpty()
+            .flatMap { it.split(",") }
+            .map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        val excluded = HOP_BY_HOP + connectionScoped
+
         source.forEach { name, values ->
-            if (name.lowercase() !in HOP_BY_HOP) cleaned.addAll(name, values)
+            if (name.lowercase() !in excluded) cleaned.addAll(name, values)
         }
         return cleaned
     }

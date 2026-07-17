@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: backend
       POSTGRES_PASSWORD: backend
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:

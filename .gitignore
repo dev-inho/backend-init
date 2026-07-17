@@ -14,8 +14,14 @@ build/
 
 # IDE
 .idea/
+.vscode/
 *.iml
 .kotlin/
+out/
+target/
+
+# OS
+.DS_Store
 
 # Env
 .env
@@ -30,3 +36,9 @@ build/
 .qe/agent-results/
 .qe/agent-triggers/
 .qe/.archive/
+.qe/.snapshots/
+.qe/learning/
+.qe/security-reports/
+
+# Claude Code local memory
+.claude/agent-memory/

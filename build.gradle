@@ -1,13 +1,28 @@
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '2.2.21' apply false
     id 'org.jetbrains.kotlin.plugin.spring' version '2.2.21' apply false
+    id 'org.jetbrains.kotlin.plugin.jpa' version '2.2.21' apply false
     id 'org.springframework.boot' version '4.0.6' apply false
     id 'io.spring.dependency-management' version '1.1.7' apply false
 }
 
+def rootPathHasNonAscii = rootDir.absolutePath.any { it > '\u007F' }
+def defaultExternalBuildRoot = new File(
+    System.getProperty('java.io.tmpdir'),
+    "backend-init-gradle-build-${Integer.toHexString(rootDir.absolutePath.hashCode())}"
+).absolutePath
+def externalBuildRoot = providers
+    .gradleProperty('backendInitBuildRoot')
+    .orElse(System.getenv('BACKEND_INIT_BUILD_ROOT') ?: defaultExternalBuildRoot)
+
 allprojects {
     group = 'cc.midolog'
     version = '0.0.1-SNAPSHOT'
+
+    if (rootPathHasNonAscii) {
+        def safeProjectName = path == ':' ? 'root' : path.substring(1).replace(':', '-')
+        layout.buildDirectory = file("${externalBuildRoot.get()}/${safeProjectName}")
+    }
 
     repositories {
         mavenCentral()

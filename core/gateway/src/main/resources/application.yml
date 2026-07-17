@@ -4,21 +4,19 @@ server:
 spring:
   application:
     name: backend-gateway
-  profiles:
-    active: local
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6380}
 
 gateway:
   routes:
-    application-url: http://localhost:8081
-    batch-url: http://localhost:8082
+    application-url: ${GATEWAY_APPLICATION_URL}
+    application-urls: ${GATEWAY_APPLICATION_URLS:}
+    batch-url: ${GATEWAY_BATCH_URL}
   rate-limit:
     auth-token:
       limit: 10
       window-seconds: 60
+  request-visibility:
+    enabled: false
+    capacity: 200
 
 jwt:
   secret: ${JWT_SECRET}

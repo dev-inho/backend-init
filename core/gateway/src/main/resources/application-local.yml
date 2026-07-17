@@ -1,0 +1,14 @@
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+
+gateway:
+  routes:
+    application-url: ${GATEWAY_APPLICATION_URL:http://localhost:8081}
+    application-urls: ${GATEWAY_APPLICATION_URLS:}
+    batch-url: ${GATEWAY_BATCH_URL:http://localhost:8082}
+  request-visibility:
+    enabled: ${GATEWAY_REQUEST_VISIBILITY_ENABLED:false}
+    capacity: ${GATEWAY_REQUEST_VISIBILITY_CAPACITY:200}

@@ -4,13 +4,6 @@ server:
 spring:
   application:
     name: backend-batch
-  profiles:
-    active: local
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/backend}
-    username: ${DB_USERNAME:backend}
-    password: ${DB_PASSWORD:backend}
-    driver-class-name: org.postgresql.Driver
   batch:
     jdbc:
       initialize-schema: always

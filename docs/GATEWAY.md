@@ -16,13 +16,12 @@
     ↓
 [게이트웨이 8080]
     ↓
-RequestIdFilter (트랜잭션 ID 부여/전파)
+RequestIdFilter (support:web, 트랜잭션 ID 부여/전파)
     ↓
 라우팅 결정 (path-prefix)
     ├─ /api/** → application(8081) 프록시
     ├─ /batch/** → batch(8082) 프록시
     ├─ /actuator/** → application(8081) 프록시
-    └─ /gateway/** → 게이트웨이 자체 핸들러
     ↓
 응답 + 트랜잭션 ID 헤더 반환
 ```
@@ -35,35 +34,26 @@ RequestIdFilter (트랜잭션 ID 부여/전파)
 트랜잭션 ID는 클라이언트가 보낸 요청에서 시작하여 모든 다운스트림 서버를 거쳐 로그에 일관되게 기록되는 추적 식별자입니다.
 
 ### 2.2 RequestIdFilter 구현
-**패키지**: `cc.midolog.gateway.filter.RequestIdFilter`  
-**타입**: WebFilter (@Order(0) — 모든 필터 최상단에서 실행)
+**패키지**: `cc.midolog.web.filter.RequestIdFilter` (`support:web`)
+**타입**: WebFilter (`@Order(0)`)
 
 #### 동작 방식
 ```kotlin
-// 의사코드: RequestIdFilter
+// 실제 소유 모듈: support:web
 class RequestIdFilter : WebFilter {
     override fun filter(exchange: ServerWebExchange, chain: WebFilterChain): Mono<Void> {
-        // 1. 요청 헤더에서 X-Request-Id 확인
-        val requestId = exchange.request.headers.getFirst("X-Request-Id")
-            ?: UUID.randomUUID().toString()
-        
-        // 2. 요청 헤더에 주입 (없었으면 생성한 값)
-        exchange.request.headers["X-Request-Id"] = requestId
-        
-        // 3. MDC에 등록 (로깅 시 자동 포함)
-        MDC.put("requestId", requestId)
-        
-        // 4. 응답 헤더에도 추가
-        exchange.response.headers.add("X-Request-Id", requestId)
-        
-        // 5. 다음 필터로 진행
-        return chain.filter(exchange)
+        val requestId = resolveRequestId(exchange.request.headers.getFirst("X-Request-Id"))
+        val mutated = exchange.mutate()
+            .request(exchange.request.mutate().header("X-Request-Id", requestId).build())
+            .build()
+        mutated.response.headers.set("X-Request-Id", requestId)
+        return chain.filter(mutated).contextWrite { it.put("X-Request-Id", requestId) }
     }
 }
 ```
 
 #### 주요 특징
-- **요청 헤더 읽기**: `X-Request-Id` 헤더가 있으면 사용, 없으면 새 UUID 생성
+- **요청 헤더 읽기**: `X-Request-Id` 헤더가 허용 형식이면 사용, 없거나 형식 위반이면 새 UUID 생성
 - **다운스트림 전파**: ProxyHandler가 다운스트림 요청 시 해당 헤더 자동 포함
 - **응답 포함**: 클라이언트가 응답 헤더에서 트랜잭션 ID를 확인 가능
 - **MDC 연동**: 게이트웨이와 다운스트림 서버의 로그에 requestId가 자동으로 기록되어 요청 추적 용이
@@ -94,7 +84,7 @@ class RequestIdFilter : WebFilter {
 ### 3.1 RouteConfig (라우팅 규칙)
 **패키지**: `cc.midolog.gateway.config.RouteConfig`
 
-Spring Cloud Gateway 또는 WebFlux Router DSL을 사용하여 라우팅 규칙을 정의합니다.
+현재 구현은 WebFlux Router DSL을 사용하여 라우팅 규칙을 정의합니다.
 
 ```kotlin
 // 의사코드: RouteConfig
@@ -104,18 +94,9 @@ class RouteConfig {
     @Bean
     fun routerFunction(proxyHandler: ProxyHandler): RouterFunction<ServerResponse> =
         coRouter {
-            // API 요청 → application 서버로 프록시
-            POST("/api/**").invoke { proxyHandler.proxy(it, "application") }
-            GET("/api/**").invoke { proxyHandler.proxy(it, "application") }
-            PUT("/api/**").invoke { proxyHandler.proxy(it, "application") }
-            DELETE("/api/**").invoke { proxyHandler.proxy(it, "application") }
-            
-            // 배치 요청 → batch 서버로 프록시
-            POST("/batch/**").invoke { proxyHandler.proxy(it, "batch") }
-            GET("/batch/**").invoke { proxyHandler.proxy(it, "batch") }
-            
-            // 헬스체크/메트릭 → application 서버로 프록시
-            GET("/actuator/**").invoke { proxyHandler.proxy(it, "application") }
+            path("/api/**").invoke(proxyHandler::proxy)
+            path("/batch/**").invoke(proxyHandler::proxy)
+            path("/actuator/**").invoke(proxyHandler::proxy)
         }
 }
 ```
@@ -134,57 +115,69 @@ class ProxyHandler(
     @Value("\${gateway.routes.batch-url}") val batchUrl: String
 ) {
     
-    suspend fun proxy(exchange: ServerWebExchange, target: String): ServerResponse {
-        // 1. 대상 URL 결정
-        val targetUrl = when (target) {
-            "application" -> applicationUrl       // http://localhost:8081
-            "batch" -> batchUrl                   // http://localhost:8082
-            else -> throw IllegalArgumentException("Unknown target: $target")
+    fun proxy(request: ServerRequest): Mono<ServerResponse> {
+        val targetUrl = when {
+            request.path().startsWith("/batch/") -> batchUrl
+            else -> applicationUrl
         }
-        
-        // 2. 실제 경로 추출 (e.g., /api/users/1)
-        val path = exchange.request.path.value()
-        val fullUrl = targetUrl + path
-        
-        // 3. 요청 헤더 복사 (X-Request-Id 포함)
-        val headers = exchange.request.headers.toMutableMap()
-        val requestId = headers["X-Request-Id"]?.firstOrNull() ?: UUID.randomUUID().toString()
-        headers["X-Request-Id"] = listOf(requestId)
-        
-        // 4. WebClient로 다운스트림 요청
-        val response = webClient
-            .method(exchange.request.method!!)
-            .uri(fullUrl)
-            .headers { h -> headers.forEach { (k, v) -> h.addAll(k, v) } }
-            .retrieve()
-            .toEntity(ByteArray::class.java)
-            .awaitSingle()
-        
-        // 5. 응답 반환
-        return ServerResponse
-            .status(response.statusCode)
-            .headers { h -> response.headers.forEach { (k, v) -> h.addAll(k, v) } }
-            .bodyValue(response.body ?: ByteArray(0))
+
+        return webClient.method(HttpMethod.valueOf(request.method().name()))
+            .uri(targetUri(targetUrl, request.uri()))
+            .headers { it.addAll(HeaderSanitizer.sanitize(request.headers().asHttpHeaders())) }
+            .body(BodyInserters.fromDataBuffers(request.bodyToFlux(DataBuffer::class.java)))
+            .exchangeToMono { response ->
+                ServerResponse.status(response.statusCode())
+                    .headers { it.addAll(HeaderSanitizer.sanitize(response.headers().asHttpHeaders())) }
+                    .body(BodyInserters.fromDataBuffers(response.bodyToFlux(DataBuffer::class.java)))
+            }
+            .onErrorResume { gatewayError(it) }
     }
 }
 ```
+
+ProxyHandler는 query string을 포함한 raw URI를 보존하고, 응답 본문을 `ByteArray`로 모두 모으지 않고 `DataBuffer` stream으로 전달합니다. WebClient의 연결/응답 timeout은 `WebClientConfig`에서 설정하며, timeout은 `504 Gateway Timeout`, 기타 다운스트림 호출 실패는 `502 Bad Gateway`로 응답합니다.
 
 ### 3.3 설정 파일 (application.yml)
 ```yaml
 server:
   port: 8080
-  servlet:
-    context-path: /
-
-gateway:
-  routes:
-    application-url: http://localhost:8081
-    batch-url: http://localhost:8082
 
 spring:
   application:
-    name: gateway
+    name: backend-gateway
+
+gateway:
+  routes:
+    application-url: ${GATEWAY_APPLICATION_URL}
+    application-urls: ${GATEWAY_APPLICATION_URLS:}
+    batch-url: ${GATEWAY_BATCH_URL}
+  request-visibility:
+    enabled: false
+    capacity: 200
+
+---
+# application-local.yml
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+
+gateway:
+  routes:
+    application-url: ${GATEWAY_APPLICATION_URL:http://localhost:8081}
+    application-urls: ${GATEWAY_APPLICATION_URLS:}
+    batch-url: ${GATEWAY_BATCH_URL:http://localhost:8082}
+  request-visibility:
+    enabled: ${GATEWAY_REQUEST_VISIBILITY_ENABLED:false}
+    capacity: ${GATEWAY_REQUEST_VISIBILITY_CAPACITY:200}
 ```
+
+`application.yml`은 profile을 암묵 활성화하지 않습니다. 로컬 실행 시 `SPRING_PROFILES_ACTIVE=local`을 명시합니다.
+
+`gateway.routes.application-urls`를 쉼표 구분 목록으로 지정하면 `/api/**`와 `/actuator/**` 대상 application 서버를 라운드로빈으로 선택합니다. 값이 없으면 기존 `gateway.routes.application-url` 단일 대상 설정을 그대로 사용합니다. `/batch/**`는 항상 `gateway.routes.batch-url` 단일 대상으로 전달합니다.
+
+Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_ENABLED=true`로 명시한 경우에만 `/internal/gateway/requests` endpoint와 in-memory event store가 활성화됩니다. 저장 항목은 method, path, status, request id, timestamp, duration으로 제한하며 request/response body와 Authorization header는 저장하지 않습니다. `/internal/gateway/**`는 JWT Bearer token 검증 대상입니다.
 
 ---
 
@@ -195,7 +188,7 @@ spring:
 | `/api/**` | application | 8081 | 비즈니스 API 요청 (GET, POST, PUT, DELETE) |
 | `/batch/**` | batch | 8082 | 배치/스케줄 작업 요청 |
 | `/actuator/**` | application | 8081 | 헬스체크, 메트릭 엔드포인트 |
-| `/gateway/**` | gateway 자신 | 8080 | 게이트웨이 모니터링 화면, 요청 목록 |
+| `/internal/gateway/requests` | gateway | 8080 | request visibility 조회, 기본 비활성화, JWT 필요 |
 | 기타 | 게이트웨이 자신 | 8080 | 404 Not Found |
 
 ---
@@ -253,20 +246,22 @@ class RateLimitFilter(
 
 ---
 
-## 6. 향후 계획: 요청 확인 화면 (모니터링 대시보드)
+## 6. Request Visibility
 
 ### 6.1 목표
-게이트웨이로 들어온 요청 목록을 실시간으로 확인하는 모니터링 화면을 제공합니다.
+게이트웨이로 들어온 요청 목록을 최소 정보로 확인한다. 기본값은 비활성화이며, 명시적으로 켰을 때만 내부 조회 endpoint가 등록된다.
 
-### 6.2 기능 (설계 단계)
-- **요청 목록 조회**: 최근 요청들과 트랜잭션 ID, 경로, 상태 코드, 응답 시간 표시
-- **필터링**: 경로, 상태 코드, 시간대 기준으로 요청 필터링
-- **상세 조회**: 특정 요청의 헤더, 바디, 응답 정보 조회
-- **로그 통합**: 같은 트랜잭션 ID로 다운스트림 서버 로그 함께 조회 (추후)
+### 6.2 현재 기능
+- **최근 요청 조회**: method, path, status, request id, timestamp, duration 표시
+- **저장소**: bounded in-memory store
+- **보안**: `/internal/gateway/**`는 JWT Bearer token 필요
+- **민감정보 제한**: request/response body, Authorization header, secret 값은 저장하지 않음
 
-### 6.3 구현 계획
-**이번 마일스톤(Phase 1)**: 게이트웨이 아키텍처 및 라우팅 완성  
-**다음 마일스톤(Phase 2)**: 요청 저장소 추가, 대시보드 웹 UI 개발
+### 6.3 후속 후보
+- Redis-backed 분산 request event store
+- HTML dashboard 또는 별도 운영 UI
+- request id 기반 로그 조회 연동
+- 경로/status/time range 필터링
 
 자세한 내용은 [`./FUTURE.md`](./FUTURE.md) 참조.
 
