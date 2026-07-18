@@ -71,10 +71,18 @@ Blocking 리스크는 없다.
 
 ### 3. Migration Draft Automation
 
-**Status**: manual process accepted  
-**Risk level**: medium when schema changes become frequent  
+**Status**: draft automation (verify-only) 구현됨  
+**Risk level**: low (verify 태스크가 drift를 build 단계에서 조기 검출)  
 
 현재 runtime schema는 Flyway가 소유하지만, migration SQL은 사람이 작성한다. domain data class 또는 `jpaDsl { ... }` 선언이 바뀌면 generated JPA mapping과 Flyway migration을 같은 변경 단위에서 함께 갱신해야 한다.
+
+**Implemented** (`jpa-dsl-migration-draft-generator`, `docs/JPA_DSL_MIGRATION_DRAFT_GENERATOR_PLAN.md`):
+
+- `verifyMigrationDraft` — `jpaDsl` expected schema와 현재 Flyway schema를 DB 없이 정적 비교, drift가 있으면 build FAIL. `livePostgresTest`의 `ddl-auto=validate`보다 앞단에서 검출.
+- `generateMigrationDraft` — 다음 버전 draft SQL을 `build/generated/migration-draft/`에 생성. 자동 적용·destructive DDL 자동 생성 없음(manual review).
+- Evidence: `./gradlew -p build-logic test` (7/7 PASS), `:storage:jpa:verifyMigrationDraft` PASS, 음성-path(V1 제거) BUILD FAILED 확인.
+
+아래 남은 항목(자동 적용, destructive 자동 마이그레이션)은 여전히 non-goal이다.
 
 **Escalation trigger**:
 

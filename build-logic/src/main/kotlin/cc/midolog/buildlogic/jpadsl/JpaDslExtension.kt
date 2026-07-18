@@ -7,6 +7,12 @@ open class JpaDslExtension {
     var generatedSourceDir: String = "generated/sources/jpaDsl/main/kotlin"
     var domainProjectPath: String = ":core:domain"
 
+    /** Flyway migration directory (relative to the root project) that owns the runtime schema. */
+    var migrationSourceDir: String = "core/application/src/main/resources/db/migration"
+
+    /** Output directory (relative to the build directory) for generated migration drafts. */
+    var migrationDraftDir: String = "generated/migration-draft"
+
     internal val entities: MutableList<JpaEntitySpec> = mutableListOf()
 
     fun entity(domainClass: String, configure: Action<JpaEntitySpec>) {
