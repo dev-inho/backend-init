@@ -22,6 +22,23 @@ class RuntimeProfileConfigTest {
         assertTrue(localConfig.contains("port: \${REDIS_PORT:6380}"))
     }
 
+    @Test
+    fun `flyway migration owns storage schema`() {
+        val migration = resourceText("db/migration/V1__create_storage_tables.sql")
+
+        listOf(
+            "CREATE TABLE IF NOT EXISTS sample",
+            "CREATE TABLE IF NOT EXISTS app_user",
+            "CREATE TABLE IF NOT EXISTS scalar_sample",
+            "CREATE TABLE IF NOT EXISTS relation_parent",
+            "CREATE TABLE IF NOT EXISTS relation_child",
+            "CONSTRAINT fk_relation_child_parent",
+            "CREATE INDEX IF NOT EXISTS idx_relation_child_parent_id",
+        ).forEach { expected ->
+            assertTrue(migration.contains(expected), "migration must contain: $expected")
+        }
+    }
+
     private fun resourceText(path: String): String =
         ClassPathResource(path).inputStream.bufferedReader().use { it.readText() }
 }

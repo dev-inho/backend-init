@@ -154,7 +154,17 @@ SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:bootRun
 
 # 로컬 JPA profile로 user/sample persistence adapter 검증
 SPRING_PROFILES_ACTIVE=local,jpa ./gradlew :core:application:test
+
+# generated JPA mapping을 실제 PostgreSQL에 대해 검증
+DB_URL=jdbc:postgresql://localhost:55432/backend \
+DB_USERNAME=backend \
+DB_PASSWORD=backend \
+./gradlew :storage:jpa:livePostgresTest
 ```
+
+Runtime schema는 `core:application/src/main/resources/db/migration`의 Flyway migration이 소유합니다. `docker/postgres/init.sql`은 로컬 PostgreSQL bootstrap만 담당하고 table DDL은 중복 관리하지 않습니다.
+
+JPA DSL의 해소된 리스크와 남은 non-blocking 리스크는 [JPA DSL Risk Register](docs/JPA_DSL_RISK_REGISTER.md)에 정리합니다.
 
 ### 품질 게이트
 

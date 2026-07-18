@@ -1,0 +1,109 @@
+plugins {
+    id 'cc.midolog.jpa-dsl'
+    id 'org.jetbrains.kotlin.plugin.spring'
+    id 'org.jetbrains.kotlin.plugin.jpa'
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.6"
+    }
+}
+
+dependencies {
+    implementation project(':core:domain')
+    implementation project(':support:util')
+
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-flyway'
+    testRuntimeOnly 'com.h2database:h2'
+    testRuntimeOnly 'org.flywaydb:flyway-database-postgresql'
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'live-postgres'
+    }
+}
+
+tasks.register('livePostgresTest', Test) {
+    group = 'verification'
+    description = 'Runs generated JPA mapping smoke tests against a live PostgreSQL database.'
+
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    shouldRunAfter tasks.named('test')
+
+    useJUnitPlatform {
+        includeTags 'live-postgres'
+    }
+}
+
+jpaDsl {
+    entity('cc.midolog.sample.model.Sample') {
+        table = 'sample'
+        id = 'id'
+    }
+
+    entity('cc.midolog.user.model.User') {
+        table = 'app_user'
+        id = 'id'
+
+        field('displayName') {
+            column = 'display_name'
+        }
+    }
+
+    entity('cc.midolog.sample.model.ScalarSample') {
+        table = 'scalar_sample'
+        id = 'id'
+
+        field('displayName') {
+            column = 'display_name'
+        }
+        field('nickname') {
+            nullable = true
+        }
+        field('status') {
+            enumStrategy = 'STRING'
+        }
+        field('code') {
+            column = 'code_value'
+            storageType = 'String'
+            converter = 'cc.midolog.storage.jpa.sample.ScalarSampleCodeJpaConverter'
+        }
+    }
+
+    entity('cc.midolog.sample.model.RelationParent') {
+        table = 'relation_parent'
+        id = 'id'
+
+        relation('children') {
+            type = 'oneToMany'
+            target = 'cc.midolog.sample.model.RelationChild'
+            mappedBy = 'parent'
+            toDomain = 'emptyList()'
+        }
+    }
+
+    entity('cc.midolog.sample.model.RelationChild') {
+        table = 'relation_child'
+        id = 'id'
+
+        field('parentId') {
+            relation = 'parent'
+        }
+        relation('parent') {
+            type = 'manyToOne'
+            target = 'cc.midolog.sample.model.RelationParent'
+            sourceField = 'parentId'
+            joinColumn = 'parent_id'
+            referencedColumn = 'id'
+        }
+    }
+}

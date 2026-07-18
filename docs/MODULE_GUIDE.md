@@ -367,66 +367,41 @@ cc.midolog.storage.jpa.config
 
 **build.gradle 예시**:
 ```groovy
-def jpaEntitySpecs = [
-    [
-        domainClass: 'cc.midolog.sample.model.Sample',
-        table      : 'sample',
-        id         : 'id',
-    ],
-    [
-        domainClass: 'cc.midolog.user.model.User',
-        table      : 'app_user',
-        id         : 'id',
-        fields     : [
-            displayName: [column: 'display_name'],
-        ],
-    ],
-    [
-        domainClass: 'cc.midolog.sample.model.ScalarSample',
-        table      : 'scalar_sample',
-        id         : 'id',
-        fields     : [
-            displayName: [column: 'display_name'],
-            nickname   : [nullable: true],
-            status     : [enum: 'STRING'],
-            code       : [
-                column     : 'code_value',
-                storageType: 'String',
-                converter  : 'cc.midolog.storage.jpa.sample.ScalarSampleCodeJpaConverter',
-            ],
-        ],
-    ],
-    [
-        domainClass: 'cc.midolog.sample.model.RelationParent',
-        table      : 'relation_parent',
-        id         : 'id',
-        relations  : [
-            children: [
-                type    : 'oneToMany',
-                target  : 'cc.midolog.sample.model.RelationChild',
-                mappedBy: 'parent',
-                toDomain: 'emptyList',
-            ],
-        ],
-    ],
-    [
-        domainClass: 'cc.midolog.sample.model.RelationChild',
-        table      : 'relation_child',
-        id         : 'id',
-        fields     : [
-            parentId: [relation: 'parent'],
-        ],
-        relations  : [
-            parent: [
-                type            : 'manyToOne',
-                target          : 'cc.midolog.sample.model.RelationParent',
-                sourceField     : 'parentId',
-                joinColumn      : 'parent_id',
-                referencedColumn: 'id',
-            ],
-        ],
-    ],
-]
+plugins {
+    id 'cc.midolog.jpa-dsl'
+}
+
+jpaDsl {
+    entity('cc.midolog.sample.model.Sample') {
+        table = 'sample'
+        id = 'id'
+    }
+
+    entity('cc.midolog.user.model.User') {
+        table = 'app_user'
+        id = 'id'
+
+        field('displayName') {
+            column = 'display_name'
+        }
+    }
+
+    entity('cc.midolog.sample.model.RelationChild') {
+        table = 'relation_child'
+        id = 'id'
+
+        field('parentId') {
+            relation = 'parent'
+        }
+        relation('parent') {
+            type = 'manyToOne'
+            target = 'cc.midolog.sample.model.RelationParent'
+            sourceField = 'parentId'
+            joinColumn = 'parent_id'
+            referencedColumn = 'id'
+        }
+    }
+}
 
 dependencies {
     implementation project(':core:domain')
@@ -444,16 +419,21 @@ dependencies {
 - `JpaSampleRepositoryAdapter`, `JpaUserRepositoryAdapter`와 JPA repository scan은 `jpa` profile에서만 활성화한다.
 - 운영 실행에서는 `mybatis`와 `jpa` persistence profile을 동시에 켜지 않는다.
 - JPA `@Entity`, `@Table`, Spring Data repository는 `storage:jpa` 내부에만 둔다.
-- domain model에 필드를 추가하면 생성 task가 JPA entity/mapper 필드를 따라 생성한다. table/id 변경은 `jpaEntitySpecs`에서 관리한다.
-- `storage/jpa/build.gradle`은 DSL 선언과 Gradle wiring만 관리하고, generator 구현은 `storage/jpa/gradle/jpa-dsl-generator.gradle`에 둔다.
-- scalar DSL은 `column`, `nullable`, `enum: 'STRING'`, `storageType` + `converter`를 지원한다.
+- domain model에 필드를 추가하면 생성 task가 JPA entity/mapper 필드를 따라 생성한다. table/id/field/relation 변경은 typed `jpaDsl { ... }` 선언에서 관리한다.
+- `storage:jpa`는 `build-logic`의 `cc.midolog.jpa-dsl` 내부 Gradle plugin을 적용한다.
+- `storage/jpa/build.gradle`은 typed DSL 선언과 storage dependency만 관리한다. generated source directory, sourceSets, task wiring, parser, validator, renderer는 `build-logic` plugin이 소유한다.
+- pluginization Phase 2에서 typed DSL/validator/renderer ownership은 plugin으로 이동했다. Phase 3는 task/sourceSet wiring, external build directory 검증, DSL recipe, decision log/handoff 정리로 닫는다.
+- scalar DSL은 `column`, `nullable`, `enumStrategy = 'STRING'`, `storageType` + `converter`를 지원한다.
 - value-object converter는 `toStorage(domainType): storageType`, `toDomain(storageType): domainType` 함수를 제공한다.
 - relation DSL은 `manyToOne`, `oneToMany`, `target`, `sourceField`, `joinColumn`, `referencedColumn`, `mappedBy`를 지원한다.
 - relation fetch는 `FetchType.LAZY`로 생성한다.
 - mapper는 deep graph persistence를 자동 수행하지 않는다. `oneToMany`는 `toDomain: 'emptyList'`처럼 explicit shallow policy로 lazy proxy 접근과 무한 재귀를 피한다.
 - unsupported DSL 선언은 generated Kotlin compile error가 아니라 generator validation `GradleException`으로 실패해야 한다. 메시지는 domain class와 field/relation 이름을 포함해야 한다.
 - generated source는 Gradle build directory 아래에만 생성된다. `storage/jpa/src/main/kotlin`에는 adapter/config/converter 같은 hand-written persistence code만 둔다.
+- 실제 PostgreSQL driver/dialect confidence가 필요하면 Docker PostgreSQL을 띄우고 `DB_URL=jdbc:postgresql://localhost:<port>/backend ./gradlew :storage:jpa:livePostgresTest`를 실행한다. 일반 `test` task는 `live-postgres` tag를 제외한다.
+- runtime schema는 `core:application/src/main/resources/db/migration`의 Flyway migration이 소유한다. domain/DSL 변경으로 generated JPA table이 바뀌면 migration도 같은 변경 단위에서 갱신한다.
 - 현재 relation DSL은 simple parent-child relation만 지원한다. many-to-many, cascade remove, orphan removal, arbitrary deep graph persistence는 범위 밖이다.
+- public Gradle plugin publishing은 현재 범위가 아니다. 여러 repository에서 재사용하거나 binary compatibility가 필요해질 때 별도 plan으로 승격한다.
 
 ### 8. support:util
 **책임**: 순수 Kotlin 유틸. IdGenerator, 확장함수, 공통 헬퍼.
@@ -526,9 +506,10 @@ dependencies {
 2. `core:application`에 application service를 추가하고, concrete storage import 없이 domain port만 주입한다.
 3. REST API가 필요하면 `web.<context>` controller와 DTO를 추가한다. controller는 request/response 변환만 담당하고 저장 구현을 직접 알지 않는다.
 4. MyBatis를 지원하려면 `storage:mybatis`에 mapper interface, XML mapper, `@Profile("mybatis")` repository adapter를 추가한다.
-5. JPA를 지원하려면 `storage:jpa/build.gradle`의 `jpaEntitySpecs`에 domain class/table/id/field 매핑을 선언하고, `@Profile("jpa")` repository adapter를 추가한다.
+5. JPA를 지원하려면 `storage:jpa/build.gradle`의 `jpaDsl { ... }`에 domain class/table/id/field/relation 매핑을 선언하고, `@Profile("jpa")` repository adapter를 추가한다.
 6. 같은 port contract를 MyBatis/JPA adapter 모두에 적용하는 테스트를 추가하고, profile wiring 테스트에서 profile별 port bean이 하나만 등록되는지 검증한다.
 7. `core:domain` purity test가 Spring/JPA/MyBatis annotation 유입을 막는지 확인한 뒤 `./gradlew test`를 실행한다.
+8. JPA DSL이 실패하면 generated Kotlin을 고치지 말고 `jpaDsl { ... }` 선언이나 domain data class를 수정한다. unsupported DSL은 plugin validation 단계에서 실패해야 한다.
 
 보안 주의: `user` 예제는 persistence 구조 예시이며 인증 구현이 아니다. 비밀번호 저장, password hashing, refresh token, session, role/permission 정책은 별도 보안 설계와 테스트 없이 템플릿 예제로 추가하지 않는다.
 
