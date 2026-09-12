@@ -48,12 +48,6 @@ tasks.register('livePostgresTest', Test) {
     }
 }
 
-afterEvaluate {
-    tasks.named('kaptGenerateStubsKotlin') {
-        dependsOn('generateJpaDslSources')
-    }
-}
-
 tasks.withType(Test).configureEach {
     systemProperty "queryDsl.generatedSourceDir", layout.buildDirectory.dir("generated/source/kapt/main").get().asFile.absolutePath
 }
@@ -132,5 +126,11 @@ jpaDsl {
             joinColumn = 'parent_id'
             referencedColumn = 'id'
         }
+    }
+}
+
+afterEvaluate {
+    tasks.named('kaptGenerateStubsKotlin') {
+        dependsOn('generateJpaDslSources')
     }
 }
