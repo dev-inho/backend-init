@@ -19,26 +19,23 @@ class SelfContainedQueryDslGuardTest {
                     ?: error("System property queryDsl.generatedSourceDir is not set")
 
                 val expectedClasses = listOf(
-                    "QSampleJpaEntity.java",
-                    "QUserJpaEntity.java",
-                    "QFileMetaJpaEntity.java",
-                    "QScalarSampleJpaEntity.java",
-                    "QRelationParentJpaEntity.java",
-                    "QRelationChildJpaEntity.java"
+                    "cc/midolog/storage/jpa/sample/QSampleJpaEntity.java",
+                    "cc/midolog/storage/jpa/user/QUserJpaEntity.java",
+                    "cc/midolog/storage/jpa/file/QFileMetaJpaEntity.java",
+                    "cc/midolog/storage/jpa/jpadsl/fixture/QScalarSampleJpaEntity.java",
+                    "cc/midolog/storage/jpa/jpadsl/fixture/QRelationParentJpaEntity.java",
+                    "cc/midolog/storage/jpa/jpadsl/fixture/QRelationChildJpaEntity.java"
                 )
 
                 val generatedDir = File(generatedSourceDir)
+                // If it doesn't exist, we fail immediately to show the error
                 assertTrue(generatedDir.exists(), "Generated source directory does not exist: $generatedDir")
 
-                val actualFiles = generatedDir.walkTopDown()
-                    .filter { it.isFile && it.name.endsWith(".java") }
-                    .map { it.name }
-                    .toList()
-
                 for (expected in expectedClasses) {
+                    val actualFile = File(generatedDir, expected)
                     assertTrue(
-                        actualFiles.contains(expected),
-                        "Expected generated QueryDSL class $expected not found in $generatedSourceDir"
+                        actualFile.exists() && actualFile.isFile,
+                        "Expected generated QueryDSL class file not found at exact path: $expected"
                     )
                 }
             },
