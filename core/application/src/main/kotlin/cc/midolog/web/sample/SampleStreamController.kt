@@ -1,6 +1,7 @@
 package cc.midolog.web.sample
 
 import cc.midolog.sample.model.Sample
+import cc.midolog.web.sample.dto.SampleResponse
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -15,10 +16,10 @@ import org.springframework.web.bind.annotation.RestController
 class SampleStreamController {
 
     @GetMapping("/stream", produces = [MediaType.APPLICATION_NDJSON_VALUE])
-    fun stream(): Flow<Sample> = flow {
+    fun stream(): Flow<SampleResponse> = flow {
         repeat(3) { i ->
             delay(100)
-            emit(Sample(id = "stream_$i", name = "item-$i"))
+            emit(SampleResponse.from(Sample(id = "stream_$i", name = "item-$i")))
         }
     }
 }

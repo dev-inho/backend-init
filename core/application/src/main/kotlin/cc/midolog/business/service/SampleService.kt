@@ -1,7 +1,7 @@
 package cc.midolog.business.service
 
-import cc.midolog.common.cache.SampleCache
 import cc.midolog.sample.model.Sample
+import cc.midolog.sample.port.cache.SampleCachePort
 import cc.midolog.sample.port.repository.SampleRepositoryPort
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -11,20 +11,20 @@ import org.springframework.stereotype.Service
 @Service
 class SampleService(
     private val sampleRepositoryPort: SampleRepositoryPort,
-    private val sampleCache: SampleCache,
+    private val sampleCachePort: SampleCachePort,
 ) {
     /** 캐시 우선 조회(cache-aside): 미스 시 repo 조회 후 캐시에 저장. */
     suspend fun findById(id: String): Sample? {
-        sampleCache.get(id)?.let { return it }
+        sampleCachePort.get(id)?.let { return it }
         val found = sampleRepositoryPort.findById(id) ?: return null
-        sampleCache.put(found)
+        sampleCachePort.put(found)
         return found
     }
 
     /** 저장 후 캐시 갱신(write-through). */
     suspend fun save(sample: Sample): Sample {
         val saved = sampleRepositoryPort.save(sample)
-        sampleCache.put(saved)
+        sampleCachePort.put(saved)
         return saved
     }
 
