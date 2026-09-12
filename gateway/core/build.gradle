@@ -1,0 +1,24 @@
+plugins {
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.6"
+    }
+}
+
+dependencies {
+    implementation project(':support:logging')
+    implementation project(':support:util')
+    implementation project(':support:web')
+    implementation project(':support:jwt')
+
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'io.projectreactor.kotlin:reactor-kotlin-extensions'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-reactor'
+    implementation 'tools.jackson.module:jackson-module-kotlin'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
+}
