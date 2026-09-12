@@ -9,7 +9,7 @@ import cc.midolog.gateway.ratelimit.RateLimiter
 import cc.midolog.gateway.ratelimit.RedisRateLimiter
 import cc.midolog.gateway.route.GatewayRouteSelector
 import cc.midolog.gateway.visibility.RequestEventStore
-import cc.midolog.gateway.visibility.RequestVisibilityController
+import cc.midolog.gateway.visibility.RequestVisibilityHandler
 import cc.midolog.gateway.visibility.RequestVisibilityFilter
 import cc.midolog.web.filter.HttpLoggingFilter
 import cc.midolog.web.filter.RequestIdFilter
@@ -22,7 +22,6 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.server.RouterFunction
-import org.springframework.web.reactive.result.method.annotation.RequestMappingHandlerMapping
 import java.time.Clock
 import java.time.ZoneOffset
 
@@ -74,21 +73,12 @@ class GatewayAppIntegrationTest {
         // Request Visibility 빈
         assertNotNull(applicationContext.getBean(RequestEventStore::class.java))
         assertNotNull(applicationContext.getBean(RequestVisibilityFilter::class.java))
-        val controller = applicationContext.getBean(RequestVisibilityController::class.java)
-        assertNotNull(controller)
+        val handler = applicationContext.getBean(RequestVisibilityHandler::class.java)
+        assertNotNull(handler)
 
-        // WebFlux RequestMappingHandlerMapping에 Controller 핸들러 메소드 등록 여부
-        val requestMapping = applicationContext.getBean(
-            "requestMappingHandlerMapping",
-            RequestMappingHandlerMapping::class.java
-        )
-        val hasHandlerMethod = requestMapping.handlerMethods.values.any {
-            it.beanType == RequestVisibilityController::class.java
-        }
-        assertTrue(
-            hasHandlerMethod,
-            "RequestVisibilityController must have handler methods mapped in RequestMappingHandlerMapping"
-        )
+        // RouterFunction에 visibilityRoutes 등록 여부
+        val visibilityRoutes = applicationContext.getBean("visibilityRoutes", RouterFunction::class.java)
+        assertNotNull(visibilityRoutes, "visibilityRoutes must be registered as a RouterFunction")
 
         // support:web 컴포넌트 스캔 빈 등록 여부
         assertNotNull(

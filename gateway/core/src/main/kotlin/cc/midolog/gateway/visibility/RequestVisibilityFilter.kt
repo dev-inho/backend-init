@@ -3,7 +3,7 @@ package cc.midolog.gateway.visibility
 import cc.midolog.logging.LoggingMdc
 import java.time.Clock
 import java.time.Instant
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ServerWebExchange
@@ -14,24 +14,23 @@ import reactor.core.publisher.Mono
 /**
  * 요청 완료 후 메타데이터를 이벤트 저장소에 기록하는 가시성 필터.
  *
- * `gateway.request-visibility.enabled=true` 설정 시에만 빈으로 등록된다.
+ * GatewayAutoConfiguration에 의해 `gateway.request-visibility.enabled=true` 조건에서만 빈으로 등록된다.
  *
- * 필터 체인 순서 계약:
- * -2 HttpLoggingFilter(support:web) → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter(support:web) → 1 JwtAuthFilter → 100 RequestVisibilityFilter
+ * 필터 체인 순서:
+ * -100 Spring Security (embedded 호스트의 경우) → -2 HttpLoggingFilter(support:web) → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter(support:web) → 1 JwtAuthFilter (standalone의 경우) → 100 RequestVisibilityFilter
  *
- * 앞뒤 순서와 위치 이유:
- * 앞에는 cc.midolog.web.filter.HttpLoggingFilter(@Order(-2)), [cc.midolog.gateway.filter.AuthTokenRateLimitFilter](@Order(-1)),
- * cc.midolog.web.filter.RequestIdFilter(@Order(0)), [cc.midolog.gateway.filter.JwtAuthFilter](@Order(1)) 등
- * 모든 보안·식별 필터와 프록시 라우팅이 선행한다. 이 필터는 체인의 가장 마지막(@Order(100))에 위치한다.
- * 앞선 필터에서 거절된 요청(Rate Limit의 429, JWT 검증 실패의 401)이나 프록시 타임아웃(504) 등 조기 종료된
- * 응답까지 빠짐없이 완료 시점(doFinally)에 최종 상태 코드와 소요 시간을 계측하여 저장소에 기록하기 위함이다.
+ * 앞선 필터들의 단축 동작과 기록 한계:
+ * 이 필터는 체인의 가장 마지막(@Order(100))에 위치한다.
+ * 앞선 필터들(예: Spring Security, AuthTokenRateLimitFilter, JwtAuthFilter)에서 요청을
+ * 조기 단축(short-circuit)하여 401이나 429 응답을 반환할 경우, 요청이 이 필터까지 도달하지 않으므로
+ * 해당 거절 요청들은 이벤트 저장소에 기록되지 않는다. 프록시 타임아웃(504) 등 필터를 거쳐
+ * 백엔드 라우팅 중 발생한 응답만 기록된다.
  *
  * 시간 측정 및 Clock 주입:
  * 시스템 시계 대신 [Clock]을 주입받아 요청 시작 시각과 소요 시간을 측정한다. 테스트 환경에서
  * 고정 시계(Clock.fixed)를 주입해 결정적인 시각 검증이 가능하도록 설계되었다.
  */
 @Order(100)
-@ConditionalOnProperty(prefix = "gateway.request-visibility", name = ["enabled"], havingValue = "true")
 class RequestVisibilityFilter(
     private val eventStore: RequestEventStore,
     private val clock: Clock = Clock.systemUTC(),

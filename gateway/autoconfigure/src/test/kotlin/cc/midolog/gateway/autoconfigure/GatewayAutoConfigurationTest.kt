@@ -8,7 +8,7 @@ import cc.midolog.gateway.ratelimit.RateLimiter
 import cc.midolog.gateway.ratelimit.RedisRateLimiter
 import cc.midolog.gateway.route.GatewayRouteSelector
 import cc.midolog.gateway.visibility.RequestEventStore
-import cc.midolog.gateway.visibility.RequestVisibilityController
+import cc.midolog.gateway.visibility.RequestVisibilityHandler
 import cc.midolog.gateway.visibility.RequestVisibilityFilter
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DisplayName
@@ -68,7 +68,7 @@ class GatewayAutoConfigurationTest {
             "gateway.request-visibility.enabled=true"
         ).run { context ->
             assertNull(context.startupFailure)
-            
+
             // 공통 빈
             assertTrue(context.containsBean("authTokenRateLimitFilter"))
             assertNotNull(context.getBean(AuthTokenRateLimitFilter::class.java))
@@ -79,7 +79,7 @@ class GatewayAutoConfigurationTest {
             // Visibility 빈
             assertNotNull(context.getBean(RequestVisibilityFilter::class.java))
             assertNotNull(context.getBean(RequestEventStore::class.java))
-            assertNotNull(context.getBean(RequestVisibilityController::class.java))
+            assertNotNull(context.getBean(RequestVisibilityHandler::class.java))
 
             // Proxy 빈
             assertNotNull(context.getBean(ProxyHandler::class.java))
@@ -89,14 +89,8 @@ class GatewayAutoConfigurationTest {
             assertNotNull(context.getBean(GatewayRouteProperties::class.java))
             assertNotNull(context.getBean(JwtAuthFilter::class.java))
 
-            val requestMapping = context.getBean("requestMappingHandlerMapping", RequestMappingHandlerMapping::class.java)
-            val hasRecent = requestMapping.handlerMethods.values.any { 
-                it.beanType == RequestVisibilityController::class.java && it.method.name == "recent" 
-            }
-            assertTrue(
-                hasRecent,
-                "RequestVisibilityController.recent must be registered as a WebFlux handler method"
-            )
+            val visibilityRoutes = context.getBean("visibilityRoutes", RouterFunction::class.java)
+            assertNotNull(visibilityRoutes, "visibilityRoutes must be registered as a RouterFunction")
         }
     }
 
@@ -110,7 +104,7 @@ class GatewayAutoConfigurationTest {
             "gateway.request-visibility.enabled=true"
         ).run { context ->
             assertNull(context.startupFailure)
-            
+
             // 공통 빈
             assertTrue(context.containsBean("authTokenRateLimitFilter"))
             assertNotNull(context.getBean(AuthTokenRateLimitFilter::class.java))
@@ -121,7 +115,7 @@ class GatewayAutoConfigurationTest {
             // Visibility 빈
             assertNotNull(context.getBean(RequestVisibilityFilter::class.java))
             assertNotNull(context.getBean(RequestEventStore::class.java))
-            assertNotNull(context.getBean(RequestVisibilityController::class.java))
+            assertNotNull(context.getBean(RequestVisibilityHandler::class.java))
 
             // Proxy 빈
             assertNotNull(context.getBean(ProxyHandler::class.java))
@@ -150,8 +144,8 @@ class GatewayAutoConfigurationTest {
             // Visibility 빈
             assertNotNull(context.getBean(RequestVisibilityFilter::class.java))
             assertNotNull(context.getBean(RequestEventStore::class.java))
-            assertNotNull(context.getBean(RequestVisibilityController::class.java))
-            
+            assertNotNull(context.getBean(RequestVisibilityHandler::class.java))
+
             // Proxy 빈 존재 안함 (이름 + 타입 단언)
             assertFalse(context.containsBean("proxyHandler"))
             assertFalse(context.containsBean("routes"))
@@ -159,6 +153,32 @@ class GatewayAutoConfigurationTest {
             assertFalse(context.containsBean("jwtAuthFilter"))
             assertTrue(context.getBeansOfType(GatewayRouteProperties::class.java).isEmpty())
             assertTrue(context.getBeansOfType(WebClient::class.java).isEmpty())
+
+            // Visibility RouterFunction 확인 및 /api/** 미매칭 검증
+            val visibilityRoutes = context.getBean("visibilityRoutes", RouterFunction::class.java)
+            assertNotNull(visibilityRoutes)
+
+            // 실제 route predicate/요청으로 검증
+            val apiExchange = org.springframework.mock.web.server.MockServerWebExchange.from(
+                org.springframework.mock.http.server.reactive.MockServerHttpRequest.get("/api/some-endpoint").build()
+            )
+            val apiRequest = org.springframework.mock.web.reactive.function.server.MockServerRequest.builder()
+                .method(org.springframework.http.HttpMethod.GET)
+                .uri(java.net.URI("/api/some-endpoint"))
+                .exchange(apiExchange)
+                .build()
+
+            val visibilityExchange = org.springframework.mock.web.server.MockServerWebExchange.from(
+                org.springframework.mock.http.server.reactive.MockServerHttpRequest.get("/internal/gateway/requests").build()
+            )
+            val visibilityRequest = org.springframework.mock.web.reactive.function.server.MockServerRequest.builder()
+                .method(org.springframework.http.HttpMethod.GET)
+                .uri(java.net.URI("/internal/gateway/requests"))
+                .exchange(visibilityExchange)
+                .build()
+
+            assertTrue(visibilityRoutes.route(apiRequest).blockOptional().isEmpty, "/api/** should not be matched by visibility routes")
+            assertTrue(visibilityRoutes.route(visibilityRequest).blockOptional().isPresent, "/internal/gateway/requests should be matched")
         }
     }
 
@@ -173,7 +193,7 @@ class GatewayAutoConfigurationTest {
         ).run { context ->
             val routerMapping = context.getBean("routerFunctionMapping", RouterFunctionMapping::class.java)
             val requestMapping = context.getBean("requestMappingHandlerMapping", RequestMappingHandlerMapping::class.java)
-            
+
             // Functional 라우터가 Controller 매핑보다 우선순위가 높은지 실측
             assertEquals(-1, routerMapping.order)
             assertEquals(0, requestMapping.order)
@@ -196,7 +216,7 @@ class GatewayAutoConfigurationTest {
             assertNull(context.startupFailure)
             assertTrue(context.getBeansOfType(RequestVisibilityFilter::class.java).isEmpty())
             assertTrue(context.getBeansOfType(RequestEventStore::class.java).isEmpty())
-            assertTrue(context.getBeansOfType(RequestVisibilityController::class.java).isEmpty())
+            assertTrue(context.getBeansOfType(RequestVisibilityHandler::class.java).isEmpty())
         }
     }
 
@@ -209,7 +229,7 @@ class GatewayAutoConfigurationTest {
             assertNull(context.startupFailure)
             assertFalse(context.getBeansOfType(RequestVisibilityFilter::class.java).isEmpty())
             assertFalse(context.getBeansOfType(RequestEventStore::class.java).isEmpty())
-            assertFalse(context.getBeansOfType(RequestVisibilityController::class.java).isEmpty())
+            assertFalse(context.getBeansOfType(RequestVisibilityHandler::class.java).isEmpty())
         }
     }
 }

@@ -67,16 +67,18 @@ class RequestVisibilityTest {
     }
 
     @Test
-    fun `controller returns recent events without raw body or headers`() {
+    fun `handler returns recent events without raw body or headers`() {
         val store = RequestEventStore(RequestVisibilityProperties(capacity = 10))
         store.record(event(path = "/api/users"))
-        val controller = RequestVisibilityController(store)
+        val handler = RequestVisibilityHandler(store)
 
-        val response = controller.recent()
+        val request = org.springframework.mock.web.reactive.function.server.MockServerRequest.builder().build()
+        val response = handler.recent(request).block() as org.springframework.web.reactive.function.server.EntityResponse<List<RequestVisibilityEvent>>
 
-        assertEquals(1, response.size)
-        assertEquals("/api/users", response.single().path)
-        assertNull(response.single().requestId)
+        val body = response.entity()
+        assertEquals(1, body.size)
+        assertEquals("/api/users", body.single().path)
+        assertNull(body.single().requestId)
     }
 
     @Test
