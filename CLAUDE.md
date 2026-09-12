@@ -18,7 +18,10 @@
 |---------|------|-------------|-------------|
 | core:application | core/application | 비즈니스 애플리케이션 부트스트랩 | core:domain, support:util, support:logging, support:web, support:jwt (runtimeOnly: client:storage-file, storage:mybatis, storage:jpa) |
 | core:batch | core/batch | 배치/스케줄 작업 | support:logging |
-| core:gateway | core/gateway | 요청 수신·라우팅·트랜잭션 ID | support:logging, support:util, support:web, support:jwt |
+| gateway:core | gateway/core | 게이트웨이 코어 필터, 라우팅, 프록시, 관측성 | support:logging, support:util, support:web, support:jwt |
+| gateway:autoconfigure | gateway/autoconfigure | gateway.mode 기반 자동 설정 및 조건부 빈 등록 | gateway:core |
+| gateway:starter | gateway/starter | 게이트웨이 탑재용 스타터 라이브러리 (core + autoconfigure) | gateway:core (api), gateway:autoconfigure (api) |
+| gateway:app | gateway/app | 독립 실행형 Spring Boot 게이트웨이 서비스 (포트 8080) | gateway:starter, support:logging (test: support:web) |
 | core:domain | core/domain | 도메인 모델 및 포트 인터페이스 | - |
 | client:storage-file | client/storage-file | 외부 로컬 파일 저장소 연동 | core:domain |
 | storage:mybatis | storage/mybatis | MyBatis 데이터 접근 계층 | core:domain, support:util |
@@ -35,9 +38,12 @@
 # Build all packages (in dependency order)
 ./gradlew build
 
-# Run specific package
-./gradlew :core:gateway:bootRun
-./gradlew :core:application:bootRun
+# Run standalone gateway (port 8080, requires JWT_SECRET >= 32 bytes)
+export JWT_SECRET="$(openssl rand -base64 48)"
+SPRING_PROFILES_ACTIVE=local ./gradlew :gateway:app:bootRun
+
+# Run business application (port 8081)
+SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:bootRun
 
 # Run tests
 ./gradlew test
@@ -45,9 +51,12 @@
 
 ## Build Order
 1. `support:util`
-2. `support:logging`, `support:jwt`, `core:domain`
+2. `core:domain`, `support:logging`, `support:jwt`
 3. `support:web`, `client:storage-file`, `storage:mybatis`, `storage:jpa`
-4. `core:batch`, `core:gateway`, `core:application`
+4. `gateway:core`
+5. `gateway:autoconfigure`
+6. `gateway:starter`
+7. `core:batch`, `gateway:app`, `core:application`
 
 ## Shared Dependencies
 | Dependency | Version | Used By |
@@ -67,8 +76,12 @@ backend-init/
 ├── core/
 │   ├── application/
 │   ├── batch/
-│   ├── domain/
-│   └── gateway/
+│   └── domain/
+├── gateway/
+│   ├── app/
+│   ├── autoconfigure/
+│   ├── core/
+│   └── starter/
 ├── client/
 │   └── storage-file/
 ├── storage/

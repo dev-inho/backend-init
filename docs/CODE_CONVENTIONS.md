@@ -28,17 +28,27 @@
    * 허용 가능한 트레이드오프로 본다.
    */
   ```
-- **`core/gateway/src/main/kotlin/cc/midolog/gateway/filter/AuthTokenRateLimitFilter.kt:14-23`**
+- **`gateway/core/src/main/kotlin/cc/midolog/gateway/filter/AuthTokenRateLimitFilter.kt:14-33`**
   ```kotlin
   /**
-   * 인증 토큰 발급 엔드포인트(POST /api/auth/token) 전용 brute-force 방어 필터.
-   * - 대상: POST /api/auth/token 하나뿐이며, 그 외 경로는 그대로 통과한다.
-   * - key: 클라이언트 remote address 기준으로 [RateLimiter]를 조회한다.
-   * - 한도를 초과하면 429를 반환하고, 응답 본문은 비워 limiter 내부 상태나
-   *   자격증명 관련 정보를 노출하지 않는다.
-   * - [RateLimiter] 조회 자체가 실패해도 경고 로그 후 요청을 통과시킨다(fail-open).
+   * 인증 토큰 발급 엔드포인트(POST /api/auth/token) 전용 무차별 대입(brute-force) 방어 필터.
    *
-   * [JwtAuthFilter](@Order(1))보다 먼저 실행되도록 순서를 그보다 낮게 둔다.
+   * 필터 체인 순서 계약:
+   * -2 HttpLoggingFilter(support:web) → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter(support:web) → 1 JwtAuthFilter → 100 RequestVisibilityFilter
+   *
+   * 앞뒤 순서와 위치 이유:
+   * 앞에는 최외곽 로깅 필터(cc.midolog.web.filter.HttpLoggingFilter, @Order(-2))가 위치해
+   * 모든 인입 요청의 시작과 종료 메타데이터를 기록한다. 뒤에는 cc.midolog.web.filter.RequestIdFilter(@Order(0)),
+   * [JwtAuthFilter](@Order(1)), cc.midolog.gateway.visibility.RequestVisibilityFilter(@Order(100))가
+   * 실행된다. 토큰 발급 엔드포인트는 로그인 전(미인증 상태)에 호출되므로 [JwtAuthFilter]보다 앞단에서
+   * 무차별 대입을 차단해야 한다. 또한 RequestIdFilter보다도 앞서 한도 초과(429)로 즉시 거절함으로써
+   * 미인증 공격 트래픽에 대한 불필요한 컨텍스트 생성 비용을 선제적으로 줄인다.
+   *
+   * 동작 및 정책:
+   * - 대상: POST /api/auth/token 하나뿐이며 그 외 경로는 그대로 통과한다.
+   * - 키: 클라이언트 remote address 기준으로 [RateLimiter]를 조회한다.
+   * - 한도 초과 시 429(TOO_MANY_REQUESTS)를 반환하고 응답 본문은 비워 limiter 내부 상태나 자격증명 정보를 노출하지 않는다.
+   * - [RateLimiter] 장애 발생 시 경고 로그 후 요청을 통과시킨다(fail-open).
    */
   ```
 
@@ -82,8 +92,21 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 ### 웹 계층 및 응답 DTO
 - 컨트롤러 응답 DTO 필수: `cc.midolog.web` 하위 컨트롤러는 도메인 모델(`Sample`, `User`)을 `ApiResponse`로 직접 반환하지 않고 전용 응답 DTO(`web/<ctx>/dto/*Response`)를 사용해야 합니다.
 
-### 게이트웨이 패키지 의존 방향
-- 설정 격리: `cc.midolog.gateway.config` 패키지는 하위 프록시/라우트 패키지(`cc.midolog.gateway.proxy`, `cc.midolog.gateway.route`, `cc.midolog.gateway.handler`)를 import하지 않습니다. 의존성 순환을 방지하기 위해 설정은 상위에서 하위를 일방향으로 주입받아야 합니다.
+### 게이트웨이 4모듈 경계 및 아키텍처 규칙
+- **의존 방향 및 모듈 경계**:
+  - `gateway:app` → `gateway:starter` → `gateway:core` + `gateway:autoconfigure` 단방향 흐름을 유지합니다.
+  - `gateway:autoconfigure`는 `gateway:core`에 의존하며, `gateway:core`는 상위 실행 모듈을 알지 못하고 `support:*`(`logging`, `util`, `web`, `jwt`) 모듈만 의존합니다.
+  - 하위 모듈에서 상위 모듈로의 역방향 참조는 엄격히 금지됩니다.
+- **설정 패키지 격리**: `cc.midolog.gateway.config` 패키지는 하위 프록시/라우트 패키지(`cc.midolog.gateway.proxy`, `cc.midolog.gateway.route`, `cc.midolog.gateway.handler`)를 import하지 않습니다 (`GatewayPackageDependencyTest` 가드).
+- **자동 설정 명시 등록 및 컴포넌트 스캔 배제**:
+  - `gateway:autoconfigure`는 광범위한 패키지 컴포넌트 스캔(@ComponentScan)을 사용하지 않고, `@AutoConfiguration`, `@Configuration(proxyBeanMethods = false)`, `@Import`, `@Bean`을 통해 필요한 설정과 빈을 명시적으로 등록합니다.
+  - Spring Boot 4 표준에 따라 자동 설정 클래스는 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`에 FQCN을 등록하며, 레거시 `spring.factories`는 사용하지 않습니다.
+- **`gateway.mode` 필수 및 Fail-fast 원칙**:
+  - 게이트웨이는 `gateway.mode`(`embedded`, `standalone`, `remote`) 설정이 필수이며 기본값을 제공하지 않습니다. 잘못된 값이거나 누락 시 기동 단계에서 즉시 fail-fast합니다.
+- **Embedded 무라우팅 원칙**:
+  - `embedded` 모드에서는 functional routes(`RouteConfig`)와 프록시 빈을 등록하지 않습니다. WebFlux에서 `RouterFunctionMapping`(-1)이 컨트롤러 매핑(0)보다 우선순위가 높기 때문에, 라우트를 비워둠으로써 동일 JVM 내의 `@RestController`가 요청을 직접 처리하도록 합니다.
+- **support:web 웹 필터 호스트 스캔 경계**:
+  - `support:web`의 `HttpLoggingFilter`(@Order(-2))와 `RequestIdFilter`(@Order(0))는 호스트 애플리케이션의 `cc.midolog` 패키지 스캔으로 자동 감지 및 등록되며, `gateway:autoconfigure`가 별도로 등록하지 않습니다.
 
 ### 인프라 어댑터
 - 인프라 격리: Redis, 외부 스토리지 등 인프라 어댑터 구현체는 비즈니스 계층과 분리하여 `infra/` 패키지 아래 위치시킵니다 (예: `cc.midolog.infra.cache.RedisSampleCacheAdapter`).
@@ -96,7 +119,7 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 
 1. **`DomainPurityTest`** (`core/domain/src/test/kotlin/cc/midolog/sample/DomainPurityTest.kt`)
    - 지키는 것: `core:domain` 소스 전반에 프레임워크/ORM 어노테이션 및 패키지 참조 문자열이 유입되는 것을 원천 차단.
-2. **`GatewayPackageDependencyTest`** (`core/gateway/src/test/kotlin/cc/midolog/gateway/GatewayPackageDependencyTest.kt`)
+2. **`GatewayPackageDependencyTest`** (`gateway/core/src/test/kotlin/cc/midolog/gateway/GatewayPackageDependencyTest.kt`)
    - 지키는 것: 게이트웨이 `config` 패키지가 하위 `handler`, `proxy`, `route` 패키지를 역참조하여 순환 참조를 형성하는 것을 차단.
 3. **`ControllerResponseTypeTest`** (`core/application/src/test/kotlin/cc/midolog/web/ControllerResponseTypeTest.kt`)
    - 지키는 것: 웹 컨트롤러에서 도메인 엔티티를 클라이언트에 직접 노출하지 않고 전용 DTO로 변환하여 응답하도록 보장.
