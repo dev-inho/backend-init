@@ -31,7 +31,7 @@ class JpaFileMetaRepositoryPortContractTest : FileMetaRepositoryPortContract() {
 
     override fun port(): FileMetaRepositoryPort {
         // GUARD: Adapter is instantiated without Clock (current main behavior)
-        return JpaFileMetaRepositoryAdapter(repository, transactionTemplate, entityManager, clock())
+        return JpaFileMetaRepositoryAdapter(repository, transactionTemplate, com.querydsl.jpa.impl.JPAQueryFactory(entityManager), clock())
     }
 
     override fun clock(): Clock {

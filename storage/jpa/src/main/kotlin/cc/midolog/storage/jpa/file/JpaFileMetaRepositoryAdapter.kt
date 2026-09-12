@@ -3,7 +3,6 @@ package cc.midolog.storage.jpa.file
 import cc.midolog.file.model.FileMeta
 import cc.midolog.file.model.FileStatus
 import cc.midolog.file.port.repository.FileMetaRepositoryPort
-import jakarta.persistence.EntityManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.annotation.Profile
@@ -15,7 +14,7 @@ import org.springframework.transaction.support.TransactionOperations
 class JpaFileMetaRepositoryAdapter(
     private val fileMetaJpaRepository: FileMetaJpaRepository,
     private val transactionOperations: TransactionOperations,
-    private val entityManager: EntityManager,
+    private val jpaQueryFactory: com.querydsl.jpa.impl.JPAQueryFactory,
     private val clock: java.time.Clock = java.time.Clock.systemUTC(),
 ) : FileMetaRepositoryPort {
 
@@ -37,28 +36,28 @@ class JpaFileMetaRepositoryAdapter(
 
     override suspend fun updateStatus(id: String, status: FileStatus): Boolean = withContext(Dispatchers.IO) {
         transactionOperations.execute {
-            val query = entityManager.createQuery(
-                "UPDATE FileMetaJpaEntity e SET e.status = :status, e.updatedAt = :now WHERE e.id = :id"
-            )
-            query.setParameter("status", status)
-            query.setParameter("now", clock.instant())
-            query.setParameter("id", id)
-            query.executeUpdate() > 0
+            val q = cc.midolog.storage.jpa.file.QFileMetaJpaEntity.fileMetaJpaEntity
+            jpaQueryFactory.update(q)
+                .set(q.status, status)
+                .set(q.updatedAt, clock.instant())
+                .where(q.id.eq(id))
+                .execute() > 0
         } ?: false
     }
 
     override suspend fun findExpiredPending(cutoff: java.time.Instant, limit: Int): List<FileMeta> = withContext(Dispatchers.IO) {
         require(limit > 0) { "limit must be positive" }
         transactionOperations.execute {
-            val query = entityManager.createQuery(
-                "SELECT e FROM FileMetaJpaEntity e WHERE e.status = :status AND e.updatedAt < :cutoff ORDER BY e.updatedAt ASC",
-                FileMetaJpaEntity::class.java
-            )
-            query.setParameter("status", FileStatus.PENDING)
-            query.setParameter("cutoff", cutoff)
-            query.maxResults = limit
-
-            query.resultList.map(FileMetaJpaMapper::toDomain)
+            val q = cc.midolog.storage.jpa.file.QFileMetaJpaEntity.fileMetaJpaEntity
+            jpaQueryFactory.selectFrom(q)
+                .where(
+                    q.status.eq(FileStatus.PENDING),
+                    q.updatedAt.lt(cutoff)
+                )
+                .orderBy(q.updatedAt.asc())
+                .limit(limit.toLong())
+                .fetch()
+                .map(FileMetaJpaMapper::toDomain)
         } ?: emptyList()
     }
 }

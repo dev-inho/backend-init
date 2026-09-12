@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionOperations
 import org.springframework.transaction.support.TransactionTemplate
+import com.querydsl.jpa.impl.JPAQueryFactory
+import jakarta.persistence.EntityManager
 
 /**
  * JPA 영속성 계층 설정 클래스.
@@ -23,6 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate
 @EntityScan("cc.midolog.storage.jpa")
 @EnableJpaRepositories("cc.midolog.storage.jpa")
 class JpaStorageConfig {
+
+    @Bean
+    fun jpaQueryFactory(em: EntityManager) = JPAQueryFactory(em)
 
     @Bean
     fun jpaTransactionOperations(

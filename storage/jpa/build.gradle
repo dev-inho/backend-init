@@ -2,6 +2,7 @@ plugins {
     id 'cc.midolog.jpa-dsl'
     id 'org.jetbrains.kotlin.plugin.spring'
     id 'org.jetbrains.kotlin.plugin.jpa'
+    id 'org.jetbrains.kotlin.kapt'
     id 'io.spring.dependency-management'
 }
 
@@ -17,6 +18,8 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
+    implementation 'io.github.openfeign.querydsl:querydsl-jpa:7.6'
+    kapt 'io.github.openfeign.querydsl:querydsl-apt:7.6:jakarta'
     runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation testFixtures(project(':core:domain'))
@@ -30,6 +33,7 @@ tasks.named('test') {
     useJUnitPlatform {
         excludeTags 'live-postgres'
     }
+    systemProperty "queryDsl.generatedSourceDir", layout.buildDirectory.dir("generated/source/kapt/main").get().asFile.absolutePath
 }
 
 tasks.register('livePostgresTest', Test) {
@@ -119,5 +123,11 @@ jpaDsl {
             joinColumn = 'parent_id'
             referencedColumn = 'id'
         }
+    }
+}
+
+afterEvaluate {
+    tasks.named('kaptGenerateStubsKotlin') {
+        dependsOn('generateJpaDslSources')
     }
 }

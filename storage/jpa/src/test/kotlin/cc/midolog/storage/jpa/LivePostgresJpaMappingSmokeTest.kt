@@ -148,5 +148,8 @@ class LivePostgresJpaMappingSmokeTest {
         fun jpaTransactionOperations(
             transactionManager: PlatformTransactionManager,
         ): TransactionOperations = TransactionTemplate(transactionManager)
+
+        @Bean
+        fun jpaQueryFactory(em: EntityManager) = com.querydsl.jpa.impl.JPAQueryFactory(em)
     }
 }
