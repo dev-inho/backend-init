@@ -6,10 +6,15 @@ import cc.midolog.sample.port.repository.SampleRepositoryPort
 import cc.midolog.user.port.repository.UserRepositoryPort
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.springframework.aop.support.AopUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 import org.springframework.test.context.ActiveProfiles
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
+import java.nio.file.Files
+import java.util.UUID
 
 @SpringBootTest(
     classes = [ApplicationServer::class],
@@ -18,13 +23,20 @@ import org.springframework.test.context.ActiveProfiles
         "spring.flyway.enabled=false",
         "spring.main.allow-bean-definition-overriding=true",
         "storage.file.provider=local",
-        "storage.file.local.root-dir=/tmp",
-        "gateway.mode=embedded",
-        "jwt.secret=12345678901234567890123456789012"
+        "gateway.mode=embedded"
     ]
 )
 @ActiveProfiles("mybatis")
 class MyBatisProfileContextTest {
+
+    companion object {
+        @JvmStatic
+        @DynamicPropertySource
+        fun properties(registry: DynamicPropertyRegistry) {
+            registry.add("jwt.secret") { UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "") }
+            registry.add("storage.file.local.root-dir") { Files.createTempDirectory("midolog-test").toAbsolutePath().toString() }
+        }
+    }
 
     @Autowired
     private lateinit var context: ApplicationContext
@@ -39,8 +51,8 @@ class MyBatisProfileContextTest {
         assertEquals(1, userBeans.size)
         assertEquals(1, fileBeans.size)
 
-        assertEquals("MyBatisSampleRepositoryAdapter", sampleBeans.first()?.let { org.springframework.aop.support.AopUtils.getTargetClass(it).simpleName })
-        assertEquals("MyBatisUserRepositoryAdapter", userBeans.first()?.let { org.springframework.aop.support.AopUtils.getTargetClass(it).simpleName })
-        assertEquals("MyBatisFileMetaRepositoryAdapter", fileBeans.first()?.let { org.springframework.aop.support.AopUtils.getTargetClass(it).simpleName })
+        assertEquals("MyBatisSampleRepositoryAdapter", AopUtils.getTargetClass(sampleBeans.first()).simpleName)
+        assertEquals("MyBatisUserRepositoryAdapter", AopUtils.getTargetClass(userBeans.first()).simpleName)
+        assertEquals("MyBatisFileMetaRepositoryAdapter", AopUtils.getTargetClass(fileBeans.first()).simpleName)
     }
 }

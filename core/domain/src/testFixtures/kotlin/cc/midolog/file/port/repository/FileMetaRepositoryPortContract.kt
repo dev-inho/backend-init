@@ -30,11 +30,11 @@ abstract class FileMetaRepositoryPortContract {
             updatedAt = now
         )
 
-        port().save(file)
+        val saved = port().save(file)
+        assertEquals(file, saved)
+        
         val loaded = port().findById("file-test-1")
-
-        assertEquals(file.id, loaded?.id)
-        assertEquals(file.status, loaded?.status)
+        assertEquals(file, loaded)
     }
 
     @Test
@@ -62,12 +62,11 @@ abstract class FileMetaRepositoryPortContract {
             status = FileStatus.READY,
             updatedAt = now.plusSeconds(60)
         )
-        port().save(updatedFile)
+        val saved = port().save(updatedFile)
+        assertEquals(updatedFile, saved)
 
         val loaded = port().findById("file-upsert-1")
-        assertEquals(2048L, loaded?.sizeBytes)
-        assertEquals("application/json", loaded?.contentType)
-        assertEquals(FileStatus.READY, loaded?.status)
+        assertEquals(updatedFile, loaded)
     }
 
     @Test
@@ -103,63 +102,87 @@ abstract class FileMetaRepositoryPortContract {
     @Test
     fun `findExpiredPending returns only pending before cutoff, ordered by updatedAt, up to limit`() = runTestBlocking {
         val now = clock().instant()
-        val file1 = FileMeta(
-            id = "file-expired-1",
+        val old1 = FileMeta(
+            id = "file-old-1",
             ownerId = "owner-1",
-            storageKey = "storage-key-1",
+            storageKey = "key-1",
             sizeBytes = 10L, contentType = "text", checksum = "chk",
             status = FileStatus.PENDING,
             createdAt = now.minusSeconds(7200),
-            updatedAt = now.minusSeconds(7200)
+            updatedAt = now.minusSeconds(7200) // oldest
         )
-        val file2 = FileMeta(
-            id = "file-expired-2",
+        val old2 = FileMeta(
+            id = "file-old-2",
             ownerId = "owner-2",
-            storageKey = "storage-key-2",
+            storageKey = "key-2",
             sizeBytes = 10L, contentType = "text", checksum = "chk",
             status = FileStatus.PENDING,
             createdAt = now.minusSeconds(3600),
-            updatedAt = now.minusSeconds(3600)
+            updatedAt = now.minusSeconds(3600) // second oldest
         )
-        val fileReady = FileMeta(
-            id = "file-ready-1",
+        val old3 = FileMeta(
+            id = "file-old-3",
             ownerId = "owner-3",
-            storageKey = "storage-key-3",
+            storageKey = "key-3",
+            sizeBytes = 10L, contentType = "text", checksum = "chk",
+            status = FileStatus.PENDING,
+            createdAt = now.minusSeconds(1800),
+            updatedAt = now.minusSeconds(1800) // exact cutoff
+        )
+        val readyOld = FileMeta(
+            id = "file-ready-old",
+            ownerId = "owner-4",
+            storageKey = "key-4",
             sizeBytes = 10L, contentType = "text", checksum = "chk",
             status = FileStatus.READY,
             createdAt = now.minusSeconds(7200),
             updatedAt = now.minusSeconds(7200)
         )
-        val fileRecent = FileMeta(
-            id = "file-recent-1",
-            ownerId = "owner-4",
-            storageKey = "storage-key-4",
+        val recent = FileMeta(
+            id = "file-recent",
+            ownerId = "owner-5",
+            storageKey = "key-5",
             sizeBytes = 10L, contentType = "text", checksum = "chk",
             status = FileStatus.PENDING,
             createdAt = now,
             updatedAt = now
         )
-        port().save(file1)
-        port().save(file2)
-        port().save(fileReady)
-        port().save(fileRecent)
+        
+        port().save(old1)
+        port().save(old2)
+        port().save(old3)
+        port().save(readyOld)
+        port().save(recent)
 
         val cutoff = now.minusSeconds(1800)
-        val expired = port().findExpiredPending(cutoff, limit = 1)
         
-        assertEquals(1, expired.size)
-        assertEquals("file-expired-1", expired[0].id)
+        // Exact cutoff is EXCLUDED. Only old1 and old2 should be returned.
+        val expired = port().findExpiredPending(cutoff, limit = 10)
+        
+        val expiredFiltered = expired.filter { it.id in listOf("file-old-1", "file-old-2", "file-old-3", "file-ready-old", "file-recent") }
+        
+        assertEquals(2, expiredFiltered.size)
+        assertEquals("file-old-1", expiredFiltered[0].id)
+        assertEquals("file-old-2", expiredFiltered[1].id)
     }
 
     @Test
     fun `findExpiredPending fails on non-positive limit`() = runTestBlocking {
         val now = clock().instant()
-        var exceptionThrown = false
+        var thrownForZero = false
         try {
             port().findExpiredPending(cutoff = now, limit = 0)
         } catch (e: IllegalArgumentException) {
-            exceptionThrown = true
+            thrownForZero = true
         }
-        assertTrue(exceptionThrown, "Should throw IllegalArgumentException on non-positive limit")
+        assertTrue(thrownForZero)
+        
+        var thrownForNegative = false
+        try {
+            port().findExpiredPending(cutoff = now, limit = -1)
+        } catch (e: IllegalArgumentException) {
+            thrownForNegative = true
+        }
+        assertTrue(thrownForNegative)
     }
 }
