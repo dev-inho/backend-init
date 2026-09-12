@@ -155,16 +155,21 @@ class FileOrphanCleanupServiceTest {
         repoPort.returnFalseOnUpdateId = "id1"
 
         withTimeout(2000) {
-            service.cleanup(pendingTtl, batchSize = 10)
+            service.cleanup(pendingTtl, batchSize = 1)
         }
+
+        // 1st iter: batch=1, failed=0 => limit=1, fetches [id1]. id1 updateStatus=false => failed={id1}
+        // 2nd iter: batch=1, failed=1 => limit=2, fetches [id1, id2]. skips id1, processes id2. id2 success. loop continues (hasNewItems=true).
+        // 3rd iter: batch=1, failed=1 => limit=2, fetches [id1]. orphans.size(1) < limit(2) => loop finishes.
+        assertEquals(listOf(1, 2, 2), calledLimits)
 
         // id1은 updateStatus 실패로 PENDING 상태 유지, id2는 성공하여 FAILED.
         assertEquals(FileStatus.PENDING, db["id1"]?.status)
         assertEquals(FileStatus.FAILED, db["id2"]?.status)
 
-        // 두 파일 모두 storage delete는 성공적으로 호출됨
-        assertTrue(deletedKeys.contains("key-id1"))
-        assertTrue(deletedKeys.contains("key-id2"))
+        // 두 파일 모두 storage delete는 성공적으로 1회 호출됨
+        assertEquals(1, storagePort.deleteCalls["key-id1"] ?: 0)
+        assertEquals(1, storagePort.deleteCalls["key-id2"] ?: 0)
     }
 
     private fun addPending(id: String, updatedAtStr: String) {
