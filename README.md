@@ -11,7 +11,7 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 - **게이트웨이 분기**: 클라이언트 요청을 게이트웨이(`core:gateway`)에서 받아 비즈니스 서버(`core:application`)로 라우팅
 - **헥사고날 아키텍처**: Ports & Adapters 패턴으로 비즈니스 로직과 인프라를 분리
 - **트랜잭션 ID 관리**: 모든 요청에 `X-Request-Id`를 부여하여 분산 환경에서 추적 가능
-- **멀티모듈 구조**: 10개 모듈로 기능을 명확히 분리
+- **멀티모듈 구조**: 11개 모듈로 기능을 명확히 분리
 - **반응형 스택**: WebFlux + Kotlin 코루틴으로 고성능 비동기 처리
 
 ---
@@ -32,7 +32,7 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 
 ## 모듈 구조
 
-프로젝트는 4개 범주(core, client, storage, support)의 10개 모듈로 구성됩니다.
+프로젝트는 4개 범주(core, client, storage, support)의 11개 모듈로 구성됩니다.
 
 ### 모듈 개요
 
@@ -48,6 +48,7 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 | **support:util** | 공유 유틸리티 및 헬퍼 함수 |
 | **support:logging** | 통합 로깅 및 모니터링 |
 | **support:web** | 공통 WebFlux 필터, API 응답, 예외 처리 |
+| **support:jwt** | JWT 토큰 발급 및 검증 코덱 (`JwtCodec`) |
 
 ### Persistence 선택
 
@@ -61,7 +62,7 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 ### 도메인 예제
 
 - `sample` 도메인은 gateway/application/storage smoke와 회귀 테스트를 위한 최소 예제로 유지합니다.
-- `user` 도메인은 새 업무 도메인을 추가하는 표준 흐름을 보여주는 실전형 예제입니다: `core:domain` model/port → `core:application` service/controller → `storage:mybatis` mapper/adapter → `storage:jpa` DSL/adapter → contract/profile test.
+- `user` 도메인은 새 업무 도메인을 추가하는 표준 흐름을 보여주는 실전형 예제입니다: `core:domain` model/port → `core:application` service/controller/infra → `storage:mybatis` (`cc.midolog.storage.mybatis`) mapper/adapter → `storage:jpa` DSL/adapter → contract/profile test.
 - `user` API는 사용자 생성/조회 persistence 예제만 제공합니다. 비밀번호 저장, 회원가입 보안, refresh token, role/permission 체계는 이 템플릿 예제 범위 밖입니다.
 
 ### 플랫폼 옵션
@@ -76,11 +77,18 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 backend-init/
 ├── settings.gradle          # Gradle 멀티모듈 설정
 ├── build.gradle             # 루트 빌드 설정
-├── docs/                    # 설계 문서
+├── docs/                    # 설계 및 운영 문서
 │   ├── ARCHITECTURE.md
-│   ├── MODULE_GUIDE.md
+│   ├── CODE_CONVENTIONS.md
+│   ├── DEAD_CODE_CANDIDATES.md
+│   ├── FUTURE.md
 │   ├── GATEWAY.md
-│   └── FUTURE.md
+│   ├── GATEWAY_STARTER_PLAN.md
+│   ├── JPA_DSL_MIGRATION_DRAFT_GENERATOR_PLAN.md
+│   ├── JPA_DSL_RISK_REGISTER.md
+│   ├── MODULE_GUIDE.md
+│   └── research/
+│       └── GATEWAY_FEATURE_MATRIX.md
 ├── core/
 │   ├── application/
 │   ├── gateway/
@@ -94,7 +102,8 @@ backend-init/
 └── support/
     ├── util/
     ├── logging/
-    └── web/
+    ├── web/
+    └── jwt/
 ```
 
 ---
@@ -169,10 +178,10 @@ JPA DSL의 해소된 리스크와 남은 non-blocking 리스크는 [JPA DSL Risk
 ### 품질 게이트
 
 ```bash
-./gradlew test
+./gradlew build && ./gradlew -p build-logic test
 ```
 
-현재 템플릿의 필수 품질 게이트는 전체 테스트 통과입니다. GitHub Actions 환경에서는 `.github/workflows/security.yml`로 dependency/security scan을 함께 실행합니다.
+CI는 의존성·시크릿 스캔만 돌린다(`.github/workflows/security.yml`); 빌드·테스트는 로컬 `./gradlew build && ./gradlew -p build-logic test`로 검증한다.
 
 ### 포트 정보
 
@@ -187,31 +196,38 @@ JPA DSL의 해소된 리스크와 남은 non-blocking 리스크는 [JPA DSL Risk
 설계 및 운영 관련 상세 문서는 `docs/` 디렉토리를 참조하세요:
 
 - **[아키텍처](docs/ARCHITECTURE.md)** — 헥사고날 패턴, 의존성 방향, 모듈 간 상호작용 다이어그램
-- **[모듈 가이드](docs/MODULE_GUIDE.md)** — 10개 모듈의 상세 가이드, 책임, 사용 방법
+- **[모듈 가이드](docs/MODULE_GUIDE.md)** — 11개 모듈의 상세 가이드, 책임, 사용 방법
+- **[코드 컨벤션](docs/CODE_CONVENTIONS.md)** — KDoc 문체 원칙, 도메인 금지 토큰, 패키지 규칙, 구조 가드 및 품질 검사 정책
 - **[게이트웨이](docs/GATEWAY.md)** — 게이트웨이 아키텍처, 트랜잭션 ID(X-Request-Id) 관리, 라우팅 규칙
 - **[향후 설계](docs/FUTURE.md)** — 다중 인스턴스 지원, Config 서버, 요청 확인 화면 등 향후 계획
+- **[JPA DSL 마이그레이션 초안 생성기 계획](docs/JPA_DSL_MIGRATION_DRAFT_GENERATOR_PLAN.md)** — JPA DSL 및 Flyway 마이그레이션 초안 자동 생성기 설계 및 검증 계획
+- **[JPA DSL 리스크 관리 대장](docs/JPA_DSL_RISK_REGISTER.md)** — 도메인 순수성을 유지하며 JPA DSL 매핑을 사용하는 아키텍처의 리스크 관리 대장
+- **[JPA 저장소 가이드](storage/jpa/README.md)** — `storage:jpa` 모듈의 경계, DSL 코드 생성, adapter 구현 및 검증 가이드
+- **[게이트웨이 스타터 로드맵](docs/GATEWAY_STARTER_PLAN.md)** — Spring Boot 기동 탑재형(starter) 게이트웨이 라이브러리화 3모드 로드맵
+- **[미사용 코드 인벤토리](docs/DEAD_CODE_CANDIDATES.md)** — 삭제 후보 미사용 코드 및 중복 구현 목록과 정리 정책
+- **[상용 게이트웨이 기능 매트릭스](docs/research/GATEWAY_FEATURE_MATRIX.md)** — 상용 API 게이트웨이 11종의 기능 비교 조사 매트릭스
 
 ---
 
 ## 프로젝트 관리
 
-- **QE 프레임워크**: `.qe/` 디렉토리 — 프로젝트 상태, 태스크, 체크리스트 관리
 - **CLAUDE.md**: 개발 지침 및 규칙 (프로젝트 로컬)
 - **QE_CONVENTIONS.md**: QE 프레임워크 컨벤션 및 표준
+- **docs/CODE_CONVENTIONS.md**: 코드 스타일, KDoc 작성 규칙, 구조 가드 및 품질 정책
 
 ---
 
 ## 현재 상태
 
 **검증된 범위**
-- 10개 Gradle 멀티모듈 설정 및 모듈 간 의존성 연결
-- `core:gateway`: 요청 ID 필터, JWT 인증 필터, 토큰별 rate limit 필터, 프록시/라우팅, optional 다중 application 라운드로빈, 기본 비활성화 request visibility
-- `core:application`: sample API, user 생성/조회 API, 인증 토큰 발급, SecurityConfig, 예외 응답 처리
-- `core:domain`: Spring/JPA/MyBatis annotation 없는 Plain Kotlin domain model/port
-- `storage:mybatis`: `mybatis` profile adapter, mapper upsert, sample/user profile wiring 테스트
-- `storage:jpa`: `jpa` profile adapter, DSL 생성 JPA entity/repository/mapper, H2 기반 sample/user adapter 테스트
-- `client:storage-file`, `support:*`: 도메인 포트/어댑터 및 공통 유틸리티 골격
-- `./gradlew test` 통과
+- 11개 Gradle 멀티모듈 설정 및 모듈 간 의존성 연결
+- `core:gateway`: 요청 ID 필터, JWT 인증 필터, 토큰 발급 엔드포인트(`POST /api/auth/token`)에 대한 IP 기준 rate limit(10회/60초, Redis, fail-open), 프록시(`cc.midolog.gateway.proxy.*`) 및 라우팅, optional 다중 application 라운드로빈, 기본 비활성화 request visibility
+- `core:application`: sample API, user 생성/조회 API, 전용 응답 DTO(`*Response`), Redis 캐시 인프라(`cc.midolog.infra.cache.RedisSampleCacheAdapter`), 인증 토큰 발급, SecurityConfig, 예외 응답 처리
+- `core:domain`: Spring/JPA/MyBatis annotation 없는 Plain Kotlin domain model/port (`DomainPurityTest` 가드)
+- `storage:mybatis`: `mybatis` profile adapter(`cc.midolog.storage.mybatis.*`), `MyBatis*RepositoryAdapter`, mapper upsert, sample/user profile wiring 테스트
+- `storage:jpa`: `jpa` profile adapter, `Jpa*RepositoryAdapter`, DSL 생성 JPA entity/repository/mapper, JPA 픽스처(`cc.midolog.jpadsl.fixture`), H2 기반 sample/user adapter 테스트
+- `client:storage-file`, `support:*`: 도메인 포트/어댑터, `support:jwt`(`JwtCodec`) 및 공통 유틸리티/웹/로깅 골격
+- `./gradlew build && ./gradlew -p build-logic test` 통과
 
 **backend-init-evolution 완료 범위**
 - A — 운영형 템플릿화: Gateway proxy correctness, profile local 분리, docs 정합성
