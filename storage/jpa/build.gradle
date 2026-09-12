@@ -48,10 +48,14 @@ tasks.register('livePostgresTest', Test) {
     }
 }
 
-tasks.configureEach {
-    if (name == 'kaptGenerateStubsKotlin') {
+afterEvaluate {
+    tasks.named('kaptGenerateStubsKotlin') {
         dependsOn('generateJpaDslSources')
     }
+}
+
+tasks.withType(Test).configureEach {
+    systemProperty "queryDsl.generatedSourceDir", layout.buildDirectory.dir("generated/source/kapt/main").get().asFile.absolutePath
 }
 
 
