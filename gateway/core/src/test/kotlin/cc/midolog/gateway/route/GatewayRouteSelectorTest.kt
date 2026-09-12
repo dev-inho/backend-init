@@ -272,12 +272,14 @@ class GatewayRouteSelectorTest {
         isAHealthy = true
         vts.advanceTimeBy(Duration.ofSeconds(20)) // 2 successes, threshold is 3
         
-        assertEquals("http://application-b.internal", selector.selectTarget("/api/test")) // Still unhealthy
+        val t3 = selector.selectTarget("/api/test")
+        val t4 = selector.selectTarget("/api/test")
+        assertEquals(setOf("http://application-b.internal"), setOf(t3, t4)) // Still unhealthy
         
         vts.advanceTimeBy(Duration.ofSeconds(10)) // 3 successes
         
-        val t1 = selector.selectTarget("/api/test")
-        val t2 = selector.selectTarget("/api/test")
-        assertEquals(setOf("http://application-a.internal", "http://application-b.internal"), setOf(t1, t2)) // Recovered
+        val t5 = selector.selectTarget("/api/test")
+        val t6 = selector.selectTarget("/api/test")
+        assertEquals(setOf("http://application-a.internal", "http://application-b.internal"), setOf(t5, t6)) // Recovered
     }
 }
