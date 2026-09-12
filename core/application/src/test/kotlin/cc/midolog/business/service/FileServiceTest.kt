@@ -16,7 +16,7 @@ class FileServiceTest {
     @Test
     fun `성공 시 PENDING 저장 후 READY로 메타가 갱신되며, 생성된 ID와 속성이 올바르다`() = runBlocking {
         val savedMetas = mutableListOf<FileMeta>()
-        
+
         val storagePort = object : FileStoragePort {
             override suspend fun store(key: String, reader: ChunkReader, knownSize: Long?, contentType: String, expectedChecksum: String?): StoredFile {
                 return StoredFile(id = "1", ownerId = "owner1", storageKey = key, sizeBytes = 1234L, contentType = "text/plain", checksum = "abcde", status = FileStatus.READY)
@@ -37,7 +37,7 @@ class FileServiceTest {
         }
 
         val fileService = FileService(storagePort, repoPort)
-        
+
         val reader = object : ChunkReader {
             override suspend fun readChunk(buffer: ByteArray): Int = -1
             override suspend fun cancel(cause: Throwable?) {}
@@ -97,7 +97,7 @@ class FileServiceTest {
         }
 
         val fileService = FileService(storagePort, repoPort)
-        
+
         val reader = object : ChunkReader {
             override suspend fun readChunk(buffer: ByteArray): Int = -1
             override suspend fun cancel(cause: Throwable?) {}
@@ -112,7 +112,7 @@ class FileServiceTest {
 
         assertEquals(1, savedMetas.size, "Should have saved PENDING meta")
         val pendingMeta = savedMetas[0]
-        
+
         assertEquals(FileStatus.FAILED, savedStatus)
         assertEquals(pendingMeta.id, failedId, "Failed ID should match the pending ID")
     }

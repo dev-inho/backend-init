@@ -216,7 +216,7 @@ class LocalFileStorageAdapterTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
         val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
         val key = "55555555-5555-5555-5555-555555555555"
-        
+
         // key와 일치하는 디렉터리 생성
         val targetPath = rootPath.resolve(key)
         Files.createDirectories(targetPath)
