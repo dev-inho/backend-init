@@ -20,7 +20,7 @@ class FileService(
         contentType: String,
         reader: ChunkReader
     ): FileMeta {
-        val id = UUID.randomUUID().toString()
+        val id = cc.midolog.business.util.IdGenerator.generateUlid()
         val storageKey = UUID.randomUUID().toString()
         val now = Instant.now()
 

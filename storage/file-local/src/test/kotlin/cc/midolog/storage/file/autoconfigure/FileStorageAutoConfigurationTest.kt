@@ -65,4 +65,36 @@ class FileStorageAutoConfigurationTest {
         val content = url!!.readText().trim()
         org.assertj.core.api.Assertions.assertThat(content).isEqualTo("cc.midolog.storage.file.autoconfigure.FileStorageAutoConfiguration")
     }
+
+
+    @org.springframework.context.annotation.Configuration
+    @org.springframework.context.annotation.ComponentScan("cc.midolog.storage.file")
+    class TestScanConfig
+
+    @Test
+    fun `컴포넌트 스캔과 자동 설정이 겹쳐도 FileStoragePort 빈은 하나만 생성된다`() {
+        contextRunner.withUserConfiguration(TestScanConfig::class.java)
+            .withPropertyValues(
+                "storage.file.provider=local",
+                "storage.file.local.root-dir=${System.getProperty("user.dir")}/build/files"
+            ).run { context ->
+                org.assertj.core.api.Assertions.assertThat(context).hasNotFailed()
+                org.assertj.core.api.Assertions.assertThat(context.getBeansOfType(cc.midolog.file.port.storage.FileStoragePort::class.java)).hasSize(1)
+            }
+    }
+
+
+    @Test
+    fun `maxSizeBytes가 0 이하이면 기동 실패해야 한다`() {
+        contextRunner.withPropertyValues(
+            "storage.file.provider=local",
+            "storage.file.local.root-dir=${System.getProperty("user.dir")}/build/files",
+            "storage.file.max-size-bytes=0"
+        ).run { context ->
+            org.assertj.core.api.Assertions.assertThat(context).hasFailed()
+            org.assertj.core.api.Assertions.assertThat(context.startupFailure)
+                .hasMessageContaining("0보다 커야 합니다")
+        }
+    }
+
 }

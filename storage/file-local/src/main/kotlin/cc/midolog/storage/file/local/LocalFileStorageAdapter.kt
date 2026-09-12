@@ -5,7 +5,8 @@ import cc.midolog.file.model.StoredFile
 import cc.midolog.file.port.storage.ChunkReader
 import cc.midolog.file.port.storage.FileStoragePort
 import cc.midolog.storage.file.autoconfigure.FileStorageProperties
-import org.springframework.stereotype.Component
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -17,7 +18,6 @@ import kotlin.io.path.fileSize
 import kotlin.io.path.isSymbolicLink
 import java.util.UUID
 
-@Component
 class LocalFileStorageAdapter(
     properties: FileStorageProperties
 ) : FileStoragePort {
@@ -40,9 +40,7 @@ class LocalFileStorageAdapter(
         if (!target.startsWith(rootPath)) {
             throw SecurityException("Path traversal attempt")
         }
-        if (target.isSymbolicLink()) {
-            throw IllegalArgumentException("Symbolic links are not allowed")
-        }
+        // Will check isSymbolicLink during actual file operations
         return target
     }
 
@@ -54,19 +52,23 @@ class LocalFileStorageAdapter(
         expectedChecksum: String?
     ): StoredFile {
         val targetPath = resolveSafePath(key)
-        val tempPath = rootPath.resolve("$key.tmp")
+        val tempPath = withContext(Dispatchers.IO) {
+            Files.createTempFile(rootPath, key, ".tmp")
+        }
         val buffer = ByteArray(8192)
         val digest = MessageDigest.getInstance("SHA-256")
         var size = 0L
 
         try {
-            Files.newOutputStream(tempPath).use { out ->
-                while (true) {
-                    val read = reader.readChunk(buffer)
-                    if (read == -1) break
-                    out.write(buffer, 0, read)
-                    digest.update(buffer, 0, read)
-                    size += read
+            withContext(Dispatchers.IO) {
+                Files.newOutputStream(tempPath).use { out ->
+                    while (true) {
+                        val read = reader.readChunk(buffer)
+                        if (read == -1) break
+                        out.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        size += read
+                    }
                 }
             }
 
@@ -79,7 +81,12 @@ class LocalFileStorageAdapter(
                 throw IllegalStateException("크기가 다릅니다")
             }
 
-            Files.move(tempPath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            withContext(Dispatchers.IO) {
+                if (targetPath.exists(java.nio.file.LinkOption.NOFOLLOW_LINKS) && targetPath.isSymbolicLink()) {
+                    throw IllegalArgumentException("Symbolic links are not allowed")
+                }
+                Files.move(tempPath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
 
             return StoredFile(
                 id = "",
@@ -91,7 +98,9 @@ class LocalFileStorageAdapter(
                 status = FileStatus.READY
             )
         } catch (e: Exception) {
-            tempPath.deleteIfExists()
+            withContext(Dispatchers.IO) {
+                tempPath.deleteIfExists()
+            }
             reader.cancel(e)
             throw e
         } finally {
@@ -99,20 +108,25 @@ class LocalFileStorageAdapter(
         }
     }
 
-    override suspend fun load(key: String): ChunkReader? {
+    override suspend fun load(key: String): ChunkReader? = withContext(Dispatchers.IO) {
         val targetPath = resolveSafePath(key)
-        if (!targetPath.exists()) return null
+        if (!targetPath.exists(java.nio.file.LinkOption.NOFOLLOW_LINKS)) return@withContext null
+        if (targetPath.isSymbolicLink()) {
+            throw IllegalArgumentException("Symbolic links are not allowed")
+        }
 
         val channel = Files.newByteChannel(targetPath, java.nio.file.StandardOpenOption.READ)
-        return object : ChunkReader {
-            override suspend fun readChunk(buffer: ByteArray): Int {
+        object : ChunkReader {
+            override suspend fun readChunk(buffer: ByteArray): Int = withContext(Dispatchers.IO) {
                 val byteBuffer = java.nio.ByteBuffer.wrap(buffer)
                 val read = channel.read(byteBuffer)
-                return if (read > 0) read else -1
+                if (read > 0) read else -1
             }
 
             override suspend fun cancel(cause: Throwable?) {
-                channel.close()
+                withContext(Dispatchers.IO) {
+                    channel.close()
+                }
             }
 
             override fun close() {
@@ -121,13 +135,24 @@ class LocalFileStorageAdapter(
         }
     }
 
-    override suspend fun delete(key: String): Boolean {
+    override suspend fun delete(key: String): Boolean = withContext(Dispatchers.IO) {
         val targetPath = resolveSafePath(key)
-        return targetPath.deleteIfExists()
+        if (!targetPath.exists(java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return@withContext true
+        }
+        if (targetPath.isSymbolicLink()) {
+            throw IllegalArgumentException("Symbolic links are not allowed")
+        }
+        targetPath.deleteIfExists()
+        true
     }
 
-    override suspend fun exists(key: String): Boolean {
+    override suspend fun exists(key: String): Boolean = withContext(Dispatchers.IO) {
         val targetPath = resolveSafePath(key)
-        return targetPath.exists()
+        if (!targetPath.exists(java.nio.file.LinkOption.NOFOLLOW_LINKS)) return@withContext false
+        if (targetPath.isSymbolicLink()) {
+            throw IllegalArgumentException("Symbolic links are not allowed")
+        }
+        true
     }
 }

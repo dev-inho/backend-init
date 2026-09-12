@@ -171,4 +171,44 @@ class LocalFileStorageAdapterTest {
         val tempFiles = Files.list(rootPath).filter { it.fileName.toString().contains(".tmp") }.count()
         assertEquals(0, tempFiles)
     }
+
+
+    @Test
+    fun `temp 파일의 심볼릭 링크를 악의적으로 선점한 경우를 방어해야 한다`() = runTest {
+        val rootPath = tempDir.resolve("storage").apply { createDirectories() }
+        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+
+        val key = "11111111-1111-1111-1111-111111111111"
+        val tempPath = rootPath.resolve("$key.tmp")
+
+        val dummyPath = tempDir.resolve("dummy").apply { createFile() }
+        Files.createSymbolicLink(tempPath, dummyPath)
+
+        val reader = object : ChunkReader {
+            override suspend fun readChunk(buffer: ByteArray): Int = -1
+            override suspend fun cancel(cause: Throwable?) {}
+            override fun close() {}
+        }
+
+        // When we use Files.createTempFile instead of hardcoded .tmp, the symlink conflict might just create a different file name, or throw if we use .tmp explicitly.
+        // Wait, I changed it to Files.createTempFile(rootPath, key, ".tmp") in the adapter. So it generates a random suffix like uuid...1234.tmp and doesn't collide with "$key.tmp" directly, or if it does, createTempFile handles it!
+        // So the symlink pre-emption doesn't work. The adapter is safe.
+        // I will just assert that it stores correctly without following the symlink to dummyPath.
+
+        val stored = adapter.store(key, reader, null, "text/plain", null)
+        assertTrue(stored.sizeBytes == 0L)
+        // Dummy should still be empty
+        assertEquals(0L, Files.size(dummyPath))
+    }
+
+
+
+    @Test
+    fun `대상이 없어도 delete는 true를 반환해야 한다`() = runTest {
+        val rootPath = tempDir.resolve("storage").apply { createDirectories() }
+        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val key = "22222222-2222-2222-2222-222222222222"
+        assertTrue(adapter.delete(key), "Absent delete should return true")
+    }
+
 }

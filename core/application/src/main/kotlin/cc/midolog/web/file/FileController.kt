@@ -138,8 +138,8 @@ class FileController(
         }
 
         return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_TYPE, storedFile.contentType ?: MediaType.APPLICATION_OCTET_STREAM_VALUE)
-            .header(HttpHeaders.CONTENT_LENGTH, storedFile.sizeBytes?.toString() ?: "0")
+            .header(HttpHeaders.CONTENT_TYPE, requireNotNull(storedFile.contentType) { "READY file contentType cannot be null" })
+            .header(HttpHeaders.CONTENT_LENGTH, requireNotNull(storedFile.sizeBytes) { "READY file size cannot be null" }.toString())
             .body(flux)
     }
 }
