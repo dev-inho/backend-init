@@ -20,19 +20,19 @@ class MyBatisFileMetaRepositoryAdapterTest {
 
         // test Instant
         var mapper = FakeFileMetaMapper(row = mapOf("id" to "f1", "ownerId" to "o1", "storageKey" to "k1", "status" to "READY", "createdAt" to instant, "updatedAt" to instant))
-        var adapter = MyBatisFileMetaRepositoryAdapter(mapper)
+        var adapter = MyBatisFileMetaRepositoryAdapter(mapper, java.time.Clock.systemUTC())
         var result = adapter.findById("f1")!!
         assertEquals(instant, result.createdAt)
 
         // test Timestamp
         mapper = FakeFileMetaMapper(row = mapOf("id" to "f1", "ownerId" to "o1", "storageKey" to "k1", "status" to "READY", "createdAt" to sqlTimestamp, "updatedAt" to sqlTimestamp))
-        adapter = MyBatisFileMetaRepositoryAdapter(mapper)
+        adapter = MyBatisFileMetaRepositoryAdapter(mapper, java.time.Clock.systemUTC())
         result = adapter.findById("f1")!!
         assertEquals(instant, result.createdAt)
 
         // test LocalDateTime
         mapper = FakeFileMetaMapper(row = mapOf("id" to "f1", "ownerId" to "o1", "storageKey" to "k1", "status" to "READY", "createdAt" to localDateTime, "updatedAt" to localDateTime))
-        adapter = MyBatisFileMetaRepositoryAdapter(mapper)
+        adapter = MyBatisFileMetaRepositoryAdapter(mapper, java.time.Clock.systemUTC())
         result = adapter.findById("f1")!!
         assertEquals(instant, result.createdAt)
     }
@@ -42,11 +42,11 @@ class MyBatisFileMetaRepositoryAdapterTest {
         val instant = Instant.ofEpochMilli(1700000000000L)
         val file = FileMeta("f1", "o1", "k1", null, null, null, FileStatus.PENDING, instant, instant)
 
-        var adapter = MyBatisFileMetaRepositoryAdapter(FakeFileMetaMapper(upsertResult = 0))
+        var adapter = MyBatisFileMetaRepositoryAdapter(FakeFileMetaMapper(upsertResult = 0), java.time.Clock.systemUTC())
         var exception = kotlin.test.assertFailsWith<IllegalStateException> { adapter.save(file) }
         assertEquals("Save failed, affected rows: 0", exception.message)
 
-        adapter = MyBatisFileMetaRepositoryAdapter(FakeFileMetaMapper(upsertResult = 2))
+        adapter = MyBatisFileMetaRepositoryAdapter(FakeFileMetaMapper(upsertResult = 2), java.time.Clock.systemUTC())
         exception = kotlin.test.assertFailsWith<IllegalStateException> { adapter.save(file) }
         assertEquals("Save failed, affected rows: 2", exception.message)
     }

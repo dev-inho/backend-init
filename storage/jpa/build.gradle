@@ -20,7 +20,9 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-flyway'
+    testImplementation testFixtures(project(':core:domain'))
     testRuntimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.flywaydb:flyway-database-postgresql'
 }

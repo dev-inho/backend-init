@@ -94,5 +94,8 @@ class JpaFileMetaRepositoryAdapterTest {
         fun jpaTransactionOperations(
             transactionManager: PlatformTransactionManager,
         ): TransactionOperations = TransactionTemplate(transactionManager)
+        
+        @Bean
+        fun clock(): java.time.Clock = java.time.Clock.systemUTC()
     }
 }
