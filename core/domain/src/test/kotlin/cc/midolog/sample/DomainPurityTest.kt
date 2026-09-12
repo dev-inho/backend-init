@@ -13,6 +13,7 @@ class DomainPurityTest {
     fun `domain source stays free of Spring JPA and MyBatis dependencies`() {
         val sourceRoot = Path.of("src/main/kotlin")
         val userSourceRoot = sourceRoot.resolve("cc/midolog/user")
+        val fileSourceRoot = sourceRoot.resolve("cc/midolog/file")
         val forbiddenTokens = listOf(
             "org.springframework",
             "jakarta.persistence",
@@ -47,6 +48,7 @@ class DomainPurityTest {
         }
 
         assertTrue(Files.isDirectory(userSourceRoot), "user domain package should exist")
+        assertTrue(Files.isDirectory(fileSourceRoot), "file domain package should exist")
         assertTrue(violations.isEmpty(), violations.joinToString(separator = "\n"))
     }
 }
