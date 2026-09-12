@@ -1,4 +1,4 @@
-package cc.midolog.gateway.handler
+package cc.midolog.gateway.proxy
 
 import cc.midolog.gateway.route.GatewayRouteSelector
 import org.springframework.core.io.buffer.DataBuffer
@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.BodyInserters
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.server.HandlerFunction
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import reactor.core.Exceptions
@@ -23,7 +24,10 @@ import java.util.concurrent.TimeoutException
 class ProxyHandler(
     private val proxyWebClient: WebClient,
     private val routeSelector: GatewayRouteSelector,
-) {
+) : HandlerFunction<ServerResponse> {
+
+    override fun handle(request: ServerRequest): Mono<ServerResponse> = proxy(request)
+
     fun proxy(request: ServerRequest): Mono<ServerResponse> {
         val path = request.uri().rawPath
         val targetUrl = routeSelector.selectTarget(path)

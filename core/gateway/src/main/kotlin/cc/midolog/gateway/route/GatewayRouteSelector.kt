@@ -13,10 +13,13 @@ class GatewayRouteSelector(
     private val batchTarget: String = validateUrl("gateway.routes.batch-url", properties.batchUrl)
     private val nextApplicationIndex = AtomicInteger(0)
 
+    /**
+     * 경로에 따른 대상 URL을 반환한다.
+     * /batch/ 외의 요청(/api/ 및 /actuator/ 등)은 모두 애플리케이션(비즈니스 서버)으로 전달된다.
+     */
     fun selectTarget(path: String): String =
         when {
             path.startsWith("/batch/") -> batchTarget
-            path.startsWith("/api/") || path.startsWith("/actuator/") -> nextApplicationTarget()
             else -> nextApplicationTarget()
         }
 

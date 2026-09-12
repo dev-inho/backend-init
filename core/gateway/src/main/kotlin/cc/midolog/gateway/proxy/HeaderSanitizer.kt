@@ -1,4 +1,4 @@
-package cc.midolog.gateway.handler
+package cc.midolog.gateway.proxy
 
 import org.springframework.http.HttpHeaders
 
