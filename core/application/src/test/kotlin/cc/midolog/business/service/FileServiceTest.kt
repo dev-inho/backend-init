@@ -185,4 +185,58 @@ class FileServiceTest {
         assertEquals(0, storageLoadCount, "Storage load should not be called")
         assertEquals(0, storageDeleteCount, "Storage delete should not be called")
     }
+
+    @Test
+    fun `deleteFile 시 storage delete가 false를 반환하거나 예외를 던지면 상태가 변경되지 않는다`() = runBlocking {
+        var storageDeleteCalledCount = 0
+        val storagePort = object : FileStoragePort {
+            override suspend fun store(key: String, reader: ChunkReader, knownSize: Long?, contentType: String, expectedChecksum: String?): StoredFile = throw NotImplementedError()
+            override suspend fun load(key: String): ChunkReader? = null
+            override suspend fun delete(key: String): Boolean {
+                storageDeleteCalledCount++
+                if (key == "throw") throw RuntimeException("Storage delete error")
+                return key != "false_return"
+            }
+            override suspend fun exists(key: String): Boolean = false
+        }
+
+        val db = mutableMapOf(
+            "file1" to FileMeta("file1", "owner1", "throw", 100L, "text/plain", "abc", FileStatus.READY, Instant.now(), Instant.now()),
+            "file2" to FileMeta("file2", "owner1", "false_return", 100L, "text/plain", "abc", FileStatus.READY, Instant.now(), Instant.now())
+        )
+
+        val repoPort = object : FileMetaRepositoryPort {
+            override suspend fun findById(id: String): FileMeta? = db[id]
+            override suspend fun save(file: FileMeta): FileMeta = file
+            override suspend fun updateStatus(id: String, status: FileStatus): Boolean {
+                val f = db[id]
+                if (f != null) {
+                    db[id] = f.copy(status = status)
+                    return true
+                }
+                return false
+            }
+            override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> = emptyList()
+        }
+
+        val fileService = FileService(storagePort, repoPort)
+
+        // 1. Exception case
+        assertThrows(RuntimeException::class.java) {
+            runBlocking {
+                fileService.deleteFile("file1", "owner1")
+            }
+        }
+        assertEquals(FileStatus.READY, db["file1"]?.status, "Status should not change on exception")
+        
+        // 2. False return case
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                fileService.deleteFile("file2", "owner1")
+            }
+        }
+        assertEquals(FileStatus.READY, db["file2"]?.status, "Status should not change when delete returns false")
+        
+        assertEquals(2, storageDeleteCalledCount)
+    }
 }
