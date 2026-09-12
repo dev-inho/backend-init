@@ -59,6 +59,9 @@ class FileControllerTestConfig {
         }
 
         override suspend fun getFile(id: String, ownerId: String): StoredFile {
+            if (id == "error-reader") {
+                return StoredFile("error-reader", "test-owner", "key-error", 100, "image/png", null, FileStatus.READY)
+            }
             if (id == "123" && ownerId == "test-owner") {
                 return StoredFile("id-123", "test-owner", "key-123", 100, "image/png", null, FileStatus.READY)
             }
