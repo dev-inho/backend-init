@@ -41,7 +41,7 @@ class MyBatisFileMetaRepositoryAdapterTest {
     fun `save fails if affected rows is 0 or 2`() = runBlocking {
         val instant = Instant.ofEpochMilli(1700000000000L)
         val file = FileMeta("f1", "o1", "k1", null, null, null, FileStatus.PENDING, instant, instant)
-        
+
         var adapter = MyBatisFileMetaRepositoryAdapter(FakeFileMetaMapper(upsertResult = 0))
         var exception = kotlin.test.assertFailsWith<IllegalStateException> { adapter.save(file) }
         assertEquals("Save failed, affected rows: 0", exception.message)
