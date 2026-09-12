@@ -15,6 +15,13 @@ class GatewayProfileConfigTest {
     }
 
     @Test
+    fun `base gateway config sets standalone mode explicitly`() {
+        val baseConfig = resourceText("application.yml")
+
+        assertTrue(baseConfig.contains("mode: standalone"), "base gateway application.yml must set gateway.mode: standalone")
+    }
+
+    @Test
     fun `local gateway config owns local redis and route defaults`() {
         val localConfig = resourceText("application-local.yml")
 

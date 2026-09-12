@@ -5,10 +5,13 @@ includeBuild 'build-logic'
 // core
 include 'core:application'
 include 'core:batch'
-include 'core:gateway'
+include 'core:domain'
+
+// gateway
 include 'gateway:core'
 include 'gateway:autoconfigure'
-include 'core:domain'
+include 'gateway:starter'
+include 'gateway:app'
 
 // client
 include 'client:storage-file'
