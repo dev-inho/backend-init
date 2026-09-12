@@ -5,19 +5,11 @@ plugins {
 }
 
 dependencies {
+    implementation project(':gateway:autoconfigure')
     implementation project(':support:logging')
-    implementation project(':support:util')
-    implementation project(':support:web')
-
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
-    implementation 'io.projectreactor.kotlin:reactor-kotlin-extensions'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-reactor'
-    implementation 'tools.jackson.module:jackson-module-kotlin'
 
-    implementation project(':support:jwt')
-
-
-    implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
-
-    testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
+    // Test dependencies (if any tests remain in core/gateway)
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
 }
