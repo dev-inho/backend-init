@@ -49,6 +49,7 @@
 * **파일:행:** `core/application/src/main/kotlin/cc/midolog/business/config/ClockConfig.kt:19`
 * **원문:** `        return Clock.systemUTC()`
 * **판정:** 결함
+  - `application`은 PR #42에서 해결되었고 storage 어댑터는 후속 작업으로 다룬다.
 * **근거:** 실제 `ClockConfig`에 의해 `clock.instant()` 주입이 가능함에도 `Instant.now()` 하드코딩을 사용하여 테스트 시간 의존성 문제가 있습니다.
 
 ## 4. JPA DSL 생성기 품질 확인

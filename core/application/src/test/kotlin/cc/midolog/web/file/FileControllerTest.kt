@@ -20,7 +20,9 @@ import org.springframework.http.client.MultipartBodyBuilder
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.web.reactive.function.BodyInserters
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 
 object FakeReaderStats {
     var cancelCount = 0
@@ -35,6 +37,7 @@ object FakeReaderStats {
 class FileControllerTestConfig {
     @Bean
     fun fakeFileService() = object : FileService(
+        clock = Clock.fixed(Instant.parse("2026-09-12T10:00:00Z"), ZoneOffset.UTC),
         fileStoragePort = object : cc.midolog.file.port.storage.FileStoragePort {
             override suspend fun store(k: String, r: ChunkReader, s: Long?, c: String, e: String?) = throw NotImplementedError()
             override suspend fun load(k: String): ChunkReader? = null
