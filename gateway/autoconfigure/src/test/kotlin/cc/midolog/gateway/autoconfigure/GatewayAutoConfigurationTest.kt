@@ -43,7 +43,8 @@ class GatewayAutoConfigurationTest {
     fun `gateway mode 미설정시 fail-fast`() {
         contextRunner.run { context ->
             assertTrue(context.startupFailure != null)
-            val rootCauseMessage = context.startupFailure!!.cause?.cause?.message ?: ""
+            context.startupFailure!!.printStackTrace()
+            val rootCauseMessage = generateSequence(context.startupFailure) { it.cause }.joinToString { it.message ?: "" }
             assertTrue(rootCauseMessage.contains("gateway.mode must be exactly one of"))
         }
     }
@@ -52,7 +53,7 @@ class GatewayAutoConfigurationTest {
     fun `gateway mode 잘못된 값 입력시 fail-fast`() {
         contextRunner.withPropertyValues("gateway.mode=invalid").run { context ->
             assertTrue(context.startupFailure != null)
-            val rootCauseMessage = context.startupFailure!!.cause?.cause?.message ?: ""
+            val rootCauseMessage = generateSequence(context.startupFailure) { it.cause }.joinToString { it.message ?: "" }
             assertTrue(rootCauseMessage.contains("gateway.mode must be exactly one of"))
         }
     }
