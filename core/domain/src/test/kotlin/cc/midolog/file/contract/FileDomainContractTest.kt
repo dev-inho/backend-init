@@ -253,31 +253,33 @@ class FileDomainContractTest {
     }
 
     @Test
-    fun `FileMetaRepositoryPort draft interface contract`() = runSuspend {
-        val storage = mutableMapOf<String, StoredFile>()
+    fun `FileMetaRepositoryPort interface contract`() = runSuspend {
+        val storage = mutableMapOf<String, cc.midolog.file.model.FileMeta>()
 
         val mockRepo = object : FileMetaRepositoryPort {
-            override suspend fun findById(id: String): StoredFile? = storage[id]
+            override suspend fun findById(id: String): cc.midolog.file.model.FileMeta? = storage[id]
 
-            override suspend fun save(file: StoredFile): StoredFile {
+            override suspend fun save(file: cc.midolog.file.model.FileMeta): cc.midolog.file.model.FileMeta {
                 storage[file.id] = file
                 return file
             }
 
             override suspend fun updateStatus(id: String, status: FileStatus): Boolean {
                 val current = storage[id] ?: return false
-                storage[id] = current.copy(status = status)
+                storage[id] = current.copy(status = status, updatedAt = java.time.Instant.now())
                 return true
             }
 
-            override suspend fun findExpiredPending(limit: Int): List<StoredFile> {
+            override suspend fun findExpiredPending(cutoff: java.time.Instant, limit: Int): List<cc.midolog.file.model.FileMeta> {
                 return storage.values
-                    .filter { it.status == FileStatus.PENDING }
+                    .filter { it.status == FileStatus.PENDING && it.updatedAt.isBefore(cutoff) }
+                    .sortedBy { it.updatedAt }
                     .take(limit)
             }
         }
 
-        val sampleFile = StoredFile(
+        val now = java.time.Instant.now()
+        val sampleFile = cc.midolog.file.model.FileMeta(
             id = "file-01",
             ownerId = "owner-01",
             storageKey = "uuid-key-01",
@@ -285,6 +287,8 @@ class FileDomainContractTest {
             contentType = "application/pdf",
             checksum = null,
             status = FileStatus.PENDING,
+            createdAt = now.minusSeconds(100),
+            updatedAt = now.minusSeconds(100),
         )
 
         // save
@@ -299,7 +303,7 @@ class FileDomainContractTest {
         assertNull(mockRepo.findById("file-99"))
 
         // findExpiredPending
-        val expired = mockRepo.findExpiredPending(10)
+        val expired = mockRepo.findExpiredPending(java.time.Instant.now(), 10)
         assertEquals(1, expired.size)
         assertEquals("file-01", expired[0].id)
 
@@ -310,6 +314,6 @@ class FileDomainContractTest {
         assertFalse(mockRepo.updateStatus("file-99", FileStatus.READY))
 
         // After update to READY, expired pending should be empty
-        assertEquals(0, mockRepo.findExpiredPending(10).size)
+        assertEquals(0, mockRepo.findExpiredPending(java.time.Instant.now(), 10).size)
     }
 }

@@ -20,6 +20,7 @@ import org.springframework.context.annotation.Profile
     basePackages = [
         "cc.midolog.storage.mybatis.sample",
         "cc.midolog.storage.mybatis.user",
+        "cc.midolog.storage.mybatis.file",
     ],
 )
 class MyBatisStorageConfig
