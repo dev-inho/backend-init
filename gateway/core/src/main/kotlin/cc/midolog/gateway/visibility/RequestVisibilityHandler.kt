@@ -1,11 +1,7 @@
 package cc.midolog.gateway.visibility
 
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RestController
-
 /**
- * 메모리에 버퍼링된 최근 요청 가시성 목록을 제공하는 내부 관리용 REST 컨트롤러.
+ * 메모리에 버퍼링된 최근 요청 가시성 목록을 제공하는 내부 관리용 핸들러.
  *
  * `gateway.request-visibility.enabled=true` 조건에서만 빈으로 활성화된다.
  *
@@ -20,12 +16,9 @@ import org.springframework.web.bind.annotation.RestController
  * 요청/응답 본문, 쿼리스트링, 인증 헤더 등 PII나 보안상 민감한 자격증명은 저장 및 반환하지
  * 않고 HTTP 메서드, 경로, 상태 코드, 소요 시간 등 최소한의 메타데이터만 반환한다.
  */
-@RestController
-@RequestMapping("/internal/gateway/requests")
-class RequestVisibilityController(
+class RequestVisibilityHandler(
     private val eventStore: RequestEventStore,
 ) {
-    @GetMapping
-    fun recent(): List<RequestVisibilityEvent> =
-        eventStore.recent()
+    fun recent(request: org.springframework.web.reactive.function.server.ServerRequest): reactor.core.publisher.Mono<org.springframework.web.reactive.function.server.ServerResponse> =
+        org.springframework.web.reactive.function.server.ServerResponse.ok().bodyValue(eventStore.recent())
 }

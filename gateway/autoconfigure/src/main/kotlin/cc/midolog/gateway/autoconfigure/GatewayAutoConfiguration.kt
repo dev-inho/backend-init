@@ -11,7 +11,7 @@ import cc.midolog.gateway.ratelimit.RateLimiter
 import cc.midolog.gateway.ratelimit.RedisRateLimiter
 import cc.midolog.gateway.route.GatewayRouteSelector
 import cc.midolog.gateway.visibility.RequestEventStore
-import cc.midolog.gateway.visibility.RequestVisibilityController
+import cc.midolog.gateway.visibility.RequestVisibilityHandler
 import cc.midolog.gateway.visibility.RequestVisibilityFilter
 import cc.midolog.gateway.visibility.RequestVisibilityProperties
 import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -59,9 +59,15 @@ class GatewayAutoConfiguration {
             RequestVisibilityFilter(store)
 
         @Bean
-        @ConditionalOnMissingBean(RequestVisibilityController::class)
-        fun requestVisibilityController(store: RequestEventStore): RequestVisibilityController =
-            RequestVisibilityController(store)
+        @ConditionalOnMissingBean(RequestVisibilityHandler::class)
+        fun requestVisibilityHandler(store: RequestEventStore): RequestVisibilityHandler =
+            RequestVisibilityHandler(store)
+
+        @Bean
+        fun visibilityRoutes(handler: RequestVisibilityHandler): org.springframework.web.reactive.function.server.RouterFunction<org.springframework.web.reactive.function.server.ServerResponse> =
+            org.springframework.web.reactive.function.server.RouterFunctions.route()
+                .GET("/internal/gateway/requests", handler::recent)
+                .build()
     }
 
     @Configuration(proxyBeanMethods = false)
