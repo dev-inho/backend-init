@@ -54,7 +54,9 @@ afterEvaluate {
     }
 }
 
-
+tasks.withType(Test).configureEach {
+    systemProperty "queryDsl.generatedSourceDir", layout.buildDirectory.dir("generated/source/kapt/main").get().asFile.absolutePath
+}
 
 jpaDsl {
     entity('cc.midolog.sample.model.Sample') {
