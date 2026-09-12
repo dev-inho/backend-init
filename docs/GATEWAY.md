@@ -45,7 +45,8 @@
 라우팅 및 헬스체크 결정 (RouteConfig & GatewayRouteSelector)
     ├─ /api/** → application(8081) 프록시 (healthy 타겟 대상 라운드로빈, 모두 unhealthy 시 fail-open)
     ├─ /batch/** → batch(8082) 프록시 (단일 타겟, 헬스체크 대상 제외)
-    ├─ /actuator/** → application(8081) 프록시 (주의: application은 /actuator/health 외 denyAll)
+    ├─ /actuator/health, /actuator/metrics → gateway(8080) 자체 Actuator 직접 처리
+    ├─ /actuator/** (미노출 액추에이터 경로) → application(8081) 프록시 (프록시로 내려간 경우 다운스트림은 health 외 denyAll)
     └─ /internal/gateway/requests → gateway 자체 컨트롤러(8080)
     ↓
 HTTP 프록시 중계 및 메트릭 계측 (ProxyHandler)
@@ -182,7 +183,7 @@ class RouteConfig(
 - **`HandlerFunction` 주입**: 구체 핸들러 구현체(`cc.midolog.gateway.proxy.ProxyHandler`)에 직접 의존하지 않고 스프링 표준 `HandlerFunction<ServerResponse>` 인터페이스를 주입받습니다. 이는 `config` 패키지가 `proxy`나 `route` 패키지를 참조하지 못하도록 격리해 순환 의존성을 방지하기 위함이며, 이 아키텍처 규칙은 `GatewayPackageDependencyTest`(`config package does not import handler or route`)로 보장됩니다.
 - **`GatewayRouteProperties`**: `gateway.routes` 접두사로 바인딩되며, 단일 애플리케이션 URL(`applicationUrl` / 환경변수 `GATEWAY_APPLICATION_URL`), 복수 애플리케이션 URL 목록(`applicationUrls` / 환경변수 `GATEWAY_APPLICATION_URLS`), 배치 URL(`batchUrl` / 환경변수 `GATEWAY_BATCH_URL`)과 함께 대상 서버의 가용성을 능동 점검하기 위한 `healthCheck: GatewayHealthCheckProperties` 설정을 관리합니다.
 - **`GatewayRouteSelector` (라우트 선택, 능동 헬스체크 및 Fail-Open)**:
-  - **라우팅 분기**: `/batch/**` 경로는 배치 전용 서버(`batchUrl`)로 분기하고, `/api/**` 및 `/actuator/**` 등 그 외 모든 경로는 비즈니스 애플리케이션 서버(`applicationTargets`)로 분기합니다.
+  - **라우팅 분기**: `/batch/**` 경로는 배치 전용 서버(`batchUrl`)로 분기합니다. 게이트웨이 자체 노출 액추에이터(`/actuator/health`, `/actuator/metrics`)는 Spring Boot Actuator가 직접 서빙하며, 그 외 자체 미노출 `/actuator/**` 및 `/api/**` 등 모든 경로는 비즈니스 애플리케이션 서버(`applicationTargets`)로 분기합니다.
   - **헬스체크 대상 및 배치 제외**: 상태 점검 및 가용성 추적은 오직 비즈니스 애플리케이션 서버 타겟(`applicationTargets`)에만 적용됩니다. 배치 서버(`batchUrl`)는 내부 작업용 단일 타겟으로서 헬스체크 대상에서 제외되며 상태를 별도로 추적하지 않습니다 (`ProxyHandlerTest`의 `Batch target connection failure does not change application target states`로 검증).
   - **초기 상태**: 모든 application 타겟은 기동 시 초기에 항상 정상(`isHealthy = true`, `successStreak = 0`, `failureStreak = 0`) 상태로 시작합니다.
   - **능동 헬스체크 (Active Health Check)**:
@@ -382,7 +383,7 @@ gateway:
 
 `application.yml`은 profile을 암묵 활성화하지 않습니다. 로컬 실행 시 `SPRING_PROFILES_ACTIVE=local JWT_SECRET=<32바이트 이상>`을 명시합니다 (`GatewayProfileConfigTest`로 검증).
 
-`gateway.routes.application-urls`를 쉼표 구분 목록으로 지정하면 `/api/**`와 `/actuator/**` 대상 application 서버를 라운드로빈으로 선택합니다. 값이 없으면 기존 `gateway.routes.application-url` 단일 대상 설정을 그대로 사용합니다. `/batch/**`는 항상 `gateway.routes.batch-url` 단일 대상으로 전달합니다.
+`gateway.routes.application-urls`를 쉼표 구분 목록으로 지정하면 `/api/**` 및 게이트웨이 자체 미노출 `/actuator/**` 프록시 대상 application 서버를 라운드로빈으로 선택합니다. 값이 없으면 기존 `gateway.routes.application-url` 단일 대상 설정을 그대로 사용합니다. `/batch/**`는 항상 `gateway.routes.batch-url` 단일 대상으로 전달합니다.
 
 Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_ENABLED=true`로 명시한 경우에만 `/internal/gateway/requests` endpoint와 in-memory event store가 활성화됩니다. 저장 항목은 method, path, status, request id, timestamp, duration으로 제한하며 request/response body와 Authorization header는 저장하지 않습니다. `/internal/gateway/**`는 JWT Bearer token 검증 대상입니다.
 
@@ -397,7 +398,7 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 | 메트릭 이름 | 미터 타입 | 태그 (Tags) | 값 / 상태 의미 및 특성 |
 |---|:---:|---|---|
 | `gateway.proxy.requests` | Counter | `target` (다운스트림 타겟 URL)<br>`status` (HTTP 응답 상태 코드 문자열)<br>`retried` (`"true"` 또는 `"false"`) | 프록시 중계 완료 시 요청 건수를 집계합니다. 1회 이상의 재시도를 거쳐 완료된 경우 `retried="true"` 태그가 부여됩니다 (`ProxyHandlerTest`로 검증). |
-| `gateway.proxy.latency` | Timer | `target` (다운스트림 타겟 URL) | 프록시 요청의 왕복 지연 시간(Latency)을 계측합니다 (`ProxyHandlerTest`로 검증). |
+| `gateway.proxy.latency` | Timer | (태그 없음) | 프록시 요청의 왕복 지연 시간(Latency)을 계측합니다 (`ProxyHandler.kt`의 `registry.timer("gateway.proxy.latency")`로 생성되며 태그가 부여되지 않음, `ProxyHandlerTest`로 검증). |
 | `gateway.routes.healthy` | Gauge | `target` (다운스트림 application 타겟 URL) | 각 application 타겟의 정상 여부를 나타내는 게이지.<br>- `1.0`: 정상 (healthy)<br>- `0.0`: 비정상 (unhealthy)<br>**중요 특성**: 모든 타겟이 비정상이어도 라우팅은 가용성을 위해 fail-open으로 전체 분산하지만, 이 게이지 값은 상태를 정직하게 반영하여 **fail-open 중에도 0.0을 유지**합니다 (`GatewayRouteSelectorTest`로 검증). |
 
 #### 2) 모듈 경계 및 Actuator 노출 정책 (gateway:core vs gateway:app)
@@ -408,11 +409,11 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 - **`gateway:app` (`gateway/app`) 실행 모듈 및 Actuator 엔드포인트**:
   - `gateway:app`은 독립 실행형 서비스로서 `org.springframework.boot:spring-boot-starter-actuator` 및 `io.micrometer:micrometer-registry-prometheus` 의존성을 가집니다.
   - **기본 노출 (`management.endpoints.web.exposure.include=health,metrics`)**:
-    - 기본 설정으로 게이트웨이 자체의 `/actuator/health`와 `/actuator/metrics` 엔드포인트가 노출됩니다 (`ActuatorEndpointIntegrationTest`로 검증).
+    - 기본 설정으로 게이트웨이 자체의 `/actuator/health`와 `/actuator/metrics` 엔드포인트가 노출되어 게이트웨이가 직접 처리(서빙)합니다 (`ActuatorEndpointIntegrationTest`로 검증).
   - **Prometheus Opt-In 정책**:
     - `micrometer-registry-prometheus` 라이브러리 의존성은 빌드에 탑재되어 있으나, 엔드포인트 자체는 보안 및 불필요한 노출 방지를 위해 기본적으로 노출되지 않습니다 (`ActuatorEndpointIntegrationTest`의 `health and metrics endpoints are exposed by default, prometheus is not`로 검증).
     - Prometheus 스크랩 엔드포인트를 활성화하려면 `management.endpoints.web.exposure.include=health,metrics,prometheus`와 같이 명시적으로 프로퍼티를 설정(opt-in)해야 합니다 (`PrometheusEndpointIntegrationTest`의 `prometheus endpoint is exposed when explicitly included`로 검증).
-    - prometheus 엔드포인트가 명시적으로 노출되지 않은 상태에서 `/actuator/prometheus`로 요청이 들어올 경우, 게이트웨이 자체 액추에이터 핸들러가 처리하지 않고 와일드카드 프록시 라우트(`/actuator/**`)로 흘러가며, 백엔드 application 서버에 해당 엔드포인트가 없으면 502 Bad Gateway(또는 백엔드 401/403/404)가 반환됩니다.
+    - prometheus 엔드포인트가 명시적으로 노출되지 않은 상태에서 `/actuator/prometheus`로 요청이 들어올 경우, 게이트웨이 자체 액추에이터 핸들러가 처리하지 않고 functional catch-all 프록시 라우트(`/actuator/**`)로 흘러가 백엔드 application 서버로 프록시 중계됩니다. 이 경우 프록시 결과를 그대로 따르게 됩니다 (다운스트림 서버에 연결되지 않으면 502 Bad Gateway가 반환되고, 다운스트림에 도달하면 다운스트림 서버의 보안 정책(401/403)이나 엔드포인트 존재 여부(404)에 따른 응답이 반환됨).
 
 ---
 
@@ -461,17 +462,18 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 | 경로 | 대상 서버 | 포트 | 설명 |
 |------|----------|------|------|
-| `/api/**` | application | 8081 | 비즈니스 API 요청 (단일 대상 또는 라운드로빈) |
-| `/batch/**` | batch | 8082 | 배치/스케줄 작업 요청 |
-| `/actuator/**` | application | 8081 | 헬스체크 및 메트릭 엔드포인트 중계 (아래 주의 박스 참조) |
+| `/api/**` | application | 8081 | 비즈니스 API 요청 (healthy 타겟 대상 라운드로빈, 모두 unhealthy 시 fail-open) |
+| `/batch/**` | batch | 8082 | 배치/스케줄 작업 요청 (단일 타겟, 헬스체크 제외) |
+| `/actuator/health`, `/actuator/metrics` | gateway 자체 | 8080 | 게이트웨이 자체 기본 노출 액추에이터 엔드포인트 (직접 서빙, 3.4절 참조) |
+| `/actuator/**` (미노출 액추에이터 경로) | application | 8081 | 게이트웨이 자체 미노출 액추에이터 요청이 catch-all 프록시로 전달됨 (아래 주의 박스 참조) |
 | `/internal/gateway/requests` | gateway | 8080 | request visibility 조회 (기본 비활성화, JWT Bearer 토큰 필수) |
 | 기타 | 게이트웨이 자신 | 8080 | 404 Not Found |
 
-> [!WARNING] `/actuator/**` 프록시와 백엔드 보안 정책 (`SecurityConfig.kt`)
-> 게이트웨이는 `/actuator/**` 경로로 들어오는 모든 요청을 `application` 서버(8081)로 투명하게 프록시합니다.
-> 그러나 다운스트림 `application` 서버의 Spring Security 설정은 `/actuator/health` 엔드포인트만 익명 허용(`permitAll()`)하고, 그 외의 모든 액추에이터 엔드포인트(예: `/actuator/beans`, `/actuator/env`, `/actuator/metrics` 등)에 대해 `anyExchange().denyAll()` 규칙을 적용합니다.
-> 따라서 게이트웨이를 통해 백엔드의 `/actuator/health` 외의 엔드포인트로 접근할 경우 다운스트림 서버에서 401 Unauthorized 또는 403 Forbidden 응답이 반환되므로 주의가 필요합니다.
-> 반면 게이트웨이 자체(8080)의 모니터링을 위한 액추에이터 엔드포인트는 `gateway:app`에서 직접 서빙되며, 기본적으로 `health,metrics`가 노출되고 prometheus는 opt-in 방식으로 제공됩니다 (3.4절 참조).
+> [!WARNING] `/actuator/**` 라우팅 우선순위와 백엔드 프록시 보안 정책 (`SecurityConfig.kt`)
+> 게이트웨이 애플리케이션(`gateway:app`)에서 노출된 로컬 액추에이터 엔드포인트(`/actuator/health`, `/actuator/metrics`, 명시적 opt-in 시 `/actuator/prometheus`)는 게이트웨이(8080) 자체 액추에이터 핸들러가 우선 처리(직접 서빙)합니다.
+> 반면 게이트웨이 자체에 노출되지 않은 액추에이터 경로(예: opt-in 전 `/actuator/prometheus`, `/actuator/beans`, `/actuator/env` 등)는 WebFlux functional router의 catch-all `/actuator/**` 매핑으로 넘어가 다운스트림 `application` 서버(8081)로 프록시 중계됩니다.
+> 프록시로 내려간 경우, 다운스트림 `application` 서버의 Spring Security 설정은 오직 `/actuator/health` 엔드포인트만 익명 허용(`permitAll()`)하고 그 외의 모든 액추에이터 엔드포인트에 대해 `anyExchange().denyAll()` 규칙을 적용합니다.
+> 따라서 프록시로 중계된 요청은 다운스트림 서버의 연결 상태나 보안 정책을 그대로 따르게 됩니다 (다운스트림 연결 실패 시 502 Bad Gateway 반환, 다운스트림에 도달하면 보안 정책에 따라 401 Unauthorized 또는 403 Forbidden 응답, 엔드포인트 미존재 시 404 Not Found 반환).
 
 ---
 
