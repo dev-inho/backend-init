@@ -14,17 +14,17 @@
   - 세션, 상태 데이터는 Redis 등 외부 캐시/저장소로 위임
   - 요청 처리 간 독립성 확보
 - **분산 라우팅**: 게이트웨이가 들어온 요청을 다중 인스턴스로 분산
-  - 현재 최소 구현은 `gateway.routes.application-urls` 기반 라운드로빈
-  - 가중치 기반, health-check 제외, service discovery는 후속 확장
+  - 현재 구현은 `gateway.routes.application-urls` 기반 라운드로빈 및 능동 헬스체크 연동 완료
+  - 가중치 기반 라우팅 및 동적 서비스 디스커버리(Service Discovery)는 후속 확장
   - 또는 외부 로드밸런서(AWS ALB, Nginx 등) 활용
 
 ### 고려사항
 - **로드밸런싱**: 게이트웨이 내장 라우팅 vs. 외부 LB
-- **헬스체크**: `/actuator/health` 엔드포인트를 통한 인스턴스 상태 모니터링
+- **헬스체크**: `/actuator/health` 엔드포인트를 통한 주기적 능동 헬스체크 및 장애 타겟 자동 제외/복구 연동 완료 (`GatewayRouteSelector.kt`, PR #35)
 - **무중단 배포(Blue-Green Deployment)**: 서버 업데이트 중 서비스 지속성 확보
 
 ### 상태
-✅ **최소 구현 완료** — Gateway 내부 라운드로빈은 optional 설정으로 제공. 외부 LB/service discovery와 health-check 기반 제외는 후속.
+✅ **라운드로빈 및 헬스체크 연동 완료** — Gateway 내부 라운드로빈 및 능동 헬스체크 기반 장애 격리/fail-open 구현 완료 (`GatewayRouteSelector.kt`, PR #35). 가중치 기반 분산 및 외부 LB/동적 service discovery 연동은 후속 과제로 유지.
 
 ---
 
@@ -128,7 +128,7 @@
 게이트웨이 프록시 중계 시 대용량 응답에 대한 메모리 점유 최적화 및 첫 바이트 전송 지연(TTFB) 개선
 
 ### 현재 동작 및 트레이드오프
-현재 `core/gateway`의 `ProxyHandler.kt`는 클라이언트 요청 본문은 `DataBuffer` 스트림으로 다운스트림에 전달하지만, 다운스트림 응답은 `response.bodyToMono(ByteArray::class.java)`를 통해 메모리에 바이트 배열로 전체 버퍼링한 뒤 반환한다.
+현재 `gateway/core`의 `ProxyHandler.kt`는 클라이언트 요청 본문은 `DataBuffer` 스트림으로 다운스트림에 전달하지만, 다운스트림 응답은 `response.bodyToMono(ByteArray::class.java)`를 통해 메모리에 바이트 배열로 전체 버퍼링한 뒤 반환한다.
 - **장점**: 응답 헤더 정제, 상태 코드 조작, 다운스트림 장애 시 502(Bad Gateway) 및 504(Gateway Timeout) 폴백 처리가 단순하고 직관적이다.
 - **단점/트레이드오프**: 대용량 파일 다운로드나 거대 JSON 응답 수신 시 게이트웨이 JVM 힙 메모리 사용량이 급증하여 메모리 압박이 발생할 수 있는 트레이드오프가 있다.
 
@@ -145,10 +145,10 @@
 ### 로드맵 개요
 자체 구현 필터 체인(가시성, JWT, Rate Limit 등)을 보존하면서 starter 형태로 모듈화하는 단계별 로드맵을 수립함:
 - **Phase 0**: 사전 준비 (패키지 재배치 및 JWT 공유 모듈화)
-- **Phase 1**: `gateway-core` 및 `gateway-autoconfigure` 분할
-- **Phase 2**: 단독 실행 애플리케이션 껍데기 `gateway/app` 및 `gateway-starter` 신설
+- **Phase 1**: `gateway:core` 및 `gateway:autoconfigure` 분할
+- **Phase 2**: 단독 실행 애플리케이션 껍데기 `gateway/app` 및 `gateway:starter` 신설
 - **Phase 3**: 동일 프로세스 내 In-process 디스패치 또는 루프백 라우팅 및 보안 체인 분리
-- **Phase 4**: 원격 모드 대상 헬스체크 및 `ProxyHandler` 재시도/서킷 브레이커 고도화
+- **Phase 4**: 원격 모드 대상 능동 헬스체크 및 멱등 재시도·메트릭 연동 완료 (PR #33·#35). 서킷 브레이커 도입은 미래 과제로 보존.
 
 상세 설계, 기능 매트릭스 갭 분석 및 사용자 결정 항목은 [`docs/GATEWAY_STARTER_PLAN.md`](./GATEWAY_STARTER_PLAN.md) 참조.
 

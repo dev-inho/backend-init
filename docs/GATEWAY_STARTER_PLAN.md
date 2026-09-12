@@ -9,8 +9,8 @@
 | 라우팅 | 정적 URL 라우팅 (`application-url(s)`, `batch-url`) | 헤더/가중치/우선순위 기반 부재 | 하 | 초기 프로젝트는 단순 경로 매핑으로 충분함 (`GatewayRouteSelector.kt:15`) |
 | 인증/인가 | JWT 검증 | OAuth2, API Key, mTLS 부재 | 하 | 현재 JWT로 사내/B2C 요구사항 대부분 커버 가능함 (`JwtAuthFilter.kt:14`) |
 | Rate Limit | Redis 기반 Rate Limit (fail-open) | 다양한 알고리즘 부재 | 하 | fail-open 방식의 Lua 스크립트 기반 제한은 초기 트래픽 방어에 충분함 (`RedisRateLimiter.kt:12`) |
-| 회복성 | 타임아웃 있음(10s), 재시도·CB 없음 | 서킷 브레이커, 재시도 제어 부재 | 상 | 모드 3(원격 서버)에서 일시적 네트워크 장애 방어를 위한 재시도가 필요함. 현재 타임아웃 설정(`WebClientConfig.kt:20-21`, `ProxyHandler.kt:47,63` 504 반환)은 존재함. |
-| 관측성 | Request Id, 로깅, 가시성 필터 | 분산 추적(OTel-보류), 메트릭, 헬스체크 부재 | 중 | 헬스체크 부재 시 모드 3에서 다운된 업스트림에 계속 요청하는 문제 발생 (`FUTURE.md:97-101`) |
+| 회복성 | 타임아웃(10s), 멱등 재시도(GET/HEAD/OPTIONS, 1..3회, 100ms 지수 backoff) 완료, 서킷 브레이커 없음 | 서킷 브레이커 부재 | 중 | 멱등 재시도(`GatewayRetryProperties.kt`, `ProxyHandler.kt`, PR #33) 도입 완료. 서킷 브레이커는 미구현 상태로 후속 과제 보존. |
+| 관측성 | Request Id, 로깅, 가시성 필터, 능동 헬스체크(10s 주기, 3연속 실패 시 제외, fail-open), 메트릭(requests, latency, healthy 게이지), Actuator(health, metrics 기본 노출, prometheus opt-in) 완료 | 분산 추적(OTel-보류) | 하 | 능동 헬스체크(`GatewayRouteProperties.kt`, `GatewayRouteSelector.kt`, PR #35) 및 Micrometer 메트릭/Actuator 노출(PR #33) 도입 완료. OpenTelemetry는 보류 (`FUTURE.md`). |
 | 요청/응답 변환| 바이트 배열 버퍼링 | 선언적 헤더/바디/경로 재작성 부재 | 하 | 현재 API 프록시 용도로는 충분함 (`ProxyHandler.kt:39`) |
 | 캐싱 | 없음 | 응답 캐시 지원 안 함 | 하 | 백엔드 애플리케이션 단에서 처리 가능하므로 당장 필요하지 않음. |
 | 서비스 디스커버리| 정적 목록 기반 라운드로빈 | 동적 디스커버리 부재 | 하 | 모드 3 도입 시에도 초기엔 정적 목록(DNS/IP)과 헬스체크로 대체 가능함. |
@@ -27,7 +27,7 @@ application이 gateway-starter를 의존하여 동일 JVM 내에서 필터 체�
 현재 `gateway:app`의 기본 구동 형태입니다. `gateway:starter` 의존성을 포함하는 얇은 부트 애플리케이션(`GatewayApplication`, 포트 8080)으로 실행되어 localhost의 다른 포트(8081, 8082)를 업스트림으로 프록시 중계합니다.
 
 ### 2.3. 모드 3: 게이트웨이 단독 실행 (다른 물리 서버 / Remote)
-원격 업스트림과 통신합니다. 네트워크 타임아웃, 재시도 로직, 다운스트림 헬스체크 메커니즘(`중` 우선순위 기능)의 도입이 필요하며, 현재 코드베이스에서는 standalone과 동일한 프록시 빈 묶음을 공유하고 설정값으로 원격 URL을 바라보도록 구성됩니다.
+원격 업스트림과 통신합니다. 네트워크 타임아웃, 멱등 재시도 로직, 다운스트림 능동 헬스체크 및 fail-open 메커니즘(Phase 4, PR #33·#35)이 구현 완료되었으며, 현재 코드베이스에서는 standalone과 동일한 프록시 빈 묶음을 공유하고 설정값으로 원격 URL을 바라보도록 구성됩니다.
 
 ### 2.4. 공통 모듈 설계
 - `gateway:core` (`gateway/core`): 핵심 필터 및 프록시 로직
@@ -80,10 +80,11 @@ SCG 라이브러리 임베드 모드(모드 1)는 공식적으로 지원되나, 
   - 내용: `core:application`에 `gateway:starter`를 탑재하고 `gateway.mode=embedded` 동작 검증.
   - W1 알려진 제약 정리: `gateway:core`의 `RequestVisibilityController` `@RestController`가 호스트 패키지 스캔에 잡히는 문제에 대해 core/autoconfigure 후속 패키지/설정 정리 진행.
   - 가드 테스트: `core:application` 기동 시 게이트웨이 공통 필터(레이트 리밋, 관측성)가 동작하고 애플리케이션 컨트롤러와 SecurityConfig로 요청이 직접 처리되는지 통합 테스트.
-- **Phase 4 / L3: 모드 3 (Remote) 관측성 및 헬스체크 기능 추가 (계획)**
-  - 내용: 갭 분석에서 "중" 우선순위였던 백엔드 헬스체크 및 `ProxyHandler`의 재시도(Retry) 도입. 메트릭 연동.
-  - 파일 경계: `WebClientConfig.kt`, `ProxyHandler.kt`, `GatewayRouteSelector.kt`.
-  - 가드 테스트: 업스트림이 503 반환 시 N회 재시도 동작 확인. 헬스체크 실패 노드는 라운드로빈에서 제외되는지 확인.
+- **Phase 4 / L3: 모드 3 (Remote) 관측성·재시도 및 헬스체크 기능 추가 [완료]**
+  - 내용: PR #33(재시도·메트릭)과 PR #35(능동 헬스체크)를 통해 멱등 요청(GET/HEAD/OPTIONS) 재시도 및 지수 backoff, 비멱등 요청 재시도 배제, 다운스트림 비즈니스 서버 능동 헬스체크 및 all-unhealthy 전체 fail-open, 수동 연결 실패 즉시 unhealthy 마킹, Micrometer 메트릭(`gateway.proxy.requests`, `gateway.proxy.latency`, `gateway.routes.healthy`), Spring Boot Actuator 기본 노출(`health,metrics`) 및 Prometheus opt-in 연동 완료.
+  - 파일 경계: `gateway/core/src/main/kotlin/cc/midolog/gateway/config/GatewayRetryProperties.kt`, `gateway/core/src/main/kotlin/cc/midolog/gateway/config/GatewayRouteProperties.kt`, `gateway/core/src/main/kotlin/cc/midolog/gateway/proxy/ProxyHandler.kt`, `gateway/core/src/main/kotlin/cc/midolog/gateway/route/GatewayRouteSelector.kt`, `gateway/autoconfigure/src/main/kotlin/cc/midolog/gateway/autoconfigure/GatewayAutoConfiguration.kt`, `gateway/app/build.gradle`, `gateway/app/src/main/resources/application.yml`.
+  - 가드 테스트: `ProxyHandlerTest`, `GatewayRetryPropertiesTest`, `GatewayRoutePropertiesTest`, `GatewayRouteSelectorTest`, `ActuatorEndpointIntegrationTest`.
+  - PR 근거: PR #33 (`gateway retry-metrics`), PR #35 (`gateway health-check`).
 
 ## 5. 조사에서 확인 못 한 것
 
