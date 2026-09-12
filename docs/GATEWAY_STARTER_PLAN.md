@@ -24,7 +24,7 @@ application이 gateway-starter를 의존하여 동일 JVM 내에서 필터 체�
 | 후보 | 장점 | 단점 (비용 및 복잡도) |
 | --- | --- | --- |
 | **A. 루프백 HTTP** (`localhost:포트`로 자기 자신 호출) | 구현이 가장 단순하고 기존 `ProxyHandler` 유지 가능. | 모든 요청이 네트워크 스택을 두 번 타며, 커넥션 풀과 타임아웃이 자신에게 걸림. 포트가 하나이므로 Gateway WebFilter 체인이 루프백 요청에 다시 걸려 무한루프를 막는 방어 로직 필수. |
-| **B. In-process 디스패치** (내부 핸들러 직접 호출) | 네트워크 오버헤드 0. HTTP 커넥션 비용 및 타임아웃 중복 제거. 성능 최적화. | 구조를 크게 바꿔야 함. `ProxyHandler`의 WebClient 호출을 생략하고, WebFlux `DispatcherHandler`로 `ServerWebExchange`를 넘겨 애플리케이션의 `RouterFunction`을 직접 태우도록 분기 로직 필요. |
+| **B. In-process 디스패치** (내부 핸들러 직접 호출) | 네트워크 오버헤드 0. HTTP 커넥션 비용 및 타임아웃 중복 제거. 성능 최적화. | 구조를 크게 바꿔야 함. `ProxyHandler`의 WebClient 호출을 생략하고, WebFlux `DispatcherHandler`로 `ServerWebExchange`를 넘겨 애플리케이션의 `@RestController`를 직접 태우도록 분기 로직 필요. |
 
 - **이중 인증 해결 방안**: `SecurityConfig.kt:39-69` 의 denyAll 폴백과 `JwtAuthFilter`가 동일 JVM에서 중복 실행되는 것을 방지해야 합니다. Gateway 필터에서 인증 성공 시 `ServerWebExchange`의 Attribute로 힌트를 넘기고, 애플리케이션 단의 `SecurityConfig`는 해당 힌트가 존재하면 인가(Authorization)를 통과시키도록 Security Matcher를 분리 구성하는 후보가 있습니다.
 
@@ -50,10 +50,19 @@ SCG 라이브러리 임베드 모드(모드 1)는 공식적으로 지원되나, 
   | `RequestIdFilter` | `AddRequestHeader` 필터 활용 혹은 커스텀 GlobalFilter |
   | `AuthTokenRateLimitFilter` | `RequestRateLimiter` + `RedisRateLimiter` 사용 및 KeyResolver 커스텀 |
   | `JwtAuthFilter` | 기본 내장 없음. 커스텀 `GatewayFilter` 구현 필수 |
-  | `RequestVisibilityFilter` | 커스텀 `GlobalFilter` 로팅 로직 작성 필수 |
+  | `RequestVisibilityFilter` | 커스텀 `GlobalFilter` 로깅 로직 작성 필수 |
   | `HttpLoggingFilter` | SCG Netty 로깅 튜닝 혹은 커스텀 필터 작성 |
 
-- **SCG 채택 단점 (무거운 이유)**: SCG는 `spring-boot-starter-webflux` 외에도 `spring-cloud-starter-gateway`, `reactor-netty` 등 방대한 의존성을 가져옵니다. 자체 구현 필터를 SCG의 `GatewayFilter` 인터페이스로 다시 작성해야 하는 비용이 큽니다.
+- **SCG 채택 시 의존성 증가 비용**: SCG(`spring-cloud-starter-gateway`)의 Maven Central POM([URL](https://repo1.maven.org/maven2/org/springframework/cloud/spring-cloud-starter-gateway/4.0.7/spring-cloud-starter-gateway-4.0.7.pom))을 분석한 직접 의존성 목록입니다.
+  | 기존 의존성과 겹침 (추가 비용 없음) | 새로 들어오는 직접 의존성 (추가 비용) |
+  | --- | --- |
+  | `spring-boot-starter-webflux` | `spring-cloud-starter` (Spring Cloud 공통 컨텍스트) |
+  | `reactor-netty` (webflux에 포함됨) | `spring-cloud-gateway-server` (SCG 코어) |
+  | | `spring-boot-starter-validation` |
+  | | `io.projectreactor.addons:reactor-extra` |
+
+  위와 같이 Spring Cloud 컨텍스트 등 새로운 의존성이 4개 추가됩니다. 자체 구현 필터를 SCG의 `GatewayFilter` 인터페이스로 다시 작성해야 하는 로직 전환 비용도 큽니다.
+
 - **결론**: 커스텀 로직(Visibility, JWT)이 강결합된 현재 "자체 구현을 유지"하면서 `gateway-starter` 체제로 모듈화하는 것이 초기 프로젝트에 훨씬 적합합니다.
 
 ## 3. 🔶 사용자 결정 필요 항목
