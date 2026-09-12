@@ -116,4 +116,73 @@ class FileServiceTest {
         assertEquals(FileStatus.FAILED, savedStatus)
         assertEquals(pendingMeta.id, failedId, "Failed ID should match the pending ID")
     }
+
+    @Test
+    fun `다른 owner로 getFile, deleteFile, loadContent 요청 시 NOT_FOUND로 실패하며 storage 접근이 발생하지 않는다`() = runBlocking {
+        var storageLoadCount = 0
+        var storageDeleteCount = 0
+
+        val storagePort = object : FileStoragePort {
+            override suspend fun store(key: String, reader: ChunkReader, knownSize: Long?, contentType: String, expectedChecksum: String?): StoredFile {
+                return StoredFile(id = "1", ownerId = "owner1", storageKey = key, sizeBytes = 100L, contentType = "text/plain", checksum = "abc", status = FileStatus.READY)
+            }
+            override suspend fun load(key: String): ChunkReader? {
+                storageLoadCount++
+                return null
+            }
+            override suspend fun delete(key: String): Boolean {
+                storageDeleteCount++
+                return true
+            }
+            override suspend fun exists(key: String): Boolean = false
+        }
+
+        val existingMeta = FileMeta(
+            id = "file1",
+            ownerId = "owner1",
+            storageKey = "storage1",
+            sizeBytes = 100L,
+            contentType = "text/plain",
+            checksum = "abc",
+            status = FileStatus.READY,
+            createdAt = Instant.now(),
+            updatedAt = Instant.now()
+        )
+
+        val repoPort = object : FileMetaRepositoryPort {
+            override suspend fun findById(id: String): FileMeta? = if (id == "file1") existingMeta else null
+            override suspend fun save(file: FileMeta): FileMeta = file
+            override suspend fun updateStatus(id: String, status: FileStatus): Boolean = true
+            override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> = emptyList()
+        }
+
+        val fileService = FileService(storagePort, repoPort)
+
+        // 1. getFile
+        val getEx = assertThrows(cc.midolog.web.exception.ApiException::class.java) {
+            runBlocking {
+                fileService.getFile("file1", "hacker")
+            }
+        }
+        assertEquals("file not found", getEx.message)
+
+        // 2. deleteFile
+        val deleteEx = assertThrows(cc.midolog.web.exception.ApiException::class.java) {
+            runBlocking {
+                fileService.deleteFile("file1", "hacker")
+            }
+        }
+        assertEquals("file not found", deleteEx.message)
+
+        // 3. loadContent
+        val loadEx = assertThrows(cc.midolog.web.exception.ApiException::class.java) {
+            runBlocking {
+                fileService.loadContent("file1", "hacker")
+            }
+        }
+        assertEquals("file not found", loadEx.message)
+
+        assertEquals(0, storageLoadCount, "Storage load should not be called")
+        assertEquals(0, storageDeleteCount, "Storage delete should not be called")
+    }
 }
