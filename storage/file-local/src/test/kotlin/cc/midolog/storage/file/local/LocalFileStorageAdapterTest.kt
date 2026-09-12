@@ -224,4 +224,37 @@ class LocalFileStorageAdapterTest {
         assertNull(adapter.load(key), "디렉터리는 load 시 null이어야 한다")
         assertFalse(adapter.exists(key), "디렉터리는 exists 시 false이어야 한다")
     }
+
+    @Test
+    fun `임시 파일 생성 실패 시에도 reader가 cancel 및 close 되어야 한다`() = runTest {
+        val rootPath = tempDir.resolve("storage").apply { createDirectories() }
+        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val key = "66666666-6666-6666-6666-666666666666"
+
+        // 임시 파일 생성이 실패하도록 디렉터리 쓰기 권한 제거
+        rootPath.toFile().setWritable(false)
+
+        var cancelCalled = false
+        var closeCalled = false
+        val reader = object : ChunkReader {
+            override suspend fun readChunk(buffer: ByteArray): Int = -1
+            override suspend fun cancel(cause: Throwable?) {
+                cancelCalled = true
+            }
+            override fun close() {
+                closeCalled = true
+            }
+        }
+
+        try {
+            assertThrows<Exception> {
+                adapter.store(key, reader, null, "text/plain", null)
+            }
+            assertTrue(cancelCalled, "임시 파일 생성 실패 시 cancel이 호출되어야 한다")
+            assertTrue(closeCalled, "임시 파일 생성 실패 시 close가 호출되어야 한다")
+        } finally {
+            // 다른 테스트에 영향을 주지 않도록 권한 복구
+            rootPath.toFile().setWritable(true)
+        }
+    }
 }

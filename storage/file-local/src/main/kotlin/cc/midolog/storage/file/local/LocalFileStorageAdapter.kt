@@ -52,14 +52,15 @@ class LocalFileStorageAdapter(
         expectedChecksum: String?
     ): StoredFile {
         val targetPath = resolveSafePath(key)
-        val tempPath = withContext(Dispatchers.IO) {
-            Files.createTempFile(rootPath, key, ".tmp")
-        }
+        var tempPath: Path? = null
         val buffer = ByteArray(8192)
         val digest = MessageDigest.getInstance("SHA-256")
         var size = 0L
 
         try {
+            tempPath = withContext(Dispatchers.IO) {
+                Files.createTempFile(rootPath, key, ".tmp")
+            }
             withContext(Dispatchers.IO) {
                 Files.newOutputStream(tempPath).use { out ->
                     while (true) {
@@ -99,7 +100,7 @@ class LocalFileStorageAdapter(
             )
         } catch (e: Exception) {
             withContext(Dispatchers.IO) {
-                tempPath.deleteIfExists()
+                tempPath?.deleteIfExists()
             }
             reader.cancel(e)
             throw e
