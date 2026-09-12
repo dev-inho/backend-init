@@ -14,15 +14,18 @@ import reactor.core.publisher.Mono
  * 인증 토큰 발급 엔드포인트(POST /api/auth/token) 전용 무차별 대입(brute-force) 방어 필터.
  *
  * 필터 체인 순서 계약:
- * -2 HttpLoggingFilter(support:web) → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter(support:web) → 1 JwtAuthFilter → 100 RequestVisibilityFilter
+ * - standalone/remote: -2 HttpLoggingFilter → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter → 1 JwtAuthFilter → 100 RequestVisibilityFilter
+ * - embedded: -100 Spring Security → -2 HttpLoggingFilter → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter → 100 RequestVisibilityFilter (JwtAuthFilter 없음)
  *
  * 앞뒤 순서와 위치 이유:
  * 앞에는 최외곽 로깅 필터(cc.midolog.web.filter.HttpLoggingFilter, @Order(-2))가 위치해
  * 모든 인입 요청의 시작과 종료 메타데이터를 기록한다. 뒤에는 cc.midolog.web.filter.RequestIdFilter(@Order(0)),
  * [JwtAuthFilter](@Order(1)), cc.midolog.gateway.visibility.RequestVisibilityFilter(@Order(100))가
- * 실행된다. 토큰 발급 엔드포인트는 로그인 전(미인증 상태)에 호출되므로 [JwtAuthFilter]보다 앞단에서
+ * 실행된다 (embedded 모드에서는 JwtAuthFilter가 생략되고 호스트의 Spring Security가 앞단에 개입한다).
+ * 토큰 발급 엔드포인트는 로그인 전(미인증 상태)에 호출되므로 인증 로직보다 앞단에서
  * 무차별 대입을 차단해야 한다. 또한 RequestIdFilter보다도 앞서 한도 초과(429)로 즉시 거절함으로써
  * 미인증 공격 트래픽에 대한 불필요한 컨텍스트 생성 비용을 선제적으로 줄인다.
+ * 429로 거절될 경우 체인이 단축되어 뒤쪽의 가시성 필터 등은 실행되지 않으나 최외곽 HttpLoggingFilter에는 로깅된다.
  *
  * 동작 및 정책:
  * - 대상: POST /api/auth/token 하나뿐이며 그 외 경로는 그대로 통과한다.

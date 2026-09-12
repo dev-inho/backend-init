@@ -28,6 +28,10 @@ jwt:
 
 gateway:
   mode: embedded
+  rate-limit:
+    auth-token:
+      limit: 10
+      window-seconds: 60
   request-visibility:
     enabled: false
 

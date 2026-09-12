@@ -44,4 +44,22 @@ class AuthFailClosedTest {
             .exchange()
             .expectStatus().isUnauthorized
     }
+
+    @Autowired
+    lateinit var jwtProvider: JwtProvider
+
+    @Test
+    fun `internal gateway requests require authentication`() {
+        // Without JWT -> 401
+        webTestClient.get().uri("/internal/gateway/requests")
+            .exchange()
+            .expectStatus().isUnauthorized
+
+        // With valid JWT -> proceeds to handler (returns 404 since handler is absent in this slice test)
+        val token = jwtProvider.issue("test-user")
+        webTestClient.get().uri("/internal/gateway/requests")
+            .header(org.springframework.http.HttpHeaders.AUTHORIZATION, "Bearer $token")
+            .exchange()
+            .expectStatus().isNotFound
+    }
 }

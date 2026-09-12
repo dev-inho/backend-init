@@ -14,15 +14,16 @@ import reactor.core.publisher.Mono
  *
  * GatewayAutoConfiguration에 의해 `gateway.request-visibility.enabled=true` 조건에서만 빈으로 등록된다.
  *
- * 필터 체인 순서:
- * -100 Spring Security (embedded 호스트의 경우) → -2 HttpLoggingFilter(support:web) → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter(support:web) → 1 JwtAuthFilter (standalone의 경우) → 100 RequestVisibilityFilter
+ * 필터 체인 순서 계약:
+ * - standalone/remote: -2 HttpLoggingFilter → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter → 1 JwtAuthFilter → 100 RequestVisibilityFilter
+ * - embedded: -100 Spring Security → -2 HttpLoggingFilter → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter → 100 RequestVisibilityFilter (JwtAuthFilter 없음)
  *
  * 앞선 필터들의 단축 동작과 기록 한계:
  * 이 필터는 체인의 가장 마지막(@Order(100))에 위치한다.
  * 앞선 필터들(예: Spring Security, AuthTokenRateLimitFilter, JwtAuthFilter)에서 요청을
- * 조기 단축(short-circuit)하여 401이나 429 응답을 반환할 경우, 요청이 이 필터까지 도달하지 않으므로
- * 해당 거절 요청들은 이벤트 저장소에 기록되지 않는다. 프록시 타임아웃(504) 등 필터를 거쳐
- * 백엔드 라우팅 중 발생한 응답만 기록된다.
+ * 조기 단축(short-circuit)하여 401이나 429 응답을 반환할 경우, 체인이 단축되어 이 필터까지 도달하지 않으므로
+ * 해당 거절 요청들은 가시성 이벤트 저장소에 기록되지 않으나 최외곽 HttpLoggingFilter에는 로깅된다.
+ * 프록시 타임아웃(504) 등 필터를 거쳐 백엔드 라우팅 중 발생한 응답만 기록된다.
  *
  * 시간 측정 및 Clock 주입:
  * 시스템 시계 대신 [Clock]을 주입받아 요청 시작 시각과 소요 시간을 측정한다. 테스트 환경에서

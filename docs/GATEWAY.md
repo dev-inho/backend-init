@@ -17,23 +17,22 @@
 [게이트웨이 8080]
     ↓
 1. HttpLoggingFilter (support:web, @Order(-2))
-   - 하는 일: 최외곽 요청 시작 시각 계측 및 응답 완료 시(doFinally) 메타데이터 INFO 로깅
-   - 거절 시: 거절 없음. 뒤쪽에서 단축되어도 완료 로그는 항상 기록.
+   - 하는 일: 최외곽 요청 시작 시각 계측 및 응답 완료 시(doFinally) 메타데이터(method, path, status, duration, requestId) INFO 로깅
+   - 거절 시: 거절 없음 (관측 전용 통과). 뒤쪽 필터에서 429/401로 단축 종료되더라도 최외곽에서 완료 로그는 항상 기록
     ↓
 2. AuthTokenRateLimitFilter (gateway:core, @Order(-1))
-   - 하는 일: `POST /api/auth/token` 대상 IP별 요청 빈도 제한 (10회/60초, fail-open)
-   - 거절 시: 429 Too Many Requests 반환 (본문 없음, 체인 중단). 초과 시 뒤쪽 필터 미실행.
-   - 모드별 동작: **embedded / standalone / remote 모두 실행됨**.
+   - 하는 일: POST /api/auth/token 대상 클라이언트 IP별 요청 빈도 제한 (10회/60초, Redis Lua fail-open)
+   - 거절 시: 429 Too Many Requests 반환 (본문 없음, 체인 중단) / Redis 오류 시 fail-open 통과
+   - 단축 경로: 한도 초과 시 chain.filter를 호출하지 않고 즉시 응답하므로 뒤쪽 RequestIdFilter, JwtAuthFilter, RequestVisibilityFilter는 실행되지 않음
     ↓
 3. RequestIdFilter (support:web, @Order(0))
-   - 하는 일: X-Request-Id 헤더 확인/생성 및 전파, Reactor Context 바인딩
-   - 거절 시: 거절 없음
+   - 하는 일: X-Request-Id 헤더 추출(형식 검증) 또는 UUID 생성, 요청/응답 헤더 전파 및 Reactor Context/MDC 바인딩
+   - 거절 시: 거절 없음 (요청 식별자 부여 후 통과)
     ↓
 4. JwtAuthFilter (gateway:core, @Order(1))
-   - 하는 일: Authorization Bearer 토큰 서명 및 검증. 
-   - 모드별 동작: **standalone / remote 모드에서만 실행됨**. `embedded` 모드에서는 이 필터가 로드되지 않으며, 호스트(core:application)의 `SecurityConfig`에 선언된 `AuthenticationWebFilter`가 애플리케이션의 컨트롤러보다 앞서 JWT 인증을 직접 처리합니다.
-   - 경로 정책 (프록시 모드 시): `/api/auth/`, `/actuator/`, `/batch/` 등은 미검증 통과. `/api/`, `/internal/gateway/` 는 검증 필수.
-   - 거절 시: 401 Unauthorized 반환 (본문 없음, 체인 중단).
+   - 하는 일: Authorization Bearer 토큰 서명 및 유효기간 검증 (JwtCodec 위임, 검증 성공 시 SecurityContext 주입 없이 그대로 통과)
+   - 경로 정책: /api/auth/, /actuator/, /batch/ 는 미검증 통과 / /api/, /internal/gateway/ 는 검증 필수
+   - 거절 시: 401 Unauthorized 반환 (본문 없음, 체인 중단) / 미매핑 경로는 체인에 넘겨 404 위임
    - 단축 경로: 인증 실패 시 chain.filter를 호출하지 않고 즉시 응답하므로 뒤쪽 RequestVisibilityFilter는 실행되지 않음
     ↓
 5. RequestVisibilityFilter (gateway:core, @Order(100), 조건부 활성화)
@@ -334,9 +333,10 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 - **standalone 및 remote 모드**:
   공통 빈과 함께 프록시 빈 묶음(`RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `JwtAuthFilter`)이 활성화됩니다. 자동 설정 클래스인 `GatewayAutoConfiguration`은 `@ConditionalOnExpression("'\${gateway.mode:}' == 'standalone' || '\${gateway.mode:}' == 'remote'")` 어노테이션으로 이를 바인딩합니다. 현재 코드베이스에서 standalone과 remote는 동일한 프록시 빈 묶음을 공유하며 환경 설정값(타겟 URL 및 인프라 구성)으로 역할을 구분합니다.
 - **embedded 모드 (In-process 직접 처리)**:
-  `RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `JwtAuthFilter`를 전혀 등록하지 않습니다.
-  - **설계 이유 및 실측 순서 근거**: WebFlux의 핸들러 매핑 우선순위는 `RouterFunctionMapping`이 `order = -1`이고, 컨트롤러 매핑인 `RequestMappingHandlerMapping`이 `order = 0`입니다. 만약 embedded 모드에서 프록시 라우트 빈(`RouteConfig`)이 등록되면, 동일 프로세스 내의 `@RestController`보다 Functional Router가 `/api/**` 요청을 먼저 가로채 다운스트림 호출을 시도하다가 장애(502/504)를 발생시킵니다. 따라서 routes와 프록시 빈을 등록하지 않아 동일 JVM의 컨트롤러가 직접 요청을 처리하도록 합니다 (`GatewayAutoConfigurationTest`의 `WebFlux 매핑 순서 실측 가드`로 보증).
-  - 인증은 게이트웨이 `JwtAuthFilter` 대신 호스트 애플리케이션의 `SecurityConfig`가 직접 담당합니다.
+  호스트 애플리케이션(`core:application`)에 `gateway:starter`를 의존성으로 탑재하여 동작합니다. `RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `JwtAuthFilter` 등 프록시 관련 빈을 전혀 등록하지 않습니다.
+  - **정확한 필터 순서**: 호스트의 스프링 시큐리티가 앞단에 개입하므로 `-100 Spring Security → -2 HttpLoggingFilter → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter → 100 RequestVisibilityFilter` 순서로 동작합니다.
+  - **인증 및 라우팅**: 게이트웨이 자체 `JwtAuthFilter` 대신 호스트 애플리케이션의 `SecurityConfig`가 JWT 인증을 전담합니다. 프록시용 `RouteConfig`가 없으므로 애플리케이션의 컨트롤러(`RequestMappingHandlerMapping`, `order=0`)가 직접 비즈니스 로직을 처리합니다. 단, 가시성 조회용 `visibilityRoutes` 빈은 오직 `/internal/gateway/requests` 경로에만 반응하는 Functional Router(`RouterFunctionMapping`, `order=-1`)로 등록되어 해당 경로만 컨트롤러보다 먼저 가로채어 처리합니다.
+  - **가시성 설정 정책**: 가시성 기능(`request-visibility`)은 운영 환경 성능을 위해 기본적으로 `false`로 비활성화되며, `local` 프로파일 환경에서만 명시적으로 `true`로 활성화됩니다.
 
 ### 4.3 알려진 제약 및 컴포넌트 스캔 방어
 - `gateway:core` 모듈의 `RequestVisibilityController`에 `@RestController`가 부여되어 있어, 호스트 애플리케이션(`core:application`)이나 게이트웨이 앱(`gateway:app`)이 `cc.midolog` 패키지 스캔을 수행할 때 `gateway.request-visibility.enabled=false` 설정임에도 불구하고 컨트롤러가 먼저 빈으로 등록되는 현상이 발생할 수 있습니다.
