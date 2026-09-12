@@ -13,6 +13,7 @@ dependencies {
     runtimeOnly project(':client:storage-file')
     runtimeOnly project(':storage:mybatis')
     runtimeOnly project(':storage:jpa')
+    runtimeOnly project(':storage:file-local')
 
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'io.projectreactor.kotlin:reactor-kotlin-extensions'
