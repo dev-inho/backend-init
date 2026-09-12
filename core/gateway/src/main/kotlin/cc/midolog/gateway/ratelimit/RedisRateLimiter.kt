@@ -37,7 +37,13 @@ class RedisRateLimiter(
         Long::class.java,
     )
 
-    /** [key]의 카운터를 원자적으로 증가시키고 한도 이내면 true, 초과면 false를 방출한다. Redis 오류는 fail-open으로 흡수한다. */
+    /**
+     * Redis 카운터를 원자적으로 증가시키고 허용 한도 이내인지 판정한다.
+     *
+     * Lua 스크립트를 실행해 카운트를 증가시키고, 현재 값이 limit 이하이면 true,
+     * 초과하면 false를 방출한다. Redis 명령 실패나 타임아웃 등 예외가 발생하면
+     * 경고 로그를 기록한 뒤 fail-open 정책에 따라 true를 반환한다.
+     */
     override fun tryAcquire(key: String): Mono<Boolean> =
         redisTemplate.execute(incrementScript, listOf(key), listOf(windowSeconds.toString()))
             .next()
