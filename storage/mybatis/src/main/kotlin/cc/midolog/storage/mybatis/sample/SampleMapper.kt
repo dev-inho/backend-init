@@ -1,4 +1,4 @@
-package cc.midolog.storage.sample
+package cc.midolog.storage.mybatis.sample
 
 import org.apache.ibatis.annotations.Param
 

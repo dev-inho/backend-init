@@ -1,4 +1,4 @@
-package cc.midolog.storage.config
+package cc.midolog.storage.mybatis.config
 
 import org.mybatis.spring.annotation.MapperScan
 import org.springframework.context.annotation.Configuration
@@ -8,8 +8,8 @@ import org.springframework.context.annotation.Profile
 @Configuration
 @MapperScan(
     basePackages = [
-        "cc.midolog.storage.sample",
-        "cc.midolog.storage.user",
+        "cc.midolog.storage.mybatis.sample",
+        "cc.midolog.storage.mybatis.user",
     ],
 )
 class MyBatisStorageConfig

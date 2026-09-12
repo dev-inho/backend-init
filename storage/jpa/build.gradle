@@ -59,7 +59,7 @@ jpaDsl {
         }
     }
 
-    entity('cc.midolog.sample.model.ScalarSample') {
+    if(false) {
         table = 'scalar_sample'
         id = 'id'
 
@@ -79,19 +79,19 @@ jpaDsl {
         }
     }
 
-    entity('cc.midolog.sample.model.RelationParent') {
+    entity('cc.midolog.jpadsl.fixture.RelationParent') {
         table = 'relation_parent'
         id = 'id'
 
         relation('children') {
             type = 'oneToMany'
-            target = 'cc.midolog.sample.model.RelationChild'
+            target = 'cc.midolog.jpadsl.fixture.RelationChild'
             mappedBy = 'parent'
             toDomain = 'emptyList()'
         }
     }
 
-    entity('cc.midolog.sample.model.RelationChild') {
+    entity('cc.midolog.jpadsl.fixture.RelationChild') {
         table = 'relation_child'
         id = 'id'
 
@@ -100,7 +100,7 @@ jpaDsl {
         }
         relation('parent') {
             type = 'manyToOne'
-            target = 'cc.midolog.sample.model.RelationParent'
+            target = 'cc.midolog.jpadsl.fixture.RelationParent'
             sourceField = 'parentId'
             joinColumn = 'parent_id'
             referencedColumn = 'id'

@@ -1,4 +1,4 @@
-package cc.midolog.storage.sample
+package cc.midolog.storage.mybatis.sample
 
 import cc.midolog.sample.model.Sample
 import kotlinx.coroutines.runBlocking
@@ -6,12 +6,12 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
-class SampleRepositoryAdapterTest {
+class MyBatisMyBatisSampleRepositoryAdapterTest {
 
     @Test
     fun `save delegates to mapper upsert and returns the saved sample`() = runBlocking {
         val mapper = RecordingSampleMapper(upsertResult = 1)
-        val adapter = SampleRepositoryAdapter(mapper)
+        val adapter = MyBatisSampleRepositoryAdapter(mapper)
         val sample = Sample(id = "sample_1000", name = "stored")
 
         val saved = adapter.save(sample)
@@ -22,7 +22,7 @@ class SampleRepositoryAdapterTest {
 
     @Test
     fun `save fails fast when mapper upsert affects no rows`() = runBlocking {
-        val adapter = SampleRepositoryAdapter(RecordingSampleMapper(upsertResult = 0))
+        val adapter = MyBatisSampleRepositoryAdapter(RecordingSampleMapper(upsertResult = 0))
 
         assertFailsWith<IllegalStateException> {
             adapter.save(Sample(id = "sample_1001", name = "missing"))
@@ -31,7 +31,7 @@ class SampleRepositoryAdapterTest {
 
     @Test
     fun `findById maps mapper row to domain sample`() = runBlocking {
-        val adapter = SampleRepositoryAdapter(
+        val adapter = MyBatisSampleRepositoryAdapter(
             RecordingSampleMapper(row = mapOf("id" to "sample_1002", "name" to "loaded")),
         )
 

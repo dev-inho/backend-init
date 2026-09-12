@@ -5,11 +5,8 @@ plugins {
 }
 
 dependencies {
-    implementation project(':core:domain')
-    implementation project(':support:util')
     implementation project(':support:logging')
 
-    runtimeOnly project(':storage:mybatis')
 
     // Spring Batch (배치 잡 + JDBC 메타데이터 저장소)
     implementation 'org.springframework.boot:spring-boot-starter-batch'

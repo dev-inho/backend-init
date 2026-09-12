@@ -1,7 +1,7 @@
-package cc.midolog.storage.jpa.sample
+package cc.midolog.storage.jpa.jpadsl.fixture
 
-import cc.midolog.sample.model.RelationChild
-import cc.midolog.sample.model.RelationParent
+import cc.midolog.jpadsl.fixture.RelationChild
+import cc.midolog.jpadsl.fixture.RelationParent
 import jakarta.persistence.EntityManager
 import jakarta.persistence.FetchType
 import jakarta.persistence.JoinColumn
@@ -83,8 +83,8 @@ class RelationSampleJpaGenerationTest {
     }
 
     @SpringBootConfiguration
-    @EntityScan("cc.midolog.storage.jpa.sample")
-    @EnableJpaRepositories("cc.midolog.storage.jpa.sample")
+    @EntityScan("cc.midolog.storage.jpa")
+    @EnableJpaRepositories("cc.midolog.storage.jpa")
     class JpaTestConfig {
         @Bean
         fun jpaTransactionOperations(

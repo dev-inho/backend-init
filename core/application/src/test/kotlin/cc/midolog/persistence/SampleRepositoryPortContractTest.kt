@@ -5,8 +5,8 @@ import cc.midolog.sample.port.repository.SampleRepositoryPort
 import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter
 import cc.midolog.storage.jpa.sample.SampleJpaEntity
 import cc.midolog.storage.jpa.sample.SampleJpaRepository
-import cc.midolog.storage.sample.SampleMapper
-import cc.midolog.storage.sample.SampleRepositoryAdapter
+import cc.midolog.storage.mybatis.sample.SampleMapper
+import cc.midolog.storage.mybatis.sample.MyBatisSampleRepositoryAdapter
 import java.lang.reflect.Proxy
 import java.util.Optional
 import kotlinx.coroutines.runBlocking
@@ -30,7 +30,7 @@ class SampleRepositoryPortContractTest {
     }
 
     private fun mybatisAdapter(): SampleRepositoryPort =
-        SampleRepositoryAdapter(
+        MyBatisSampleRepositoryAdapter(
             object : SampleMapper {
                 private val rows = mutableMapOf<String, Map<String, Any?>>()
 

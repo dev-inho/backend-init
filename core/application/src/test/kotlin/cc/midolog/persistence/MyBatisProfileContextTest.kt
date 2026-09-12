@@ -2,8 +2,8 @@ package cc.midolog.persistence
 
 import cc.midolog.sample.model.Sample
 import cc.midolog.sample.port.repository.SampleRepositoryPort
-import cc.midolog.storage.sample.SampleMapper
-import cc.midolog.storage.sample.SampleRepositoryAdapter
+import cc.midolog.storage.mybatis.sample.SampleMapper
+import cc.midolog.storage.mybatis.sample.MyBatisSampleRepositoryAdapter
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
@@ -15,7 +15,7 @@ class MyBatisProfileContextTest {
         AnnotationConfigApplicationContext().use { context ->
             context.environment.setActiveProfiles("mybatis")
             context.beanFactory.registerSingleton("sampleMapper", testMapper())
-            context.register(SampleRepositoryAdapter::class.java)
+            context.register(MyBatisSampleRepositoryAdapter::class.java)
 
             context.refresh()
 
@@ -28,7 +28,7 @@ class MyBatisProfileContextTest {
         AnnotationConfigApplicationContext().use { context ->
             context.environment.setActiveProfiles("jpa")
             context.beanFactory.registerSingleton("sampleMapper", testMapper())
-            context.register(SampleRepositoryAdapter::class.java)
+            context.register(MyBatisSampleRepositoryAdapter::class.java)
 
             context.refresh()
 

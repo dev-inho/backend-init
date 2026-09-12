@@ -3,8 +3,8 @@ package cc.midolog.persistence
 import cc.midolog.storage.jpa.user.JpaUserRepositoryAdapter
 import cc.midolog.storage.jpa.user.UserJpaEntity
 import cc.midolog.storage.jpa.user.UserJpaRepository
-import cc.midolog.storage.user.UserMapper
-import cc.midolog.storage.user.UserRepositoryAdapter
+import cc.midolog.storage.mybatis.user.UserMapper
+import cc.midolog.storage.mybatis.user.MyBatisUserRepositoryAdapter
 import cc.midolog.user.model.User
 import cc.midolog.user.port.repository.UserRepositoryPort
 import java.lang.reflect.Proxy
@@ -34,7 +34,7 @@ class UserRepositoryPortContractTest {
     }
 
     private fun mybatisAdapter(): UserRepositoryPort =
-        UserRepositoryAdapter(
+        MyBatisUserRepositoryAdapter(
             object : UserMapper {
                 private val rows = mutableMapOf<String, Map<String, Any?>>()
 

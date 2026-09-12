@@ -1,8 +1,8 @@
-package cc.midolog.storage.jpa.sample
+package cc.midolog.storage.jpa.jpadsl.fixture
 
-import cc.midolog.sample.model.ScalarSample
-import cc.midolog.sample.model.ScalarSampleCode
-import cc.midolog.sample.model.ScalarSampleStatus
+import cc.midolog.jpadsl.fixture.ScalarSample
+import cc.midolog.jpadsl.fixture.ScalarSampleCode
+import cc.midolog.jpadsl.fixture.ScalarSampleStatus
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -62,8 +62,8 @@ class ScalarSampleJpaGenerationTest {
     }
 
     @SpringBootConfiguration
-    @EntityScan("cc.midolog.storage.jpa.sample")
-    @EnableJpaRepositories("cc.midolog.storage.jpa.sample")
+    @EntityScan("cc.midolog.storage.jpa")
+    @EnableJpaRepositories("cc.midolog.storage.jpa")
     class JpaTestConfig {
         @Bean
         fun jpaTransactionOperations(
