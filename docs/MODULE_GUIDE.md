@@ -585,9 +585,9 @@ cc.midolog.web
 | 순서 (`@Order`) | 필터 | 모듈 | 책임 및 동작 |
 |:---:|---|---|---|
 | `-2` | `HttpLoggingFilter` | `support:web` | 최외곽에서 요청 시작 시각을 기록하고, 완료 시점에 `method`, `path`, `status`, `durationMs`, `requestId` 메타데이터를 INFO로 로깅 (바디/쿼리스트링 제외). |
-| `-1` | `AuthTokenRateLimitFilter` | `core:gateway` | Authorization 헤더의 토큰을 기준으로 단위 시간당 요청 수를 제한. |
+| `-1` | `AuthTokenRateLimitFilter` | `core:gateway` | `POST /api/auth/token`에 대해 클라이언트 IP 기준 10회/60초(`gateway.rate-limit.auth-token.*`), Redis Lua 원자 카운터 (Redis 장애 시 fail-open). |
 | `0` | `RequestIdFilter` | `support:web` | `X-Request-Id` 헤더를 검증하거나 UUID를 신규 생성하여 다운스트림 요청/응답 헤더에 전파하고 Reactor Context 및 MDC에 바인딩. |
-| `1` | `JwtAuthFilter` | `core:gateway` | Authorization 헤더의 JWT 토큰을 파싱 및 서명 검증하고 보안 컨텍스트에 인증 정보 주입. |
+| `1` | `JwtAuthFilter` | `core:gateway` | 공개 경로(`/api/auth/`, `/actuator/`, `/batch/`)는 무검증 통과, 보호 경로(`/api/`, `/internal/gateway/`)는 Bearer JWT 서명 검증 (실패 시 401, 성공 시 컨텍스트 주입 없이 그대로 통과). |
 | `100` | `RequestVisibilityFilter` | `core:gateway` | 요청 관측 활성화(`gateway.request-visibility.enabled=true`) 시 메타데이터 이벤트를 인메모리 저장소에 기록. |
 
 #### 표준 API 응답 봉투 (ApiResponse)
@@ -644,7 +644,7 @@ dependencies {
 }
 ```
 
-- **이 모듈의 가드**: `cc.midolog.web.SupportWebTest` (`ApiResponse`, `ErrorCode`, `ApiException`, `GlobalExceptionHandler`, `RequestIdFilter`, `HttpLoggingFilter` 동작 검증).
+- **이 모듈의 가드**: `support/web/src/test/kotlin/cc/midolog/web/SupportWebTest.kt` (파일 내 6개 테스트 클래스: `ApiResponseTest`, `ErrorCodeTest`, `ApiExceptionTest`, `GlobalExceptionHandlerTest`, `RequestIdFilterTest`, `HttpLoggingFilterTest`).
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#6 `ApiException.invalidInput`, #7 `ErrorCode.FORBIDDEN`).
 
 ---
