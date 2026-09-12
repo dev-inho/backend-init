@@ -2,7 +2,7 @@
 
 ## 1. 개요 및 권고안
 
-현재 프로젝트는 `client/storage-file` 모듈에 동기식(로컬 파일 시스템 의존) 덮어쓰기 기능만 제한적으로 구현되어 있으며, 실제 소비자나 업로드 웹 컨트롤러가 전무한 상태입니다(`docs/DEAD_CODE_CANDIDATES.md:14` 참고). 게이트웨이(`core/gateway/src/main/kotlin/cc/midolog/gateway/proxy/ProxyHandler.kt:59`)는 다운로드 요청에 대해 `bodyToMono(ByteArray::class.java)`로 전체 바이트를 메모리에 버퍼링하므로 대용량 파일 다운로드 시 Out-of-Memory(OOM)가 발생할 위험이 큽니다.
+현재 프로젝트는 `client/storage-file` 모듈에 동기식(로컬 파일 시스템 의존) 덮어쓰기 기능만 제한적으로 구현되어 있으며, 실제 소비자나 업로드 웹 컨트롤러가 전무한 상태입니다(`docs/DEAD_CODE_CANDIDATES.md:14` 참고). 게이트웨이(`gateway/core/src/main/kotlin/cc/midolog/gateway/proxy/ProxyHandler.kt:58`)는 다운로드 요청에 대해 `bodyToMono(ByteArray::class.java)`로 전체 바이트를 메모리에 버퍼링하므로 대용량 파일 다운로드 시 Out-of-Memory(OOM)가 발생할 위험이 큽니다.
 
 이러한 제약과 관련하여 작은 팀의 단계별 확장 전략을 다음과 같이 권고합니다:
 1. **Local provider의 한계 및 1차 스트리밍**: Local 파일 시스템은 브라우저에 임시 서명 URL을 발급할 수 있는 엔드포인트나 권한 체계가 없으며, 서버의 로컬 파일 시스템 경로를 클라이언트에 노출하는 에뮬레이션은 성립하지 않고 보안상으로도 금지됩니다. 따라서 1차 단계인 Local-first 구현 시에는 **서버 경유 WebFlux 논블로킹 스트리밍(업로드/다운로드)**으로 동작합니다. 단, 게이트웨이(`ProxyHandler`)의 `ByteArray` 응답 버퍼링 제약으로 인해 대용량 다운로드 시 OOM 위험이 일시적으로 수반됨을 인정하고 감수합니다.

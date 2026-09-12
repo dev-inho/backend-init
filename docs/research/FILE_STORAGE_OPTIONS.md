@@ -58,4 +58,4 @@
 | **업로드 컨트롤러 부재** | `rg -n "multipart|FilePart|DataBuffer" core/application/src/main` 결과 0건 | 외부 요청을 받을 `file` 도메인 REST 컨트롤러 구현. | 중 |
 | **동기식 버퍼링** | `core/domain/src/main/kotlin/cc/midolog/sample/port/file/FileStoragePort.kt:13`의 `suspend fun store(path: String, bytes: ByteArray)` | 대용량 OOM을 막기 위한 순수 추상화 스트림(Chunk) 모델로 변경. | 상 |
 | **메타데이터 DB 부재** | `core/application/src/main/resources/db/migration/V1__create_storage_tables.sql` 내부 파일 관리 테이블 목록 0건 확인 | 식별자와 상태를 관리할 `file_meta` 테이블 도입. | 상 |
-| **GW 응답 버퍼링 한계** | `core/gateway/src/main/kotlin/cc/midolog/gateway/proxy/ProxyHandler.kt:59` (`bodyToMono(ByteArray::class.java)`) | 트래픽이 GW를 거치지 않는 Presigned 우회 다운로드 도입. | 상 |
+| **GW 응답 버퍼링 한계** | `gateway/core/src/main/kotlin/cc/midolog/gateway/proxy/ProxyHandler.kt:58` (`bodyToMono(ByteArray::class.java)`) | 트래픽이 GW를 거치지 않는 Presigned 우회 다운로드 도입. | 상 |
