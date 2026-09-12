@@ -25,11 +25,11 @@ class LocalFileStorageAdapterTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `root 디렉토리를 벗어나는 경로 순회 공격을 차단해야 한다`() = runTest {
+    fun `UUID 형식이 아닌 키는 거부해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
         val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
 
-        val traversalKey = "../hacked.txt"
+        val invalidKey = "invalid-key-../hacked"
         val reader = object : ChunkReader {
             override suspend fun readChunk(buffer: ByteArray): Int = -1
             override suspend fun cancel(cause: Throwable?) {}
@@ -37,21 +37,21 @@ class LocalFileStorageAdapterTest {
         }
 
         val exception = assertThrows<IllegalArgumentException> {
-            adapter.store(traversalKey, reader, null, "text/plain", null)
+            adapter.store(invalidKey, reader, null, "text/plain", null)
         }
-        assertTrue(exception.message!!.contains("탈출"), "경로 순회 방어 예외가 발생해야 합니다. 메시지: ${exception.message}")
+        assertTrue(exception.message!!.contains("UUID"), "UUID 형식 예외가 발생해야 합니다.")
     }
 
     @Test
-    fun `8MiB 데이터를 정상적으로 스트리밍 저장하고 체크섬을 검증해야 한다`() = runTest {
+    fun `8MiB 데이터를 정상적으로 스트리밍 저장하고 다시 읽어 체크섬을 검증해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
         val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
-        
-        val key = "uuid-test-key-1"
+
+        val key = "11111111-1111-1111-1111-111111111111"
         val dataSize = 8 * 1024 * 1024 // 8MiB
         val randomData = ByteArray(dataSize)
         (0 until dataSize).forEach { randomData[it] = (it % 256).toByte() }
-        
+
         val expectedDigest = MessageDigest.getInstance("SHA-256")
         expectedDigest.update(randomData)
         val expectedChecksum = expectedDigest.digest().joinToString("") { "%02x".format(it) }
@@ -70,23 +70,87 @@ class LocalFileStorageAdapterTest {
         }
 
         val storedFile = adapter.store(key, reader, dataSize.toLong(), "application/octet-stream", expectedChecksum)
-        
+
         assertEquals(key, storedFile.storageKey)
         assertEquals(dataSize.toLong(), storedFile.sizeBytes)
         assertEquals(expectedChecksum, storedFile.checksum)
         assertTrue(rootPath.resolve(key).exists())
-        
+
+        // 다시 읽어서 검증
         val loadedReader = adapter.load(key)
         assertNotNull(loadedReader)
-        loadedReader!!.close()
+
+        val digest2 = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(8192)
+        var readTotal = 0L
+        loadedReader!!.use {
+            while (true) {
+                val bytesRead = it.readChunk(buffer)
+                if (bytesRead == -1) break
+                digest2.update(buffer, 0, bytesRead)
+                readTotal += bytesRead
+            }
+        }
+        val actualChecksum2 = digest2.digest().joinToString("") { "%02x".format(it) }
+        assertEquals(dataSize.toLong(), readTotal)
+        assertEquals(expectedChecksum, actualChecksum2)
+    }
+
+    @Test
+    fun `알려진 크기와 실제 크기가 다르면 예외가 발생해야 한다`() = runTest {
+        val rootPath = tempDir.resolve("storage").apply { createDirectories() }
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
+
+        val key = "22222222-2222-2222-2222-222222222222"
+        val reader = object : ChunkReader {
+            var calls = 0
+            override suspend fun readChunk(buffer: ByteArray): Int {
+                if (calls++ == 1) return -1
+                buffer[0] = 1
+                return 1
+            }
+            override suspend fun cancel(cause: Throwable?) {}
+            override fun close() {}
+        }
+
+        val exception = assertThrows<IllegalStateException> {
+            adapter.store(key, reader, 1000L, "application/octet-stream", null)
+        }
+        assertTrue(exception.message!!.contains("다릅니다"))
+    }
+
+    @Test
+    fun `심볼릭 링크 파일은 읽기나 쓰기를 거부해야 한다`() = runTest {
+        val rootPath = tempDir.resolve("storage").apply { createDirectories() }
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
+        val key = "33333333-3333-3333-3333-333333333333"
+        val targetPath = rootPath.resolve(key)
+
+        // 악성 사용자가 심볼릭 링크를 미리 선점했다고 가정
+        val dummyPath = tempDir.resolve("dummy").apply { createFile() }
+        Files.createSymbolicLink(targetPath, dummyPath)
+
+        val reader = object : ChunkReader {
+            override suspend fun readChunk(buffer: ByteArray): Int = -1
+            override suspend fun cancel(cause: Throwable?) {}
+            override fun close() {}
+        }
+
+        assertThrows<IllegalArgumentException> {
+            adapter.store(key, reader, null, "text/plain", null)
+        }
+
+        assertThrows<IllegalArgumentException> {
+            adapter.load(key)
+        }
     }
 
     @Test
     fun `저장 중 예외가 발생하면 임시 파일을 정리해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
         val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
-        
-        val key = "uuid-test-key-error"
+
+        val key = "44444444-4444-4444-4444-444444444444"
         val reader = object : ChunkReader {
             var calls = 0
             override suspend fun readChunk(buffer: ByteArray): Int {
@@ -101,7 +165,9 @@ class LocalFileStorageAdapterTest {
         assertThrows<RuntimeException> {
             adapter.store(key, reader, null, "application/octet-stream", null)
         }
-        
-        assertFalse(rootPath.resolve(key).exists())
+
+        // temp 파일이 남지 않아야 함
+        val tempFiles = Files.list(rootPath).filter { it.fileName.toString().contains(".tmp") }.count()
+        assertEquals(0, tempFiles)
     }
 }

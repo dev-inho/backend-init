@@ -11,6 +11,7 @@ import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactor.flux
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.buffer.DataBuffer
+import org.springframework.core.io.buffer.DataBufferUtils
 import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -47,7 +48,7 @@ class FileController(
 
         if (allowedContentTypes.isNotEmpty() && !allowedContentTypes.contains(contentType)) {
             throw org.springframework.web.server.ResponseStatusException(
-                HttpStatus.UNSUPPORTED_MEDIA_TYPE, 
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE,
                 "Content type $contentType is not allowed"
             )
         }
@@ -56,10 +57,9 @@ class FileController(
         val job = launch {
             try {
                 filePart.content().asFlow().collect { channel.send(it) }
-            } catch (e: Exception) {
-                // ignored or logged
-            } finally {
                 channel.close()
+            } catch (e: Exception) {
+                channel.close(e)
             }
         }
 
@@ -97,22 +97,28 @@ class FileController(
     @GetMapping("/{id}/content")
     suspend fun download(
         @PathVariable id: String,
-        authentication: Authentication
+        authentication: Authentication,
+        exchange: org.springframework.web.server.ServerWebExchange
     ): ResponseEntity<Flux<DataBuffer>> {
         val ownerId = authentication.name
         val storedFile = fileService.getFile(id, ownerId)
-        
+
         val flux = flux<DataBuffer> {
             val chunkReader = fileService.loadContent(id, ownerId)
             val buffer = ByteArray(8192)
-            val factory = DefaultDataBufferFactory.sharedInstance
+            val factory = exchange.response.bufferFactory()
             try {
                 while (true) {
                     val bytesRead = chunkReader.readChunk(buffer)
                     if (bytesRead == -1) break
                     val dataBuffer = factory.allocateBuffer(bytesRead)
                     dataBuffer.write(buffer, 0, bytesRead)
-                    send(dataBuffer)
+                    try {
+                        send(dataBuffer)
+                    } catch (e: Exception) {
+                        DataBufferUtils.release(dataBuffer)
+                        throw e
+                    }
                 }
             } catch (e: Exception) {
                 chunkReader.cancel(e)
@@ -121,7 +127,7 @@ class FileController(
                 chunkReader.close()
             }
         }
-        
+
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_TYPE, storedFile.contentType)
             .header(HttpHeaders.CONTENT_LENGTH, storedFile.sizeBytes.toString())

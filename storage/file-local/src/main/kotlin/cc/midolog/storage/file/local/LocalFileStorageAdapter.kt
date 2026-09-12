@@ -19,7 +19,7 @@ import kotlin.io.path.isRegularFile
 
 /**
  * 로컬 파일 시스템을 스토리지로 사용하는 영속성 어댑터.
- * 
+ *
  * - 보안(경로 탈출 방지): root 경로 내부로만 접근을 허용하고, 외부 경로나 심볼릭 링크 공격을 방지한다.
  * - 부분 파일 정리: 업로드 중 실패 시 불완전한 파일이 남지 않도록 임시 파일 삭제를 보장한다.
  * - 체크섬: SHA-256을 청크를 읽으면서 계산하여 I/O 성능을 최적화한다.
@@ -36,10 +36,18 @@ class LocalFileStorageAdapter(
         }
     }
 
+    private val uuidRegex = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
+
     private fun resolveKey(key: String): Path {
+        if (!uuidRegex.matches(key)) {
+            throw IllegalArgumentException("잘못된 storageKey 형식입니다 (UUID 필수)")
+        }
         val resolved = rootPath.resolve(key).normalize().toAbsolutePath()
         if (!resolved.startsWith(rootPath)) {
             throw IllegalArgumentException("경로 탈출(Directory traversal) 시도가 감지되었습니다.")
+        }
+        if (Files.isSymbolicLink(resolved)) {
+            throw IllegalArgumentException("심볼릭 링크는 허용되지 않습니다.")
         }
         return resolved
     }
@@ -52,8 +60,8 @@ class LocalFileStorageAdapter(
         expectedChecksum: String?
     ): StoredFile = withContext(Dispatchers.IO) {
         val targetPath = resolveKey(key)
-        val tempPath = rootPath.resolve("$key.tmp")
-        
+        val tempPath = Files.createTempFile(rootPath, key, ".tmp")
+
         val digest = MessageDigest.getInstance("SHA-256")
         var actualSize = 0L
         val buffer = ByteArray(8192)
@@ -64,22 +72,26 @@ class LocalFileStorageAdapter(
                     while (true) {
                         val readBytes = it.readChunk(buffer)
                         if (readBytes == -1) break
-                        
+
                         out.write(buffer, 0, readBytes)
                         digest.update(buffer, 0, readBytes)
                         actualSize += readBytes
                     }
                 }
             }
-            
+
+            if (knownSize != null && actualSize != knownSize) {
+                throw IllegalStateException("실제 파일 크기($actualSize)가 알려진 크기($knownSize)와 다릅니다.")
+            }
+
             val actualChecksum = digest.digest().joinToString("") { "%02x".format(it) }
-            
+
             if (expectedChecksum != null && expectedChecksum != actualChecksum) {
                 throw IllegalArgumentException("체크섬 불일치: expected=$expectedChecksum, actual=$actualChecksum")
             }
-            
+
             Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING)
-            
+
             return@withContext StoredFile(
                 id = "", // 도메인 모델 생성은 서비스에서 진행하며 어댑터는 스토리지 관련 정보만 채워 반환
                 ownerId = "",
@@ -100,18 +112,18 @@ class LocalFileStorageAdapter(
         if (!targetPath.exists() || !targetPath.isRegularFile()) {
             return@withContext null
         }
-        
+
         val inputStream = Files.newInputStream(targetPath)
-        
+
         return@withContext object : ChunkReader {
             override suspend fun readChunk(buffer: ByteArray): Int = withContext(Dispatchers.IO) {
                 inputStream.read(buffer)
             }
-            
+
             override suspend fun cancel(cause: Throwable?) {
                 close()
             }
-            
+
             override fun close() {
                 inputStream.close()
             }

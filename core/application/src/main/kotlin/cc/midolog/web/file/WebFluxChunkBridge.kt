@@ -19,7 +19,7 @@ class ChannelChunkReader(
         while (bytesRead < buffer.size) {
             if (currentBuffer == null || currentBuffer!!.readableByteCount() == 0) {
                 currentBuffer?.let { DataBufferUtils.release(it) }
-                
+
                 val result = channel.receiveCatching()
                 if (result.isSuccess) {
                     currentBuffer = result.getOrThrow()
@@ -47,6 +47,11 @@ class ChannelChunkReader(
             DataBufferUtils.release(it)
             currentBuffer = null
         }
+        var result = channel.tryReceive()
+        while (result.isSuccess) {
+            DataBufferUtils.release(result.getOrThrow())
+            result = channel.tryReceive()
+        }
     }
 }
 
@@ -62,7 +67,7 @@ class SizeLimitChunkReader(
             readBytes += read
             if (readBytes > maxSize) {
                 val e = org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE, 
+                    org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE,
                     "File size exceeds maximum limit of $maxSize bytes"
                 )
                 cancel(e)

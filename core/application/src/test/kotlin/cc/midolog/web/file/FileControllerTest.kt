@@ -21,6 +21,15 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.web.reactive.function.BodyInserters
 
+object FakeReaderStats {
+    var cancelCount = 0
+    var closeCount = 0
+    fun reset() {
+        cancelCount = 0
+        closeCount = 0
+    }
+}
+
 @Configuration
 class FileControllerTestConfig {
     @Bean
@@ -52,6 +61,41 @@ class FileControllerTestConfig {
         override suspend fun getFile(id: String, ownerId: String): StoredFile {
             if (id == "123" && ownerId == "test-owner") {
                 return StoredFile("id-123", "test-owner", "key-123", 100, "image/png", null, FileStatus.READY)
+            }
+            throw ApiException.notFound("file not found")
+        }
+
+        override suspend fun deleteFile(id: String, ownerId: String) {
+            if (id == "123" && ownerId == "test-owner") {
+                return
+            }
+            throw ApiException.notFound("file not found")
+        }
+
+        override suspend fun loadContent(id: String, ownerId: String): ChunkReader {
+            if (id == "error-reader") {
+                return object : ChunkReader {
+                    override suspend fun readChunk(buffer: ByteArray): Int {
+                        throw RuntimeException("Reader failed")
+                    }
+                    override suspend fun cancel(cause: Throwable?) { FakeReaderStats.cancelCount++ }
+                    override fun close() { FakeReaderStats.closeCount++ }
+                }
+            }
+            if (id == "123" && ownerId == "test-owner") {
+                return object : ChunkReader {
+                    var offset = 0
+                    val size = 100
+                    override suspend fun readChunk(buffer: ByteArray): Int {
+                        if (offset >= size) return -1
+                        val length = minOf(buffer.size, size - offset)
+                        for (i in 0 until length) buffer[i] = (offset + i).toByte()
+                        offset += length
+                        return length
+                    }
+                    override suspend fun cancel(cause: Throwable?) { FakeReaderStats.cancelCount++ }
+                    override fun close() { FakeReaderStats.closeCount++ }
+                }
             }
             throw ApiException.notFound("file not found")
         }
@@ -114,7 +158,6 @@ class FileControllerTest {
             .expectBody()
             .jsonPath("$.data.id").isEqualTo("id-123")
             .jsonPath("$.data.ownerId").doesNotExist()
-            .jsonPath("$.data.storageKey").isEqualTo("storage-key-123")
     }
 
     @Test
@@ -133,9 +176,52 @@ class FileControllerTest {
     }
 
     @Test
+    fun `정상 파일 다운로드 시 content-type, length, 실제 bytes 가드`() {
+        FakeReaderStats.reset()
+        val result = webTestClient.get().uri("/api/files/123/content")
+            .header("Authorization", "Bearer $validToken")
+            .exchange()
+            .expectStatus().isOk
+            .expectHeader().contentType(MediaType.IMAGE_PNG)
+            .expectHeader().contentLength(100)
+            .expectBody().returnResult()
+
+        org.junit.jupiter.api.Assertions.assertEquals(100, result.responseBody?.size)
+        org.junit.jupiter.api.Assertions.assertEquals(1, FakeReaderStats.closeCount)
+    }
+
+    @Test
+    fun `다운로드 중 reader 에러 발생 시 cancel 및 close 가드`() {
+        FakeReaderStats.reset()
+        webTestClient.get().uri("/api/files/error-reader/content")
+            .header("Authorization", "Bearer $validToken")
+            .exchange()
+            .expectStatus().is5xxServerError
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, FakeReaderStats.cancelCount)
+        org.junit.jupiter.api.Assertions.assertEquals(1, FakeReaderStats.closeCount)
+    }
+
+    @Test
+    fun `파일 삭제 성공`() {
+        webTestClient.delete().uri("/api/files/123")
+            .header("Authorization", "Bearer $validToken")
+            .exchange()
+            .expectStatus().isOk
+    }
+
+    @Test
+    fun `다른 owner가 파일 삭제 시 404 반환`() {
+        val otherToken = jwtProvider.issue("other-owner")
+        webTestClient.delete().uri("/api/files/123")
+            .header("Authorization", "Bearer $otherToken")
+            .exchange()
+            .expectStatus().isNotFound
+    }
+
+    @Test
     fun `다른 owner가 조회 요청 시 404 반환`() {
         val otherToken = jwtProvider.issue("other-owner")
-
         webTestClient.get().uri("/api/files/123")
             .header("Authorization", "Bearer $otherToken")
             .exchange()

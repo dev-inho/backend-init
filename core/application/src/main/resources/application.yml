@@ -45,4 +45,4 @@ storage:
   file:
     provider: local
     local:
-      root-dir: ${STORAGE_FILE_ROOT_DIR:./build/files}
+      root-dir: ${STORAGE_FILE_ROOT_DIR:${user.dir}/build/files}
