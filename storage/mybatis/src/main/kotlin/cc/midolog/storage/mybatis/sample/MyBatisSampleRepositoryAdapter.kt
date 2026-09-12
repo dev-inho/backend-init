@@ -8,8 +8,12 @@ import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Repository
 
 /**
- * repository 포트의 storage 어댑터.
- * 블로킹 JDBC(MyBatis) 호출을 Dispatchers.IO로 분리해 이벤트루프를 막지 않는다.
+ * 샘플 저장소 포트(SampleRepositoryPort)의 MyBatis 기반 영속성 어댑터.
+ *
+ * mybatis 프로파일(@Profile("mybatis"))에서 활성화된다.
+ * 블로킹 JDBC(MyBatis) 호출을 Dispatchers.IO로 분리해 WebFlux 이벤트루프를 막지 않는다.
+ * save 시 upsert 영향 행 수가 정확히 1건인지 check(affectedRows == 1)로 검증하여
+ * 동시성 경합이나 부분 실패 발생 시 즉시 예외를 던진다.
  */
 @Profile("mybatis")
 @Repository
