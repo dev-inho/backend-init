@@ -114,6 +114,9 @@ class LocalFileStorageAdapter(
         if (targetPath.isSymbolicLink()) {
             throw IllegalArgumentException("Symbolic links are not allowed")
         }
+        if (!java.nio.file.Files.isRegularFile(targetPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return@withContext null
+        }
 
         val channel = Files.newByteChannel(targetPath, java.nio.file.StandardOpenOption.READ)
         object : ChunkReader {
@@ -152,6 +155,9 @@ class LocalFileStorageAdapter(
         if (!targetPath.exists(java.nio.file.LinkOption.NOFOLLOW_LINKS)) return@withContext false
         if (targetPath.isSymbolicLink()) {
             throw IllegalArgumentException("Symbolic links are not allowed")
+        }
+        if (!java.nio.file.Files.isRegularFile(targetPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return@withContext false
         }
         true
     }

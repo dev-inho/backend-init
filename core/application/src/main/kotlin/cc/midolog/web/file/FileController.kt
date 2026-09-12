@@ -57,12 +57,7 @@ class FileController(
         val job = launch {
             try {
                 filePart.content().asFlow().collect { buffer ->
-                    try {
-                        channel.send(buffer)
-                    } catch (e: Exception) {
-                        DataBufferUtils.release(buffer)
-                        throw e
-                    }
+                    channel.sendAndReleaseOnFailure(buffer)
                 }
                 channel.close()
             } catch (e: Exception) {
@@ -122,12 +117,7 @@ class FileController(
                     if (bytesRead == -1) break
                     val dataBuffer = factory.allocateBuffer(bytesRead)
                     dataBuffer.write(buffer, 0, bytesRead)
-                    try {
-                        send(dataBuffer)
-                    } catch (e: Exception) {
-                        DataBufferUtils.release(dataBuffer)
-                        throw e
-                    }
+                    sendAndReleaseOnFailure(dataBuffer)
                 }
             } catch (e: Exception) {
                 chunkReader.cancel(e)

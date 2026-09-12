@@ -89,3 +89,12 @@ class SizeLimitChunkReader(
         delegate.close()
     }
 }
+
+internal suspend fun kotlinx.coroutines.channels.SendChannel<DataBuffer>.sendAndReleaseOnFailure(buffer: DataBuffer) {
+    try {
+        send(buffer)
+    } catch (e: Exception) {
+        DataBufferUtils.release(buffer)
+        throw e
+    }
+}

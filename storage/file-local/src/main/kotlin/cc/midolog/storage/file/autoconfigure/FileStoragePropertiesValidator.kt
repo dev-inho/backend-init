@@ -11,7 +11,7 @@ class FileStoragePropertiesValidator(
         }
         val rootDir = properties.local.rootDir
         if (rootDir == null || rootDir.isBlank()) {
-            throw IllegalStateException("storage.file.local.root-dir 필수입니다.")
+            throw IllegalStateException("storage.file.local.root-dir 속성은 필수입니다.")
         }
         val path = java.nio.file.Paths.get(rootDir)
         if (!path.isAbsolute) {

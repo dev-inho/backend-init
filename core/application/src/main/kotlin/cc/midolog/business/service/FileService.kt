@@ -48,7 +48,7 @@ class FileService(
 
             fileMeta = fileMeta.copy(
                 sizeBytes = stored.sizeBytes,
-                contentType = stored.contentType ?: contentType, // Use provided content type as fallback
+                contentType = stored.contentType,
                 checksum = stored.checksum,
                 status = FileStatus.READY,
                 updatedAt = Instant.now()

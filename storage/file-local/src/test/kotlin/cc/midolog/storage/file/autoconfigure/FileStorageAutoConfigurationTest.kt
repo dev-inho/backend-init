@@ -97,4 +97,15 @@ class FileStorageAutoConfigurationTest {
         }
     }
 
+    @Test
+    fun `provider가 local인데 root-dir이 누락되면 기동 실패해야 한다`() {
+        contextRunner.withPropertyValues(
+            "storage.file.provider=local"
+        ).run { context ->
+            org.assertj.core.api.Assertions.assertThat(context).hasFailed()
+            org.assertj.core.api.Assertions.assertThat(context.startupFailure)
+                .hasMessageContaining("storage.file.local.root-dir 속성은 필수")
+        }
+    }
+
 }

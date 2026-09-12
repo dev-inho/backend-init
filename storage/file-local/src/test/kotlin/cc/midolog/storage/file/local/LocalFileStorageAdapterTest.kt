@@ -211,4 +211,17 @@ class LocalFileStorageAdapterTest {
         assertTrue(adapter.delete(key), "Absent delete should return true")
     }
 
+    @Test
+    fun `디렉터리를 대상으로 할 때 load는 null, exists는 false를 반환해야 한다`() = runTest {
+        val rootPath = tempDir.resolve("storage").apply { createDirectories() }
+        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val key = "55555555-5555-5555-5555-555555555555"
+        
+        // key와 일치하는 디렉터리 생성
+        val targetPath = rootPath.resolve(key)
+        Files.createDirectories(targetPath)
+
+        assertNull(adapter.load(key), "디렉터리는 load 시 null이어야 한다")
+        assertFalse(adapter.exists(key), "디렉터리는 exists 시 false이어야 한다")
+    }
 }

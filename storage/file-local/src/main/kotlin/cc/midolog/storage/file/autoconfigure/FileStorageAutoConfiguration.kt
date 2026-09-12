@@ -18,6 +18,7 @@ class FileStorageAutoConfiguration(
     }
 
     @Bean
+    @org.springframework.context.annotation.DependsOn("fileStoragePropertiesValidator")
     @ConditionalOnProperty(name = ["storage.file.provider"], havingValue = "local")
     fun localFileStorageAdapter(): LocalFileStorageAdapter {
         return LocalFileStorageAdapter(properties)
