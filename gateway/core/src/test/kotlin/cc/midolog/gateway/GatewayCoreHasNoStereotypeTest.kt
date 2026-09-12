@@ -15,7 +15,7 @@ class GatewayCoreHasNoStereotypeTest {
         val srcDir = File("src/main/kotlin")
         assertTrue(srcDir.exists(), "Source directory missing: ${srcDir.absolutePath}")
 
-        val stereotypeRegex = Regex("@(Component|Configuration|RestController|Controller|Service|Repository)\\b")
+        val stereotypeRegex = Regex("(?:@|import org\\.springframework\\.stereotype\\.)(Component|Configuration|RestController|Controller|Service|Repository)\\b")
         val filesWithStereotypes = mutableListOf<String>()
 
         Files.walk(srcDir.toPath()).use { stream ->

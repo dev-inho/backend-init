@@ -26,6 +26,11 @@ management:
 jwt:
   secret: ${JWT_SECRET}
 
+gateway:
+  mode: embedded
+  request-visibility:
+    enabled: false
+
 ---
 spring:
   config:
@@ -46,3 +51,6 @@ storage:
     provider: local
     local:
       root-dir: ${STORAGE_FILE_ROOT_DIR:${user.dir}/build/files}
+gateway:
+  request-visibility:
+    enabled: true

@@ -1,7 +1,6 @@
 package cc.midolog.gateway.config
 
 import org.springframework.boot.context.properties.ConfigurationProperties
-import org.springframework.stereotype.Component
 
 /**
  * 프록시 라우팅 대상 백엔드 서버 URL 설정 프로퍼티.

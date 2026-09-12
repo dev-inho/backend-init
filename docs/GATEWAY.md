@@ -17,22 +17,23 @@
 [게이트웨이 8080]
     ↓
 1. HttpLoggingFilter (support:web, @Order(-2))
-   - 하는 일: 최외곽 요청 시작 시각 계측 및 응답 완료 시(doFinally) 메타데이터(method, path, status, duration, requestId) INFO 로깅
-   - 거절 시: 거절 없음 (관측 전용 통과). 뒤쪽 필터에서 429/401로 단축 종료되더라도 최외곽에서 완료 로그는 항상 기록
+   - 하는 일: 최외곽 요청 시작 시각 계측 및 응답 완료 시(doFinally) 메타데이터 INFO 로깅
+   - 거절 시: 거절 없음. 뒤쪽에서 단축되어도 완료 로그는 항상 기록.
     ↓
 2. AuthTokenRateLimitFilter (gateway:core, @Order(-1))
-   - 하는 일: POST /api/auth/token 대상 클라이언트 IP별 요청 빈도 제한 (10회/60초, Redis Lua fail-open)
-   - 거절 시: 429 Too Many Requests 반환 (본문 없음, 체인 중단) / Redis 오류 시 fail-open 통과
-   - 단축 경로: 한도 초과 시 chain.filter를 호출하지 않고 즉시 응답하므로 뒤쪽 RequestIdFilter, JwtAuthFilter, RequestVisibilityFilter는 실행되지 않음
+   - 하는 일: `POST /api/auth/token` 대상 IP별 요청 빈도 제한 (10회/60초, fail-open)
+   - 거절 시: 429 Too Many Requests 반환 (본문 없음, 체인 중단). 초과 시 뒤쪽 필터 미실행.
+   - 모드별 동작: **embedded / standalone / remote 모두 실행됨**.
     ↓
 3. RequestIdFilter (support:web, @Order(0))
-   - 하는 일: X-Request-Id 헤더 추출(형식 검증) 또는 UUID 생성, 요청/응답 헤더 전파 및 Reactor Context/MDC 바인딩
-   - 거절 시: 거절 없음 (요청 식별자 부여 후 통과)
+   - 하는 일: X-Request-Id 헤더 확인/생성 및 전파, Reactor Context 바인딩
+   - 거절 시: 거절 없음
     ↓
 4. JwtAuthFilter (gateway:core, @Order(1))
-   - 하는 일: Authorization Bearer 토큰 서명 및 유효기간 검증 (JwtCodec 위임, 검증 성공 시 SecurityContext 주입 없이 그대로 통과)
-   - 경로 정책: /api/auth/, /actuator/, /batch/ 는 미검증 통과 / /api/, /internal/gateway/ 는 검증 필수
-   - 거절 시: 401 Unauthorized 반환 (본문 없음, 체인 중단) / 미매핑 경로는 체인에 넘겨 404 위임
+   - 하는 일: Authorization Bearer 토큰 서명 및 검증. 
+   - 모드별 동작: **standalone / remote 모드에서만 실행됨**. `embedded` 모드에서는 이 필터가 로드되지 않으며, 호스트(core:application)의 `SecurityConfig`에 선언된 `AuthenticationWebFilter`가 애플리케이션의 컨트롤러보다 앞서 JWT 인증을 직접 처리합니다.
+   - 경로 정책 (프록시 모드 시): `/api/auth/`, `/actuator/`, `/batch/` 등은 미검증 통과. `/api/`, `/internal/gateway/` 는 검증 필수.
+   - 거절 시: 401 Unauthorized 반환 (본문 없음, 체인 중단).
    - 단축 경로: 인증 실패 시 chain.filter를 호출하지 않고 즉시 응답하므로 뒤쪽 RequestVisibilityFilter는 실행되지 않음
     ↓
 5. RequestVisibilityFilter (gateway:core, @Order(100), 조건부 활성화)

@@ -9,6 +9,7 @@ dependencies {
     implementation project(':support:util')
     implementation project(':support:logging')
     implementation project(':support:web')
+    implementation project(':gateway:starter')
 
     runtimeOnly project(':client:storage-file')
     runtimeOnly project(':storage:mybatis')

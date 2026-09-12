@@ -46,7 +46,10 @@ class SecurityConfig(
     fun securityWebFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
         val authTokenEndpoint = ServerWebExchangeMatchers.pathMatchers(HttpMethod.POST, "/api/auth/token")
         val protectedApiMatcher = AndServerWebExchangeMatcher(
-            ServerWebExchangeMatchers.pathMatchers("/api/**"),
+            org.springframework.security.web.server.util.matcher.OrServerWebExchangeMatcher(
+                ServerWebExchangeMatchers.pathMatchers("/api/**", "/internal/gateway/**"),
+                ServerWebExchangeMatchers.pathMatchers("/internal/gateway/**")
+            ),
             NegatedServerWebExchangeMatcher(authTokenEndpoint),
         )
 
@@ -69,7 +72,7 @@ class SecurityConfig(
                 exchanges
                     .pathMatchers("/actuator/health").permitAll()
                     .pathMatchers(HttpMethod.POST, "/api/auth/token").permitAll()
-                    .pathMatchers("/api/**").authenticated()
+                    .pathMatchers("/api/**", "/internal/gateway/**").authenticated()
                     .anyExchange().denyAll()
             }
             .addFilterAt(jwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
