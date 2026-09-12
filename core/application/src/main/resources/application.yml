@@ -4,16 +4,6 @@ server:
 spring:
   application:
     name: backend-application
-  data:
-    jpa:
-      repositories:
-        enabled: false
-
-mybatis:
-  mapper-locations: classpath:mapper/**/*.xml
-  configuration:
-    map-underscore-to-camel-case: true
-
 management:
   endpoints:
     web:
@@ -34,16 +24,6 @@ gateway:
       window-seconds: 60
   request-visibility:
     enabled: false
-
----
-spring:
-  config:
-    activate:
-      on-profile: jpa
-  data:
-    jpa:
-      repositories:
-        enabled: true
 
 ---
 spring:
