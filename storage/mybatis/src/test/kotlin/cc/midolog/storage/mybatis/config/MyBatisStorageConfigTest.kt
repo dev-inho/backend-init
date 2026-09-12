@@ -12,5 +12,6 @@ class MyBatisStorageConfigTest {
 
         assertTrue("cc.midolog.storage.mybatis.sample" in mapperScan.basePackages)
         assertTrue("cc.midolog.storage.mybatis.user" in mapperScan.basePackages)
+        assertTrue("cc.midolog.storage.mybatis.file" in mapperScan.basePackages)
     }
 }

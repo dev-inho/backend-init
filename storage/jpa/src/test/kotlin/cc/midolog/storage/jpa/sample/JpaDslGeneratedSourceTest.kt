@@ -24,6 +24,9 @@ class JpaDslGeneratedSourceTest {
             "cc/midolog/storage/jpa/user/UserJpaEntity.kt",
             "cc/midolog/storage/jpa/user/UserJpaRepository.kt",
             "cc/midolog/storage/jpa/user/UserJpaMapper.kt",
+            "cc/midolog/storage/jpa/file/FileMetaJpaEntity.kt",
+            "cc/midolog/storage/jpa/file/FileMetaJpaRepository.kt",
+            "cc/midolog/storage/jpa/file/FileMetaJpaMapper.kt",
             "cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaEntity.kt",
             "cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaRepository.kt",
             "cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaMapper.kt",
@@ -40,6 +43,15 @@ class JpaDslGeneratedSourceTest {
             .filterNot(Files::isRegularFile)
 
         assertTrue(missingFiles.isEmpty(), "Missing generated files:\n${missingFiles.joinToString("\n")}")
+
+        val fileMetaEntity = generatedRoot
+            .resolve("cc/midolog/storage/jpa/file/FileMetaJpaEntity.kt")
+            .readText()
+        assertTrue(fileMetaEntity.contains("@Column(name = \"storage_key\", nullable = false)"))
+        assertTrue(fileMetaEntity.contains("@Column(name = \"size_bytes\", nullable = true)"))
+        assertTrue(fileMetaEntity.contains("@Column(name = \"content_type\", nullable = true)"))
+        assertTrue(fileMetaEntity.contains("@Column(name = \"created_at\", nullable = false)"))
+        assertTrue(fileMetaEntity.contains("@Enumerated(EnumType.STRING)"))
 
         val scalarEntity = generatedRoot
             .resolve("cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaEntity.kt")

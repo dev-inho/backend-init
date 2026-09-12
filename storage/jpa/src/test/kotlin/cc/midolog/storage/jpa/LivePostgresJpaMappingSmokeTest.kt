@@ -34,6 +34,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionOperations
 import org.springframework.transaction.support.TransactionTemplate
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @Tag("live-postgres")
 @DataJpaTest(
@@ -52,6 +53,7 @@ import kotlin.test.assertEquals
 @Import(
     JpaSampleRepositoryAdapter::class,
     JpaUserRepositoryAdapter::class,
+    cc.midolog.storage.jpa.file.JpaFileMetaRepositoryAdapter::class,
     LivePostgresJpaMappingSmokeTest.JpaTestConfig::class,
 )
 class LivePostgresJpaMappingSmokeTest {
@@ -61,6 +63,9 @@ class LivePostgresJpaMappingSmokeTest {
 
     @Autowired
     private lateinit var userAdapter: JpaUserRepositoryAdapter
+
+    @Autowired
+    private lateinit var fileAdapter: cc.midolog.storage.jpa.file.JpaFileMetaRepositoryAdapter
 
     @Autowired
     private lateinit var scalarRepository: ScalarSampleJpaRepository
@@ -115,6 +120,23 @@ class LivePostgresJpaMappingSmokeTest {
             .setParameter(1, child.id)
             .singleResult
         assertEquals(parent.id, parentId)
+
+        val fileMeta = cc.midolog.file.model.FileMeta(
+            id = "live_file_1000",
+            ownerId = "owner1",
+            storageKey = "live_key_1000",
+            sizeBytes = 100L,
+            contentType = "text/plain",
+            checksum = "hash",
+            status = cc.midolog.file.model.FileStatus.PENDING,
+            createdAt = java.time.Instant.now(),
+            updatedAt = java.time.Instant.now()
+        )
+
+        assertEquals(fileMeta, fileAdapter.save(fileMeta))
+        assertTrue(fileAdapter.updateStatus(fileMeta.id, cc.midolog.file.model.FileStatus.READY))
+        val updated = fileAdapter.findById(fileMeta.id)!!
+        assertEquals(cc.midolog.file.model.FileStatus.READY, updated.status)
     }
 
     @Profile("jpa")

@@ -72,6 +72,7 @@ internal fun defaultValueForKotlinType(type: String): String {
         "Double" -> "0.0"
         "Float" -> "0.0f"
         "Boolean" -> "false"
+        "java.time.Instant" -> "java.time.Instant.EPOCH"
         else -> "throw IllegalStateException(\"$type must be set before persistence\")"
     }
 }
