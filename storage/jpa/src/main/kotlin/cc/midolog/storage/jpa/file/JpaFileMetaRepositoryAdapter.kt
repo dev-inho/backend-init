@@ -16,6 +16,7 @@ class JpaFileMetaRepositoryAdapter(
     private val fileMetaJpaRepository: FileMetaJpaRepository,
     private val transactionOperations: TransactionOperations,
     private val entityManager: EntityManager,
+    private val clock: java.time.Clock,
 ) : FileMetaRepositoryPort {
 
     override suspend fun findById(id: String): FileMeta? = withContext(Dispatchers.IO) {
@@ -36,13 +37,12 @@ class JpaFileMetaRepositoryAdapter(
 
     override suspend fun updateStatus(id: String, status: FileStatus): Boolean = withContext(Dispatchers.IO) {
         transactionOperations.execute {
-            val query = entityManager.createQuery(
-                "UPDATE FileMetaJpaEntity e SET e.status = :status, e.updatedAt = :now WHERE e.id = :id"
-            )
-            query.setParameter("status", status)
-            query.setParameter("now", java.time.Instant.now())
-            query.setParameter("id", id)
-            query.executeUpdate() > 0
+            val updated = entityManager.createQuery("UPDATE FileMetaJpaEntity e SET e.status = :status, e.updatedAt = :now WHERE e.id = :id")
+                .setParameter("status", status)
+                .setParameter("now", clock.instant())
+                .setParameter("id", id)
+                .executeUpdate()
+            updated > 0
         } ?: false
     }
 

@@ -20,7 +20,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
     "spring.datasource.driverClassName=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "mybatis.mapper-locations=classpath:mapper/**/*.xml"
+    "mybatis.mapper-locations=classpath*:mapper-h2/**/*.xml"
 ])
 @Sql(statements = [
     "DROP TABLE IF EXISTS file_meta;",
@@ -51,27 +51,6 @@ class MyBatisFileMetaRepositoryPortContractTest : FileMetaRepositoryPortContract
             properties.setProperty("H2", "h2")
             provider.setProperties(properties)
             return provider
-        }
-    }
-
-    @Autowired
-    private lateinit var dataSource: javax.sql.DataSource
-
-    @Test
-    fun printUrl() {
-        println("DB URL: " + dataSource.connection.metaData.url)
-    }
-
-    @Test
-    fun checkMode() {
-        dataSource.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt.executeQuery("SELECT SETTING_VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE SETTING_NAME='MODE'").use { rs ->
-                    if (rs.next()) {
-                        println("H2 MODE: " + rs.getString(1))
-                    }
-                }
-            }
         }
     }
 
