@@ -24,8 +24,6 @@ import org.springframework.context.annotation.Import
 import org.springframework.core.env.Environment
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate
 import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.server.HandlerFunction
-import org.springframework.web.reactive.function.server.ServerResponse
 
 /**
  * 게이트웨이 라이브러리의 자동 설정 엔트리포인트.
@@ -35,15 +33,7 @@ import org.springframework.web.reactive.function.server.ServerResponse
 @AutoConfiguration
 @EnableConfigurationProperties(GatewayModeProperties::class, RequestVisibilityProperties::class)
 @Import(GatewayClockConfig::class)
-class GatewayAutoConfiguration(
-    modeProperties: GatewayModeProperties
-) {
-    init {
-        val mode = modeProperties.mode
-        require(mode == "embedded" || mode == "standalone" || mode == "remote") {
-            "gateway.mode must be exactly one of: embedded, standalone, remote. Found: '${mode ?: "null"}'"
-        }
-    }
+class GatewayAutoConfiguration {
 
     @Bean
     fun redisRateLimiter(

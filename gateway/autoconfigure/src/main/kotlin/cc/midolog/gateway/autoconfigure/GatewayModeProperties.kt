@@ -1,5 +1,6 @@
 package cc.midolog.gateway.autoconfigure
 
+import jakarta.annotation.PostConstruct
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
@@ -11,4 +12,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "gateway")
 data class GatewayModeProperties(
     var mode: String? = null
-)
+) {
+    @PostConstruct
+    fun validate() {
+        require(mode == "embedded" || mode == "standalone" || mode == "remote") {
+            "gateway.mode must be exactly one of: embedded, standalone, remote. Found: '${mode ?: "null"}'"
+        }
+    }
+}
