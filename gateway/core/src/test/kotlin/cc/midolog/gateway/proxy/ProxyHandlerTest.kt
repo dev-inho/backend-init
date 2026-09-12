@@ -228,7 +228,7 @@ class ProxyHandlerTest {
         val client = WebClient.builder().baseUrl("http://localhost:23456").filter { request, next -> reqCount++; next.exchange(request) }.build()
         val handler = ProxyHandler(
             client,
-            GatewayRouteSelector(cc.midolog.gateway.config.GatewayRouteProperties("http://localhost:23456", batchUrl = "http://localhost:23456")),
+            GatewayRouteSelector(cc.midolog.gateway.config.GatewayRouteProperties("http://localhost:23456", batchUrl = "http://localhost:23456"), client, java.time.Clock.systemUTC(), null),
             GatewayRetryProperties(maxAttempts = 3, backoff = java.time.Duration.ofMillis(1))
         )
 
@@ -344,6 +344,9 @@ class ProxyHandlerTest {
                     applicationUrl = "http://application.internal",
                     batchUrl = "http://batch.internal",
                 ),
+                WebClient.builder().exchangeFunction(exchange).build(),
+                java.time.Clock.systemUTC(),
+                meterRegistry
             ),
             GatewayRetryProperties(maxAttempts = maxAttempts, backoff = backoff),
             meterRegistry
@@ -367,5 +370,40 @@ class ProxyHandlerTest {
             override fun messageWriters() = strategies.messageWriters()
             override fun viewResolvers() = strategies.viewResolvers()
         }
+    }
+
+    @Test
+    fun `Connection exception marks target as unhealthy immediately`() {
+        var reqCount = 0
+        val client = WebClient.builder().baseUrl("http://localhost:23456").filter { request, next ->
+            reqCount++
+            next.exchange(request)
+        }.build()
+
+        val selector = GatewayRouteSelector(
+            cc.midolog.gateway.config.GatewayRouteProperties(
+                applicationUrls = listOf("http://localhost:23456", "http://localhost:23457"),
+                batchUrl = "http://localhost:23456"
+            ),
+            client,
+            java.time.Clock.systemUTC(),
+            null
+        )
+
+        val handler = ProxyHandler(
+            client,
+            selector,
+            GatewayRetryProperties(maxAttempts = 3, backoff = java.time.Duration.ofMillis(1))
+        )
+
+        // It will route to 23456 first
+        val getExchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        val getResponse = handler.proxy(serverRequest(getExchange.request)).block()
+        getResponse!!.writeTo(getExchange, responseContext()).block()
+
+        // 23456 should be marked unhealthy. Next request should route to 23457.
+        // We can just verify the next selected target.
+        assertEquals("http://localhost:23457", selector.selectTarget("/api/retry"))
+        assertEquals("http://localhost:23457", selector.selectTarget("/api/retry"))
     }
 }
