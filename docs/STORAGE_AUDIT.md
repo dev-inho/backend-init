@@ -54,9 +54,10 @@
 * **원문:** `        mapper.updateStatus(id, status.name, Instant.now()) > 0`
 * **파일:행:** `core/application/src/main/kotlin/cc/midolog/business/config/ClockConfig.kt:19`
 * **원문:** `        return Clock.systemUTC()`
-* **판정:** 결함 (과거 감사 시점) -> **[복원됨 (PR #43)]**
+* **판정:** 결함 (과거 감사 시점) -> **[복원됨 (PR #42, PR #43)]**
 * **근거:** (과거) 실제 `ClockConfig`에 의해 `clock.instant()` 주입이 가능함에도 `Instant.now()` 하드코딩을 사용하여 테스트 시간 의존성 문제가 있었음.
 * **복원 근거 및 현재 경로:**
+  - application은 PR #42에서 `FileService`가 주입받은 `Clock`을 사용하도록 복원되었고, `ApplicationTimeSourceGuardTest`가 `core:application` main 소스의 직접 `Instant.now()` 호출 재유입을 차단합니다.
   - 감사 대상이었던 두 storage 어댑터는 PR #43에서 주입받은 `clock.instant()`를 호출하도록 완전히 복원되었습니다:
     - JPA: `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:44` (`query.setParameter("now", clock.instant())`)
     - MyBatis: `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/file/MyBatisFileMetaRepositoryAdapter.kt:42` (`mapper.updateStatus(id, status.name, clock.instant()) > 0`)

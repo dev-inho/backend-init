@@ -7,11 +7,12 @@ import cc.midolog.file.port.storage.ChunkReader
 import cc.midolog.file.port.storage.FileStoragePort
 import cc.midolog.web.exception.ApiException
 import org.springframework.stereotype.Service
-import java.time.Instant
+import java.time.Clock
 import java.util.UUID
 
 @Service
 class FileService(
+    private val clock: Clock,
     private val fileStoragePort: FileStoragePort,
     private val fileMetaRepositoryPort: FileMetaRepositoryPort,
 ) {
@@ -22,7 +23,7 @@ class FileService(
     ): FileMeta {
         val id = cc.midolog.business.util.IdGenerator.generateUlid()
         val storageKey = UUID.randomUUID().toString()
-        val now = Instant.now()
+        val now = clock.instant()
 
         var fileMeta = FileMeta(
             id = id,
@@ -51,7 +52,7 @@ class FileService(
                 contentType = stored.contentType,
                 checksum = stored.checksum,
                 status = FileStatus.READY,
-                updatedAt = Instant.now()
+                updatedAt = clock.instant()
             )
             return fileMetaRepositoryPort.save(fileMeta)
         } catch (e: Exception) {

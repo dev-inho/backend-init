@@ -65,7 +65,7 @@ class FileUploadInterruptionTest {
             }
         }
 
-        val fileService = FileService(storagePort, repoPort)
+        val fileService = FileService(clock, storagePort, repoPort)
         val cleanupService = FileOrphanCleanupService(clock, repoPort, storagePort)
 
         val reader = object : ChunkReader {

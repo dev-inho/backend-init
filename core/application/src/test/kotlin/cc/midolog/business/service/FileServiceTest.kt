@@ -9,9 +9,13 @@ import cc.midolog.file.port.storage.FileStoragePort
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 
 class FileServiceTest {
+
+    private val clock = Clock.fixed(Instant.parse("2026-09-12T10:00:00Z"), ZoneOffset.UTC)
 
     @Test
     fun `성공 시 PENDING 저장 후 READY로 메타가 갱신되며, 생성된 ID와 속성이 올바르다`() = runBlocking {
@@ -36,7 +40,7 @@ class FileServiceTest {
             override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> = emptyList()
         }
 
-        val fileService = FileService(storagePort, repoPort)
+        val fileService = FileService(clock, storagePort, repoPort)
 
         val reader = object : ChunkReader {
             override suspend fun readChunk(buffer: ByteArray): Int = -1
@@ -96,7 +100,7 @@ class FileServiceTest {
             override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> = emptyList()
         }
 
-        val fileService = FileService(storagePort, repoPort)
+        val fileService = FileService(clock, storagePort, repoPort)
 
         val reader = object : ChunkReader {
             override suspend fun readChunk(buffer: ByteArray): Int = -1
@@ -156,7 +160,7 @@ class FileServiceTest {
             override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> = emptyList()
         }
 
-        val fileService = FileService(storagePort, repoPort)
+        val fileService = FileService(clock, storagePort, repoPort)
 
         // 1. getFile
         val getEx = assertThrows(cc.midolog.web.exception.ApiException::class.java) {
@@ -219,7 +223,7 @@ class FileServiceTest {
             override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> = emptyList()
         }
 
-        val fileService = FileService(storagePort, repoPort)
+        val fileService = FileService(clock, storagePort, repoPort)
 
         // 1. Exception case
         assertThrows(RuntimeException::class.java) {
