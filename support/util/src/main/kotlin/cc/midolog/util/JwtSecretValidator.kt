@@ -5,11 +5,8 @@ package cc.midolog.util
  *
  * Application·Gateway 양쪽 모듈이 JWT 키를 만들기 직전에 호출해
  * 알려진 기본값·짧은 시크릿으로 조용히 기동하는 것을 막는다(fail-fast).
- *
- * 검증 규칙:
- * - 빈 값(blank) 거부
- * - 레포에 노출된 적 있는 알려진 기본값 거부
- * - UTF-8 인코딩 기준 [MIN_BYTE_LENGTH]바이트 미만 거부
+ * 빈 값(blank), 레포에 노출된 적 있는 알려진 기본 플레이스홀더, UTF-8 인코딩 기준
+ * [MIN_BYTE_LENGTH]바이트 미만의 약한 시크릿을 모두 거부한다.
  */
 object JwtSecretValidator {
     /** HS256 서명 키 최소 길이(UTF-8 바이트). RFC 7518이 요구하는 256비트 하한. */
