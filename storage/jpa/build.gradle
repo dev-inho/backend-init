@@ -19,6 +19,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
     runtimeOnly 'org.postgresql:postgresql'
 
+    testImplementation testFixtures(project(':core:domain'))
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-flyway'
     testRuntimeOnly 'com.h2database:h2'

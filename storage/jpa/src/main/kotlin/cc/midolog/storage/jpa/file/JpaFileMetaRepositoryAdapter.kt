@@ -16,6 +16,7 @@ class JpaFileMetaRepositoryAdapter(
     private val fileMetaJpaRepository: FileMetaJpaRepository,
     private val transactionOperations: TransactionOperations,
     private val entityManager: EntityManager,
+    private val clock: java.time.Clock = java.time.Clock.systemUTC(),
 ) : FileMetaRepositoryPort {
 
     override suspend fun findById(id: String): FileMeta? = withContext(Dispatchers.IO) {
@@ -40,7 +41,7 @@ class JpaFileMetaRepositoryAdapter(
                 "UPDATE FileMetaJpaEntity e SET e.status = :status, e.updatedAt = :now WHERE e.id = :id"
             )
             query.setParameter("status", status)
-            query.setParameter("now", java.time.Instant.now())
+            query.setParameter("now", clock.instant())
             query.setParameter("id", id)
             query.executeUpdate() > 0
         } ?: false
