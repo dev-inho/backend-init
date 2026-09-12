@@ -73,6 +73,11 @@ class ProxyHandler(
                 }
             }
             .doOnSubscribe { attemptCount++ }
+            .doOnError { e ->
+                if (isConnectionFailure(e)) {
+                    routeSelector.markUnhealthy(targetUrl)
+                }
+            }
             .retryWhen(
                 Retry.backoff(maxOf(0, retryProperties.maxAttempts - 1).toLong(), retryProperties.backoff).jitter(0.0)
                     .filter { e ->
@@ -89,15 +94,21 @@ class ProxyHandler(
 
     }
 
-    private fun isRetryableError(e: Throwable): Boolean {
+    private fun isConnectionFailure(e: Throwable): Boolean {
         val unwrapped = Exceptions.unwrap(e)
-        if (unwrapped is TimeoutException || unwrapped is RetryableStatusCodeException) return true
+        if (unwrapped is TimeoutException || unwrapped is RetryableStatusCodeException) return false
         var cause: Throwable? = unwrapped
         while (cause != null) {
             if (cause is ConnectException || cause.javaClass.simpleName == "AnnotatedConnectException") return true
             cause = cause.cause
         }
         return false
+    }
+
+    private fun isRetryableError(e: Throwable): Boolean {
+        val unwrapped = Exceptions.unwrap(e)
+        if (unwrapped is TimeoutException || unwrapped is RetryableStatusCodeException) return true
+        return isConnectionFailure(e)
     }
 
     private fun targetUri(targetUrl: String, requestUri: URI): URI =

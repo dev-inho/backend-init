@@ -16,6 +16,7 @@ import cc.midolog.gateway.visibility.RequestVisibilityHandler
 import cc.midolog.gateway.visibility.RequestVisibilityFilter
 import cc.midolog.gateway.visibility.RequestVisibilityProperties
 import io.micrometer.core.instrument.MeterRegistry
+import java.time.Clock
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -79,8 +80,8 @@ class GatewayAutoConfiguration {
     @Import(WebClientConfig::class, RouteConfig::class)
     class ProxyConfiguration {
         @Bean
-        fun gatewayRouteSelector(properties: GatewayRouteProperties): GatewayRouteSelector =
-            GatewayRouteSelector(properties)
+        fun gatewayRouteSelector(properties: GatewayRouteProperties, proxyWebClient: WebClient, clock: Clock, meterRegistryProvider: ObjectProvider<MeterRegistry>): GatewayRouteSelector =
+            GatewayRouteSelector(properties, proxyWebClient, clock, meterRegistryProvider.ifAvailable)
 
         @Bean
         fun proxyHandler(
