@@ -156,14 +156,14 @@ abstract class FileMetaRepositoryPortContract {
 
         val cutoff = now.minusSeconds(1800)
         
+        // Fetch up to limit = 2.
+        // We do NOT filter the result. We expect EXACTLY 2 items returned, ordered by updatedAt.
+        val expired = port().findExpiredPending(cutoff, limit = 2)
+        
         // Exact cutoff is EXCLUDED. Only old1 and old2 should be returned.
-        val expired = port().findExpiredPending(cutoff, limit = 10)
-        
-        val expiredFiltered = expired.filter { it.id in listOf("file-old-1", "file-old-2", "file-old-3", "file-ready-old", "file-recent") }
-        
-        assertEquals(2, expiredFiltered.size)
-        assertEquals("file-old-1", expiredFiltered[0].id)
-        assertEquals("file-old-2", expiredFiltered[1].id)
+        assertEquals(2, expired.size)
+        assertEquals("file-old-1", expired[0].id)
+        assertEquals("file-old-2", expired[1].id)
     }
 
     @Test
