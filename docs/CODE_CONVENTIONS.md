@@ -109,7 +109,7 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
   - `support:web`의 `HttpLoggingFilter`(@Order(-2))와 `RequestIdFilter`(@Order(0))는 호스트 애플리케이션의 `cc.midolog` 패키지 스캔으로 자동 감지 및 등록되며, `gateway:autoconfigure`가 별도로 등록하지 않습니다.
 
 ### 인프라 어댑터 및 자동 설정
-- 인프라 격리: Redis, 외부 스토리지 등 인프라 어댑터 구현체는 비즈니스 계층과 분리하여 `infra/` 패키지 아래 위치시킵니다 (예: `cc.midolog.infra.cache.RedisSampleCacheAdapter`).
+- 인프라 격리: Redis, 외부 스토리지 등 인프라 어댑터 구현체는 비즈니스 계층과 분리하여 `infra/` 패키지 아래 위치시킵니다 (예: `cc.midolog.infra.cache.RedisSampleCacheAdapter`). application의 인프라·설정 코드는 `infra/`로 통일하며 `common/` 패키지를 금지합니다.
 - **자동 설정 @Bean 이름 충돌 방지 규칙**:
   - `@AutoConfiguration` 클래스에서 등록하는 `@Bean`의 이름은 호스트 애플리케이션의 패키지 컴포넌트 스캔에 의해 감지되는 레거시 `@Component`의 기본 빈 이름(`decapitalize(ClassName)`)과 충돌하지 않도록 명시적 빈 이름을 부여해야 합니다.
   - **현재 예시**: `client:storage-file`의 `@Component class LocalFileStorageAdapter`는 Spring의 기본 명명 규칙에 따라 `localFileStorageAdapter`로 등록됩니다. 반면 신규 자동 설정 모듈 `storage:file-local`의 `FileStorageAutoConfiguration`에서는 `@Bean("fileLocalStorageAdapter")`로 명시적 이름을 지정함으로써, 호스트 컴포넌트 스캔과 자동 설정이 함께 로드될 때 빈 이름 충돌(`BeanDefinitionOverrideException`) 없이 두 어댑터가 컨텍스트 내에 안전하게 공존하도록 보장합니다.
@@ -128,6 +128,8 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
    - 지키는 것: 웹 컨트롤러에서 도메인 엔티티를 클라이언트에 직접 노출하지 않고 전용 DTO로 변환하여 응답하도록 보장.
 4. **`FileStorageIntegrationTest`** (`core/application/src/test/kotlin/cc/midolog/storage/FileStorageIntegrationTest.kt`)
    - 지키는 것: 호스트 패키지 스캔(`cc.midolog`)과 `FileStorageAutoConfiguration`이 함께 로드될 때 레거시 빈 `localFileStorageAdapter`와 신규 빈 `fileLocalStorageAdapter`가 이름 충돌 없이 공존하며 두 `FileStoragePort`가 정상 등록되도록 보장.
+5. **`ApplicationPackageStructureTest`** (`core/application/src/test/kotlin/cc/midolog/ApplicationPackageStructureTest.kt`)
+   - 지키는 것: `core:application` 내 인프라·설정 코드를 `infra/`로 통일하고 `common/` 패키지 사용을 원천 차단.
 
 ---
 
