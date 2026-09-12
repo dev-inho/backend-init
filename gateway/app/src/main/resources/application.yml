@@ -6,6 +6,7 @@ spring:
     name: backend-gateway
 
 gateway:
+  mode: standalone
   routes:
     application-url: ${GATEWAY_APPLICATION_URL}
     application-urls: ${GATEWAY_APPLICATION_URLS:}
