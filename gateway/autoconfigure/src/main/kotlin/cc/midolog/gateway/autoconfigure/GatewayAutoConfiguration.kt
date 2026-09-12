@@ -2,6 +2,7 @@ package cc.midolog.gateway.autoconfigure
 
 import cc.midolog.gateway.config.GatewayClockConfig
 import cc.midolog.gateway.config.GatewayRouteProperties
+import cc.midolog.gateway.config.GatewayRetryProperties
 import cc.midolog.gateway.config.RouteConfig
 import cc.midolog.gateway.config.WebClientConfig
 import cc.midolog.gateway.filter.AuthTokenRateLimitFilter
@@ -14,6 +15,7 @@ import cc.midolog.gateway.visibility.RequestEventStore
 import cc.midolog.gateway.visibility.RequestVisibilityHandler
 import cc.midolog.gateway.visibility.RequestVisibilityFilter
 import cc.midolog.gateway.visibility.RequestVisibilityProperties
+import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -22,6 +24,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Import
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.core.env.Environment
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate
 import org.springframework.web.reactive.function.client.WebClient
@@ -72,7 +75,7 @@ class GatewayAutoConfiguration {
 
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnExpression("'\${gateway.mode:}' == 'standalone' || '\${gateway.mode:}' == 'remote'")
-    @EnableConfigurationProperties(GatewayRouteProperties::class)
+    @EnableConfigurationProperties(GatewayRouteProperties::class, GatewayRetryProperties::class)
     @Import(WebClientConfig::class, RouteConfig::class)
     class ProxyConfiguration {
         @Bean
@@ -83,7 +86,9 @@ class GatewayAutoConfiguration {
         fun proxyHandler(
             proxyWebClient: WebClient,
             routeSelector: GatewayRouteSelector,
-        ): ProxyHandler = ProxyHandler(proxyWebClient, routeSelector)
+            retryProperties: GatewayRetryProperties,
+            meterRegistryProvider: ObjectProvider<MeterRegistry>
+        ): ProxyHandler = ProxyHandler(proxyWebClient, routeSelector, retryProperties, meterRegistryProvider.ifAvailable)
 
         @Bean
         fun jwtAuthFilter(env: Environment): JwtAuthFilter {

@@ -13,6 +13,7 @@ dependencies {
     implementation project(':support:util')
     implementation project(':support:web')
     implementation project(':support:jwt')
+    implementation 'io.micrometer:micrometer-core'
 
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'io.projectreactor.kotlin:reactor-kotlin-extensions'

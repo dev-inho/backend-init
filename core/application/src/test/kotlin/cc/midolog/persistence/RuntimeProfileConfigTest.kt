@@ -39,6 +39,13 @@ class RuntimeProfileConfigTest {
         }
     }
 
+    @Test
+    fun `base application config sets gateway mode to embedded`() {
+        val baseConfig = resourceText("application.yml")
+
+        assertTrue(baseConfig.contains("gateway:\n  mode: embedded"), "base application.yml must set gateway.mode: embedded")
+    }
+
     private fun resourceText(path: String): String =
         ClassPathResource(path).inputStream.bufferedReader().use { it.readText() }
 }
