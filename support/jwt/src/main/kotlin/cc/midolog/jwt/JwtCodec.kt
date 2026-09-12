@@ -27,5 +27,5 @@ class JwtCodec(secret: String) {
 
     /** 서명이 유효한 JWT를 파싱해 Claims를 반환한다. 검증 실패 시 [io.jsonwebtoken.JwtException] 등을 던진다. */
     fun parse(token: String): Claims =
-        Jwts.parser().build().parseSignedClaims(token).payload
+        Jwts.parser().verifyWith(key).build().parseSignedClaims(token).payload
 }

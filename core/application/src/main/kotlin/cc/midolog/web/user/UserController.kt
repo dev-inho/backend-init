@@ -5,6 +5,7 @@ import cc.midolog.user.model.User
 import cc.midolog.web.exception.ApiException
 import cc.midolog.web.response.ApiResponse
 import cc.midolog.web.user.dto.CreateUserRequest
+import cc.midolog.web.user.dto.UserResponse
 import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -19,14 +20,14 @@ class UserController(
     private val userService: UserService,
 ) {
     @GetMapping("/{id}")
-    suspend fun get(@PathVariable id: String): ApiResponse<User> {
+    suspend fun get(@PathVariable id: String): ApiResponse<UserResponse> {
         val user = userService.findById(id)
             ?: throw ApiException.notFound("user not found: $id")
-        return ApiResponse.ok(user)
+        return ApiResponse.ok(UserResponse.from(user))
     }
 
     @PostMapping
-    suspend fun create(@Valid @RequestBody request: CreateUserRequest): ApiResponse<User> {
+    suspend fun create(@Valid @RequestBody request: CreateUserRequest): ApiResponse<UserResponse> {
         val saved = userService.save(
             User(
                 id = request.id,
@@ -34,6 +35,6 @@ class UserController(
                 displayName = request.displayName,
             ),
         )
-        return ApiResponse.ok(saved)
+        return ApiResponse.ok(UserResponse.from(saved))
     }
 }

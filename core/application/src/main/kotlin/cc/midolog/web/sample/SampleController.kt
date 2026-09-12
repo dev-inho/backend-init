@@ -5,6 +5,7 @@ import cc.midolog.sample.model.Sample
 import cc.midolog.web.exception.ApiException
 import cc.midolog.web.response.ApiResponse
 import cc.midolog.web.sample.dto.CreateSampleRequest
+import cc.midolog.web.sample.dto.SampleResponse
 import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -22,16 +23,16 @@ class SampleController(
     fun ping(): ApiResponse<Map<String, String>> = ApiResponse.ok(mapOf("status" to "ok"))
 
     @GetMapping("/{id}")
-    suspend fun get(@PathVariable id: String): ApiResponse<Sample> {
+    suspend fun get(@PathVariable id: String): ApiResponse<SampleResponse> {
         val sample = sampleService.findById(id)
             ?: throw ApiException.notFound("sample not found: $id")
-        return ApiResponse.ok(sample)
+        return ApiResponse.ok(SampleResponse.from(sample))
     }
 
     @PostMapping
-    suspend fun create(@Valid @RequestBody request: CreateSampleRequest): ApiResponse<Sample> {
+    suspend fun create(@Valid @RequestBody request: CreateSampleRequest): ApiResponse<SampleResponse> {
         val saved = sampleService.save(Sample(id = request.id, name = request.name))
-        return ApiResponse.ok(saved)
+        return ApiResponse.ok(SampleResponse.from(saved))
     }
 
     @PostMapping("/echo")
