@@ -9,7 +9,7 @@ import org.springframework.test.web.reactive.server.WebTestClient
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = [
-        "jwt.secret=this_is_a_test_secret_for_jwt_auth_filter",
+        "jwt.secret=\${random.uuid}\${random.uuid}",
         "gateway.routes.application-url=http://localhost:8081",
         "gateway.routes.batch-url=http://localhost:8082",
         "management.health.redis.enabled=false"
@@ -32,6 +32,15 @@ class ActuatorEndpointIntegrationTest {
             .exchange()
             .expectStatus().isOk
 
+        webTestClient.get().uri("/actuator")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$._links.health").exists()
+            .jsonPath("$._links.metrics").exists()
+            .jsonPath("$._links.prometheus").doesNotExist()
+
+        // Explicitly document that unmapped paths fallback to catch-all proxy which returns 502
         webTestClient.get().uri("/actuator/prometheus")
             .exchange()
             .expectStatus().isEqualTo(org.springframework.http.HttpStatus.BAD_GATEWAY)
@@ -41,7 +50,7 @@ class ActuatorEndpointIntegrationTest {
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = [
-        "jwt.secret=this_is_a_test_secret_for_jwt_auth_filter",
+        "jwt.secret=\${random.uuid}\${random.uuid}",
         "gateway.routes.application-url=http://localhost:8081",
         "gateway.routes.batch-url=http://localhost:8082",
         "management.health.redis.enabled=false",

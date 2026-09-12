@@ -19,6 +19,22 @@ import java.net.ConnectException
 import java.net.URI
 import java.util.concurrent.TimeoutException
 
+/**
+ * 라우트 선택 결과에 따라 요청을 다운스트림 서버로 중계하고 응답을 반환하는 프록시 핸들러.
+ *
+ * 요청 본문은 [DataBuffer] 스트림으로 다운스트림에 전달하지만, 다운스트림 응답은
+ * `bodyToMono(ByteArray::class.java)`를 통해 메모리에 바이트 배열로 전체 버퍼링한 뒤 반환한다.
+ *
+ * 버퍼링 트레이드오프:
+ * 응답 본문을 메모리에 일괄 적재함으로써 응답 상태 코드 및 헤더 조작, 에러 복구가 단순해지지만,
+ * 대용량 응답(파일 다운로드 등) 수신 시 게이트웨이 JVM 힙 메모리 사용량이 급증할 수 있는 트레이드오프가 있다.
+ *
+ * 에러 처리 및 재시도:
+ * 다운스트림 호출 중 [TimeoutException]이 발생하면 504(GATEWAY_TIMEOUT)로 변환하고,
+ * 그 외 연결 실패나 네트워크 예외는 502(BAD_GATEWAY)로 변환한다.
+ * 요청 본문이 스트리밍이므로 GET, HEAD, OPTIONS와 같이 멱등성이 보장되고 본문이 없는 메서드만 재시도한다.
+ * POST, PUT, PATCH, DELETE 등은 네트워크 단절 시 이미 데이터 일부가 전송되었을 수 있어 재전송하지 않는다.
+ */
 class ProxyHandler(
     private val proxyWebClient: WebClient,
     private val routeSelector: GatewayRouteSelector,
@@ -44,7 +60,7 @@ class ProxyHandler(
             .exchangeToMono { response ->
                 val status = response.statusCode().value()
                 if (status == 502 || status == 503 || status == 504) {
-                    Mono.error(RetryableStatusCodeException(status))
+                    response.releaseBody().then(Mono.error(RetryableStatusCodeException(status)))
                 } else {
                     val responseHeaders = HeaderSanitizer.sanitize(response.headers().asHttpHeaders())
                     response.bodyToMono(ByteArray::class.java)
@@ -61,16 +77,31 @@ class ProxyHandler(
                 Retry.backoff(maxOf(0, retryProperties.maxAttempts - 1).toLong(), retryProperties.backoff)
                     .filter { e ->
                         if (method != "GET" && method != "HEAD" && method != "OPTIONS") return@filter false
-                        val unwrapped = Exceptions.unwrap(e)
-                        unwrapped is TimeoutException || unwrapped is ConnectException || unwrapped is RetryableStatusCodeException
+                        isRetryableError(e)
                     }
             )
             .onErrorResume { e ->
-                gatewayError(e)
+                gatewayError(e, method)
             }
             .doOnSuccess { response ->
                 recordMetrics(targetUrl, response?.statusCode()?.value()?.toString() ?: "500", attemptCount > 1, timerSample)
             }
+            .doOnError { e ->
+                val unwrapped = Exceptions.unwrap(if (e.javaClass.simpleName == "RetryExhaustedException") e.cause ?: e else e)
+                val status = if (unwrapped is TimeoutException) "504" else if (unwrapped is RetryableStatusCodeException) unwrapped.statusCode.toString() else "502"
+                recordMetrics(targetUrl, status, attemptCount > 1, timerSample)
+            }
+    }
+
+    private fun isRetryableError(e: Throwable): Boolean {
+        val unwrapped = Exceptions.unwrap(e)
+        if (unwrapped is TimeoutException || unwrapped is RetryableStatusCodeException) return true
+        var cause: Throwable? = unwrapped
+        while (cause != null) {
+            if (cause is ConnectException || cause.javaClass.simpleName == "AnnotatedConnectException") return true
+            cause = cause.cause
+        }
+        return false
     }
 
     private fun targetUri(targetUrl: String, requestUri: URI): URI =
@@ -83,10 +114,13 @@ class ProxyHandler(
             }
         })
 
-    private fun gatewayError(error: Throwable): Mono<ServerResponse> {
+    private fun gatewayError(error: Throwable, method: String): Mono<ServerResponse> {
         val unwrapped = Exceptions.unwrap(if (error.javaClass.simpleName == "RetryExhaustedException") error.cause ?: error else error)
+
         val status = if (unwrapped is TimeoutException) {
             HttpStatus.GATEWAY_TIMEOUT
+        } else if (unwrapped is RetryableStatusCodeException && (method == "GET" || method == "HEAD" || method == "OPTIONS")) {
+            HttpStatus.valueOf(unwrapped.statusCode)
         } else {
             HttpStatus.BAD_GATEWAY
         }
