@@ -329,7 +329,7 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 | `JwtAuthFilter` | **X** | **O** | **O** | `jwt.secret` 필수 검증, 프록시 진입 전 인증 |
 
 - **공통 세 모드 (embedded, standalone, remote)**:
-  `AuthTokenRateLimitFilter` 및 `RateLimiter`/`RedisRateLimiter`, `GatewayClockConfig`가 기본 등록되며, `gateway.request-visibility.enabled=true`인 경우 가시성 빈들(`RequestEventStore`, `RequestVisibilityFilter`, `RequestVisibilityController`)이 등록됩니다.
+  `AuthTokenRateLimitFilter` 및 `RateLimiter`/`RedisRateLimiter`, `GatewayClockConfig`가 기본 등록되며, `gateway.request-visibility.enabled=true`인 경우 가시성 빈들(`RequestEventStore`, `RequestVisibilityFilter`, `RequestVisibilityHandler`, `visibilityRoutes`)이 등록됩니다.
 - **standalone 및 remote 모드**:
   공통 빈과 함께 프록시 빈 묶음(`RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `JwtAuthFilter`)이 활성화됩니다. 자동 설정 클래스인 `GatewayAutoConfiguration`은 `@ConditionalOnExpression("'\${gateway.mode:}' == 'standalone' || '\${gateway.mode:}' == 'remote'")` 어노테이션으로 이를 바인딩합니다. 현재 코드베이스에서 standalone과 remote는 동일한 프록시 빈 묶음을 공유하며 환경 설정값(타겟 URL 및 인프라 구성)으로 역할을 구분합니다.
 - **embedded 모드 (In-process 직접 처리)**:
@@ -338,9 +338,6 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
   - **인증 및 라우팅**: 게이트웨이 자체 `JwtAuthFilter` 대신 호스트 애플리케이션의 `SecurityConfig`가 JWT 인증을 전담합니다. 프록시용 `RouteConfig`가 없으므로 애플리케이션의 컨트롤러(`RequestMappingHandlerMapping`, `order=0`)가 직접 비즈니스 로직을 처리합니다. 단, 가시성 조회용 `visibilityRoutes` 빈은 오직 `/internal/gateway/requests` 경로에만 반응하는 Functional Router(`RouterFunctionMapping`, `order=-1`)로 등록되어 해당 경로만 컨트롤러보다 먼저 가로채어 처리합니다.
   - **가시성 설정 정책**: 가시성 기능(`request-visibility`)은 운영 환경 성능을 위해 기본적으로 `false`로 비활성화되며, `local` 프로파일 환경에서만 명시적으로 `true`로 활성화됩니다.
 
-### 4.3 알려진 제약 및 컴포넌트 스캔 방어
-- `gateway:core` 모듈의 `RequestVisibilityController`에 `@RestController`가 부여되어 있어, 호스트 애플리케이션(`core:application`)이나 게이트웨이 앱(`gateway:app`)이 `cc.midolog` 패키지 스캔을 수행할 때 `gateway.request-visibility.enabled=false` 설정임에도 불구하고 컨트롤러가 먼저 빈으로 등록되는 현상이 발생할 수 있습니다.
-- 현재 `gateway/app`은 `GatewayApplication`에서 `@ComponentScan(excludeFilters = [ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = [RequestVisibilityController::class])])`로 방어하고 있습니다. L2에서 `core:application`에 스타터를 탑재하기 전 core/autoconfigure 후속 정리가 필요합니다.
 
 ---
 
@@ -430,9 +427,9 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 - **컴포넌트 구성** (`cc.midolog.gateway.visibility.*`, `gateway:core`):
   - `RequestEventStore`: `ArrayDeque` 기반의 bounded in-memory 링 버퍼 저장소. 설정된 용량(`capacity`, 기본값 200)을 유지하며 동기화(`@Synchronized`)로 스레드 안전성 보장.
   - `RequestVisibilityFilter`: `@Order(100)` 필터. 체인 최하단에서 응답 완료 시점(`doFinally`)에 요청 메타데이터를 이벤트 저장소에 기록 (단, 앞선 필터에서 429/401로 조기 거절되어 체인이 단축된 요청은 이 필터에 도달하지 않으므로 저장되지 않으며, 최외곽 `HttpLoggingFilter`만 로깅을 남김). `GatewayClockConfig`의 `Clock` 빈을 주입받아 정확한 시각 계측.
-  - `RequestVisibilityController`: `GET /internal/gateway/requests` 내부 조회 REST 컨트롤러.
+  - `RequestVisibilityHandler` 및 `visibilityRoutes`: `GET /internal/gateway/requests` 내부 조회 엔드포인트를 제공하는 핸들러 및 라우터.
   - `RequestVisibilityProperties`: `gateway.request-visibility.enabled`(기본 false), `gateway.request-visibility.capacity`(기본 200).
-- **조건부 빈 등록**: `gateway.request-visibility.enabled=true`일 때만 저장소, 필터, 컨트롤러 빈이 활성화됩니다 (`GatewayAutoConfigurationTest`의 `visibility beans are enabled only when property is true`로 검증).
+- **조건부 빈 등록**: `gateway.request-visibility.enabled=true`일 때만 저장소, 필터, 핸들러, 라우터 빈이 활성화됩니다 (`GatewayAutoConfigurationTest`의 `visibility beans are enabled only when property is true`로 검증).
 - **보안**: `/internal/gateway/**` 경로는 standalone/remote에서는 `JwtAuthFilter`의 검증 대상에 포함되며, embedded에서는 호스트 `SecurityConfig`가 담당합니다.
 - **민감정보 보호**: 요청/응답 본문, 쿼리스트링, Authorization 헤더 등 PII 및 민감 자격증명은 일절 저장하지 않으며 method, path, status, requestId, timestamp, durationMs 메타데이터만 보관합니다.
 
