@@ -19,6 +19,7 @@ class PersistenceBoundaryTest {
         "org.apache.ibatis",
         "cc.midolog.storage.jpa",
         "cc.midolog.storage.mybatis",
+        "com.querydsl",
     )
 
     private fun resolveRepositoryRoot(): Path {
