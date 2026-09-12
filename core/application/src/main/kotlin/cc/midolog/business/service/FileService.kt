@@ -72,7 +72,7 @@ class FileService(
     suspend fun loadContent(id: String, ownerId: String): ChunkReader {
         val file = getFile(id, ownerId)
         if (file.status != FileStatus.READY) {
-            throw ApiException.badRequest("file is not ready")
+            throw ApiException.invalidInput("file is not ready")
         }
         return fileStoragePort.load(file.storageKey) ?: throw ApiException.notFound("file not found in storage")
     }

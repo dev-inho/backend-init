@@ -61,7 +61,10 @@ class SizeLimitChunkReader(
         if (read > 0) {
             readBytes += read
             if (readBytes > maxSize) {
-                val e = cc.midolog.web.exception.ApiException.payloadTooLarge("File size exceeds maximum limit of $maxSize bytes")
+                val e = org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE, 
+                    "File size exceeds maximum limit of $maxSize bytes"
+                )
                 cancel(e)
                 throw e
             }

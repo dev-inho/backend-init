@@ -1,0 +1,11 @@
+L5 단계인 file-local-adapter-web 저장소에 대한 구현을 성공적으로 완료하고 PR #23을 생성했습니다.
+
+[주요 구현 내용]
+- `storage:file-local` 모듈: 경로 순회 방지, UUID storageKey 적용, 부분 실패 처리, SHA-256 해시 검증이 포함된 로컬 스토리지 어댑터(`LocalFileStorageAdapter`) 및 AutoConfiguration 구현
+- `core:application`: `FileService`, `FileController`, `WebFluxChunkBridge` 구현 (Memory-safe 스트리밍 변환을 위해 Channel을 이용한 suspend stream 처리 반영)
+- 요구사항에 명시된 4가지 주요 예외(201, 413, 415, 401, 404)에 대한 Mock MVC가 아닌 `WebFluxTest` 기반의 정상 컨트롤러 응답 테스트 작성 (Fake `FileService` 활용)
+- `application.yml`의 `local` 프로파일에 스토리지 provider와 root-dir 경로 분리 및 fail-fast 적용 (전역 기본값 없음)
+- `.env.example`에 `STORAGE_FILE_ROOT_DIR` 항목 추가
+
+[테스트/검증]
+`~/.claude/skills/orca-worker/preflight.sh` 스크립트로 `./gradlew build`, `./gradlew -p build-logic test`, `git diff --check` 모두 녹색(🟢) 통과를 확인했습니다.

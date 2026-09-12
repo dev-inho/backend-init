@@ -46,7 +46,10 @@ class FileController(
         val contentType = filePart.headers().contentType?.toString() ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
 
         if (allowedContentTypes.isNotEmpty() && !allowedContentTypes.contains(contentType)) {
-            throw ApiException.unsupportedMediaType("Content type $contentType is not allowed")
+            throw org.springframework.web.server.ResponseStatusException(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE, 
+                "Content type $contentType is not allowed"
+            )
         }
 
         val channel = kotlinx.coroutines.channels.Channel<DataBuffer>(1)
