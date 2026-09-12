@@ -90,7 +90,7 @@ PR #24 기준, 포트 1건 추가 시 20개 파일이 변경되며 이는 스토
   * `core/application/build.gradle:15`<br>`    runtimeOnly project(':storage:mybatis')`
   * `core/application/build.gradle:16`<br>`    runtimeOnly project(':storage:jpa')`
 * **KDoc 유출:**
-  * `core/application/src/test/kotlin/cc/midolog/common/security/SecurityConfigTest.kt:18`<br>` * DataSource/MyBatis/Redis 등 실제 인프라 의존 없이 인증 동작을 검증한다.` (문서 목적이므로 예외 허용)
+  * `core/application/src/test/kotlin/cc/midolog/infra/security/SecurityConfigTest.kt:18`<br>` * DataSource/MyBatis/Redis 등 실제 인프라 의존 없이 인증 동작을 검증한다.` (문서 목적이므로 예외 허용)
 * **빌드 로직 허용 예외 논의:**
   * `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/JpaDslRenderer.kt:137`<br>`import org.springframework.data.jpa.repository.JpaRepository` (공통 도구이므로 전역 예외로 허용 필요)
 
