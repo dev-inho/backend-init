@@ -8,11 +8,16 @@ import java.nio.file.Files
 import java.nio.file.Paths
 
 /**
- * 로컬 파일 시스템에 파일을 저장하는 [FileStoragePort] 구현체 어댑터.
+ * 구버전 [FileStoragePort]를 구현한 로컬 파일 시스템 저장 어댑터.
  *
+ * 새로운 파일 도메인 표준 포트인 [cc.midolog.file.port.storage.FileStoragePort] 및 신규 어댑터로 대체되었다.
+ * 하위 호환성을 유지하기 위해 컴포넌트를 보존한다.
  * 파일 시스템 I/O 작업의 스레드 블로킹을 방지하기 위해 [Dispatchers.IO] 코루틴 컨텍스트에서 실행한다.
- * 현재 애플리케이션 내 실제 호출 소비자가 없어 docs/DEAD_CODE_CANDIDATES.md #1·#2에 삭제 후보로 등재되어 있다.
  */
+@Deprecated(
+    message = "cc.midolog.file.port.storage.FileStoragePort 로 대체",
+    replaceWith = ReplaceWith("cc.midolog.file.port.storage.FileStoragePort"),
+)
 @Component
 class LocalFileStorageAdapter : FileStoragePort {
     /**

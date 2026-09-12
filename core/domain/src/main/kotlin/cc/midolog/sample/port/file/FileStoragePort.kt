@@ -1,14 +1,15 @@
 package cc.midolog.sample.port.file
 
 /**
- * 파일 저장을 추상화하는 도메인 출력 포트.
+ * 파일 저장을 추상화했던 구버전 도메인 출력 포트.
  *
- * 어댑터 구현체(LocalFileStorageAdapter)는 지정된 경로의 상위 디렉터리가 없으면
- * 자동으로 생성하고, 파일이 이미 존재하면 내용을 덮어쓴다(overwrite). 저장이 완료되면
- * 저장된 파일의 절대 경로 문자열을 반환하며 블로킹 파일 I/O는 Dispatchers.IO에서 실행한다.
- *
- * 현재 비즈니스 로직과 테스트에서 호출이 없어 docs/DEAD_CODE_CANDIDATES.md #1에 삭제 제안 후보로 등재되어 있다.
+ * 새로운 파일 도메인 표준 포트인 [cc.midolog.file.port.storage.FileStoragePort]로 대체되었다.
+ * 하위 호환성을 위해 심볼을 유지하며, 기존 어댑터 구현체와의 호환성을 제공한다.
  */
+@Deprecated(
+    message = "cc.midolog.file.port.storage.FileStoragePort 로 대체",
+    replaceWith = ReplaceWith("cc.midolog.file.port.storage.FileStoragePort"),
+)
 interface FileStoragePort {
     suspend fun store(path: String, bytes: ByteArray): String
 }
