@@ -1,6 +1,6 @@
 package cc.midolog
 
-import cc.midolog.common.security.JwtProvider
+import cc.midolog.infra.security.JwtProvider
 import cc.midolog.file.port.repository.FileMetaRepositoryPort
 import cc.midolog.user.port.repository.UserRepositoryPort
 import cc.midolog.sample.port.repository.SampleRepositoryPort

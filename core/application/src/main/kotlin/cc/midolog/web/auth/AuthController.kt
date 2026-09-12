@@ -1,6 +1,6 @@
 package cc.midolog.web.auth
 
-import cc.midolog.common.security.JwtProvider
+import cc.midolog.infra.security.JwtProvider
 import cc.midolog.web.exception.ApiException
 import cc.midolog.web.exception.ErrorCode
 import cc.midolog.web.response.ApiResponse

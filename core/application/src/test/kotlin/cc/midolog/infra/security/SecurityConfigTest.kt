@@ -1,4 +1,4 @@
-package cc.midolog.common.security
+package cc.midolog.infra.security
 
 import cc.midolog.web.auth.AuthController
 import org.junit.jupiter.api.Assertions.assertNotEquals

@@ -1,4 +1,4 @@
-package cc.midolog.common.security
+package cc.midolog.infra.security
 
 import cc.midolog.jwt.JwtCodec
 import io.jsonwebtoken.Claims

@@ -1,8 +1,8 @@
 package cc.midolog.web.file
 
 import cc.midolog.business.service.FileService
-import cc.midolog.common.security.JwtProvider
-import cc.midolog.common.security.SecurityConfig
+import cc.midolog.infra.security.JwtProvider
+import cc.midolog.infra.security.SecurityConfig
 import cc.midolog.file.model.FileStatus
 import cc.midolog.file.model.FileMeta
 import cc.midolog.file.port.storage.ChunkReader
