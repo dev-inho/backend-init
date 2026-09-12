@@ -20,6 +20,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+import kotlin.test.assertNotEquals
+
 class FileMetaRepositoryPortContractTest {
 
     @Test
@@ -49,24 +51,33 @@ class FileMetaRepositoryPortContractTest {
             // find
             assertEquals(meta, repository.findById(meta.id))
 
-            // updateStatus (success)
+            // updateStatus (success) & test updatedAt change
             assertTrue(repository.updateStatus(meta.id, FileStatus.READY))
+            val updatedMeta = repository.findById(meta.id)!!
+            assertEquals(FileStatus.READY, updatedMeta.status)
+            assertNotEquals(now, updatedMeta.updatedAt)
+            assertTrue(updatedMeta.updatedAt.isAfter(now) || updatedMeta.updatedAt == now)
             
             // updateStatus (not found)
             assertFalse(repository.updateStatus("unknown_id", FileStatus.READY))
 
-            // findExpiredPending
-            // We'll test this via a simple proxy check or data check
-            // For now, let's just save a pending and call it
-            val pendingOld = meta.copy(id = "pending_old", status = FileStatus.PENDING, updatedAt = now.minusSeconds(100))
-            repository.save(pendingOld)
-            
+            // findExpiredPending tests
+            val pendingOld1 = meta.copy(id = "pending_old1", status = FileStatus.PENDING, updatedAt = now.minusSeconds(100))
+            repository.save(pendingOld1)
+            val pendingOld2 = meta.copy(id = "pending_old2", status = FileStatus.PENDING, updatedAt = now.minusSeconds(90))
+            repository.save(pendingOld2)
+            val pendingOld3 = meta.copy(id = "pending_old3", status = FileStatus.PENDING, updatedAt = now.minusSeconds(80))
+            repository.save(pendingOld3)
+            val readyOld = meta.copy(id = "ready_old", status = FileStatus.READY, updatedAt = now.minusSeconds(100))
+            repository.save(readyOld)
             val pendingNew = meta.copy(id = "pending_new", status = FileStatus.PENDING, updatedAt = now)
             repository.save(pendingNew)
 
-            val expired = repository.findExpiredPending(now.minusSeconds(50), 10)
-            assertEquals(1, expired.size)
-            assertEquals("pending_old", expired[0].id)
+            // boundary check & exact limit & order
+            val expired = repository.findExpiredPending(now.minusSeconds(85), 2)
+            assertEquals(2, expired.size)
+            assertEquals("pending_old1", expired[0].id)
+            assertEquals("pending_old2", expired[1].id)
         }
     }
 
@@ -147,7 +158,6 @@ class FileMetaRepositoryPortContractTest {
             arrayOf(emClass)
         ) { _, method: java.lang.reflect.Method, args: Array<Any>? ->
             if (method.name == "createQuery") {
-                val qString = args!![0] as String
                 val params = mutableMapOf<String, Any>()
                 var maxRes = Int.MAX_VALUE
                 
@@ -169,10 +179,11 @@ class FileMetaRepositoryPortContractTest {
                         "executeUpdate" -> {
                             val id = params["id"] as? String
                             val status = params["status"] as? FileStatus
-                            if (id != null && status != null && rows.containsKey(id)) {
+                            val nowParam = params["now"] as? Instant
+                            if (id != null && status != null && nowParam != null && rows.containsKey(id)) {
                                 val entity = rows[id]!!
                                 entity.status = status
-                                entity.updatedAt = Instant.now()
+                                entity.updatedAt = nowParam
                                 1
                             } else 0
                         }

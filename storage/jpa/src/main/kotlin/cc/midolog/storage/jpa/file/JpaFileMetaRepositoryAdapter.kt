@@ -37,15 +37,17 @@ class JpaFileMetaRepositoryAdapter(
     override suspend fun updateStatus(id: String, status: FileStatus): Boolean = withContext(Dispatchers.IO) {
         transactionOperations.execute {
             val query = entityManager.createQuery(
-                "UPDATE FileMetaJpaEntity e SET e.status = :status WHERE e.id = :id"
+                "UPDATE FileMetaJpaEntity e SET e.status = :status, e.updatedAt = :now WHERE e.id = :id"
             )
             query.setParameter("status", status)
+            query.setParameter("now", java.time.Instant.now())
             query.setParameter("id", id)
             query.executeUpdate() > 0
         } ?: false
     }
 
     override suspend fun findExpiredPending(cutoff: java.time.Instant, limit: Int): List<FileMeta> = withContext(Dispatchers.IO) {
+        require(limit > 0) { "limit must be positive" }
         transactionOperations.execute {
             val query = entityManager.createQuery(
                 "SELECT e FROM FileMetaJpaEntity e WHERE e.status = :status AND e.updatedAt < :cutoff ORDER BY e.updatedAt ASC",

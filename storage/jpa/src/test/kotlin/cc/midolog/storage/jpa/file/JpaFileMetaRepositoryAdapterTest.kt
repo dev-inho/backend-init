@@ -62,6 +62,29 @@ class JpaFileMetaRepositoryAdapterTest {
         assertTrue(updated.updatedAt.isAfter(now) || updated.updatedAt == now)
     }
 
+    @Test
+    fun `findExpiredPending returns only PENDING files older than cutoff and sorted ascending`() = runBlocking {
+        val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+        
+        // PENDING but old
+        val f1 = FileMeta("f1", "o1", "k1", 100L, "text", "hash", FileStatus.PENDING, now.minusSeconds(100), now.minusSeconds(100))
+        adapter.save(f1)
+        val f2 = FileMeta("f2", "o1", "k2", 100L, "text", "hash", FileStatus.PENDING, now.minusSeconds(90), now.minusSeconds(90))
+        adapter.save(f2)
+        
+        // READY and old -> should be skipped
+        val f3 = FileMeta("f3", "o1", "k3", 100L, "text", "hash", FileStatus.READY, now.minusSeconds(110), now.minusSeconds(110))
+        adapter.save(f3)
+        
+        // PENDING but recent -> should be skipped
+        val f4 = FileMeta("f4", "o1", "k4", 100L, "text", "hash", FileStatus.PENDING, now.minusSeconds(10), now.minusSeconds(10))
+        adapter.save(f4)
+        
+        val results = adapter.findExpiredPending(now.minusSeconds(50), 1)
+        assertEquals(1, results.size)
+        assertEquals("f1", results[0].id)
+    }
+
     @Profile("jpa")
     @SpringBootConfiguration
     @EntityScan("cc.midolog.storage.jpa.file")
