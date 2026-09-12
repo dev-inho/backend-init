@@ -6,69 +6,91 @@
 * **파일:행:** `core/application/src/test/kotlin/cc/midolog/persistence/FileMetaRepositoryPortContractTest.kt:144`
 * **원문:** `    private fun jpaAdapter(): FileMetaRepositoryPort {`
 * **판정:** 결함
-* **근거:** 실제 H2 어댑터를 주입하여 쿼리를 검증하지 않고, `Map`과 `Proxy` 기반 Fake 구현체로 동작하여 영속성 계층의 동작(쿼리, 제약조건 등)을 실증하지 못한다.
+* **근거:** 실제 H2 어댑터를 주입하여 쿼리를 검증하지 않고, `Map`과 `Proxy` 기반 Fake 구현체로 동작하여 영속성 계층의 동작을 실증하지 못한다.
 
-### 1.2 트랜잭션 정책 및 I/O 격리
-* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:29`
-* **원문:** `    override suspend fun save(file: FileMeta): FileMeta = withContext(Dispatchers.IO) {`
+### 1.2 트랜잭션 정책 및 I/O 격리, 예외 변환, null 반환, upsert
+**JPA 어댑터 (Sample/User/FileMeta)**
+* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/sample/JpaSampleRepositoryAdapter.kt:29`
+* **원문:** `        transactionOperations.execute {`
+* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/sample/JpaSampleRepositoryAdapter.kt:36`
+* **원문:** `        } ?: error("JPA sample save transaction returned no result")`
+* **판정:** 양호/결함 혼재
+* **근거:** 블로킹 I/O를 `withContext(Dispatchers.IO)`로 격리하고 코루틴 환경에서 `TransactionOperations.execute`를 통해 트랜잭션을 관리하는 점은 양호하다(모든 JPA 어댑터 공통). 하지만 save 결과가 null일 때 런타임 예외를 던지며, upsert 대신 기본 persist/merge를 수행하므로 MyBatis의 upsert와 동치성이 맞지 않는다.
+
+**MyBatis 어댑터 (Sample/User/FileMeta)**
+* **파일:행:** `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/sample/MyBatisSampleRepositoryAdapter.kt:26`
+* **원문:** `        check(affectedRows == 1) {`
 * **판정:** 양호
-* **근거:** WebFlux의 이벤트 루프를 막지 않기 위해 블로킹 I/O를 `withContext(Dispatchers.IO)`로 격리하고 있으며, 코루틴에서 ThreadLocal을 사용하는 `@Transactional` 대신 `TransactionOperations.execute`를 명시적으로 호출해 트랜잭션 경계를 안전하게 제어하고 있다. (모든 어댑터에 공통 적용됨)
+* **근거:** I/O 격리가 되어 있으며, upsert 쿼리를 호출하고 반환된 영향 행 수가 1이 아닐 경우 예외를 던져 동시성 제어 및 무결성을 보장한다.
 
 ## 2. 문자열 JPQL 및 MyBatis 쿼리 비교
 
-### 2.1 상태 조건 및 LIMIT 처리
+### 2.1 SELECT 및 UPDATE 상태/조건 쿼리
 * **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:53`
 * **원문:** `                "SELECT e FROM FileMetaJpaEntity e WHERE e.status = :status AND e.updatedAt < :cutoff ORDER BY e.updatedAt ASC",`
-* **판정:** 개선
-* **근거:** MyBatis는 XML을 통해 `LIMIT` 등 쿼리를 작성하나, JPA는 위와 같이 문자열 JPQL을 사용 후 코드 레벨(`query.maxResults`)로 제어한다. 컴파일 타임 검증 불가 결함이 존재한다.
+* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:41`
+* **원문:** `                "UPDATE FileMetaJpaEntity e SET e.status = :status, e.updatedAt = :now WHERE e.id = :id"`
+* **판정:** 결함
+* **근거:** JPA 어댑터는 SELECT/UPDATE 모두 컴파일 타임 검증이 불가능한 문자열 JPQL을 사용하며, LIMIT은 코드 레벨(`query.maxResults`)로 제어한다. 반면 MyBatis는 XML (`FileMetaMapper.xml:61` 등)에서 LIMIT과 정렬을 명시적으로 처리한다. 양쪽 모두 비관적/낙관적 잠금(Lock) 처리는 누락되어 있어 만료 처리 시 동시성 이슈 가능성이 있다.
 
 ## 3. Instant.now() 호출 일관성
 
-### 3.1 ClockConfig vs 하드코딩
 * **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:43`
 * **원문:** `            query.setParameter("now", java.time.Instant.now())`
 * **판정:** 결함
-* **근거:** `ClockConfig` 빈(주입받은 `clock.instant()`)을 사용하지 않고 `Instant.now()`를 하드코딩하여 시간에 의존적인 테스트 작성을 방해한다.
+* **근거:** `ClockConfig`에 의한 시간 주입(`clock.instant()`) 대신 `Instant.now()` 하드코딩이 존재해 테스트 시간에 의존성이 발생한다.
 
 ## 4. JPA DSL 생성기 품질 확인
 
-### 4.1 생성된 리포지토리 및 엔티티
-* **파일:행:** `storage/jpa/build/generated/sources/jpaDsl/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaRepository.kt:5`
-* **원문:** `interface FileMetaJpaRepository : JpaRepository<FileMetaJpaEntity, String>`
+* **파일:행:** `storage/jpa/build/generated/sources/jpaDsl/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaMapper.kt:6`
+* **원문:** `        FileMetaJpaEntity(`
+* **파일:행:** `storage/jpa/build/generated/sources/jpaDsl/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaEntity.kt:14`
+* **원문:** `class FileMetaJpaEntity(`
 * **판정:** 개선
-* **근거:** 엔티티, 리포지토리는 생성되나 `@EntityGraph`나 `FetchType.LAZY`와 같은 연관관계 N+1 방지 전략이 명시되지 않았다. `FileMetaJpaMapper.kt`는 모든 필드를 수동 매핑하여 스키마 변경 시 필드 누락 위험이 높다.
+* **근거:** 엔티티 필드는 nullable 여부에 맞게 잘 생성되나 Mapper가 모든 필드를 수동 매핑하여 스키마 변경 시 누락 위험이 있다. 현재 `FileMeta` 등 엔티티에는 관계(`@OneToMany` 등)가 없어 N+1 문제는 당장 발생하지 않으나, 향후 관계 추가 시 연관관계 페치 전략 자동 생성을 고려해야 한다.
 
 ## 5. 포트 추가/이중화 유지보수성 평가
 
 PR #24에서 포트 1건 추가 시 총 20개의 파일이 변경되었다.
-- **공통/빌드/계약 (13개):** 도메인 모델, 포트 인터페이스, 계약 테스트, DB 마이그레이션, 빌드 파일 등.
-- **어댑터 구현/유지 비용 (7개):** `JpaFileMetaRepositoryAdapter.kt`, `JpaFileMetaRepositoryAdapterTest.kt`, `FileMetaMapper.kt`, `MyBatisFileMetaRepositoryAdapter.kt`, `FileMetaMapper.xml`, `MyBatisFileMetaMapperH2Test.kt`, `MyBatisFileMetaRepositoryAdapterTest.kt`.
-이 7개(설정 테스트 포함 8개) 파일은 순수하게 "이중화 유지"를 위해 중복 작성해야 하는 비용이다.
+- **공통/빌드/계약 (13개):** 도메인, 인터페이스, 계약 테스트 등
+- **이중화로 인한 추가 비용 (7개):**
+  1. `JpaFileMetaRepositoryAdapter.kt`
+  2. `JpaFileMetaRepositoryAdapterTest.kt`
+  3. `FileMetaMapper.kt`
+  4. `MyBatisFileMetaRepositoryAdapter.kt`
+  5. `FileMetaMapper.xml`
+  6. `MyBatisFileMetaMapperH2Test.kt`
+  7. `MyBatisFileMetaRepositoryAdapterTest.kt`
+
+어댑터 1세트를 위해 최소 7개의 파일이 추가로 생성(JPA 2개, MyBatis 5개)된다.
 
 ### 5.1 이중화 유지 및 통폐합 후보 추천
-- **유지:** JPA와 MyBatis의 장점을 모두 취할 수 있으나 포트 추가 시마다 어댑터 2벌, 테스트 2벌, XML을 유지해야 하므로 생산성이 낮다.
-- **JPA 단일 (추천):** 객체지향적 도메인 매핑과 타입 안전성(K-JDSL 도입 시) 확보가 용이하며 컴파일 타임 검증이 가능하므로 유지보수 비용을 크게 낮출 수 있다.
-- **MyBatis 단일:** 복잡한 SQL 작성에 유리하나 CRUD 매핑 오버헤드가 높다.
-- **다른 조합:** Spring Data JDBC 등은 WebFlux와 궁합이 좋으나 생태계가 작다.
+- **추천안 (JPA 단일):** 객체지향적 도메인 매핑과 타입 안전성(Kotlin JDSL 도입 시) 확보가 용이하며 컴파일 타임 검증을 통해 20개 중 5개의 MyBatis 파일 유지보수 비용을 아낄 수 있다.
 
 ## 6. 경계 유출 (Boundary Leak) 전수 점검
 
 **상위 원칙:** “JPA·MyBatis 관심사는 `storage/jpa`, `storage/mybatis` 밖으로 나오지 않는다.”
-메인 코드 스캔(`grep -rn cc.midolog.storage.jpa`) 결과, 0건 유출(KDoc 예외 제외)을 확인했다. 하지만 테스트와 설정 영역에서 다수 유출되었다.
 
 ### 6.1 테스트 코드 및 빌드 설정의 유출 전수 목록 (결함)
-- `core/application/src/test/kotlin/cc/midolog/persistence/FileMetaRepositoryPortContractTest.kt:6` - `import cc.midolog.storage.jpa.file.FileMetaJpaEntity`
-- `core/application/src/test/kotlin/cc/midolog/persistence/SampleRepositoryPortContractTest.kt:5` - `import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter`
-- `core/application/src/test/kotlin/cc/midolog/persistence/UserRepositoryPortContractTest.kt:3` - `import cc.midolog.storage.jpa.user.JpaUserRepositoryAdapter`
-- `core/application/src/test/kotlin/cc/midolog/persistence/PersistenceProfileContextTest.kt:5` - `import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter`
-- `core/application/src/test/kotlin/cc/midolog/persistence/MyBatisProfileContextTest.kt:5` - `import cc.midolog.storage.mybatis.sample.SampleMapper`
-- `core/application/src/test/kotlin/cc/midolog/storage/FileStorageIntegrationTest.kt:28` - `            "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration," +`
-- `core/application/src/test/kotlin/cc/midolog/common/security/SecurityConfigTest.kt:18` - ` * DataSource/MyBatis/Redis 등 실제 인프라 의존 없이 인증 동작을 검증한다.` (KDoc 예외)
-- `core/application/build.gradle:37` - `    testImplementation project(':storage:mybatis')`
-- `core/application/build.gradle:15` - `    runtimeOnly project(':storage:mybatis')` (조합 예외)
-- `core/application/src/main/resources/application.yml:4` - `spring:` (아래 data.jpa 설정)
+직접 스캔 결과 다음과 같은 유출이 발견되었다:
+- **직접 구현체 import (테스트):**
+  - `core/application/src/test/kotlin/cc/midolog/persistence/FileMetaRepositoryPortContractTest.kt:6` 원문: `import cc.midolog.storage.jpa.file.FileMetaJpaEntity`
+  - `core/application/src/test/kotlin/cc/midolog/persistence/PersistenceProfileContextTest.kt:5` 원문: `import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter`
+  - `core/application/src/test/kotlin/cc/midolog/persistence/UserRepositoryPortContractTest.kt:3` 원문: `import cc.midolog.storage.jpa.user.JpaUserRepositoryAdapter`
+  - `core/application/src/test/kotlin/cc/midolog/persistence/SampleRepositoryPortContractTest.kt:5` 원문: `import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter`
+  - `core/application/src/test/kotlin/cc/midolog/persistence/MyBatisProfileContextTest.kt:5` 원문: `import cc.midolog.storage.mybatis.sample.SampleMapper`
+- **프레임워크 설정 문자열/의존성 유출:**
+  - `core/application/src/test/kotlin/cc/midolog/storage/FileStorageIntegrationTest.kt:28` 원문: `            "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration," +`
+  - `core/application/build.gradle:37` 원문: `    testImplementation project(':storage:mybatis')`
+- **KDoc 예외:**
+  - `core/application/src/test/kotlin/cc/midolog/common/security/SecurityConfigTest.kt:18` 원문: ` * DataSource/MyBatis/Redis 등 실제 인프라 의존 없이 인증 동작을 검증한다.` (KDoc이므로 허용 가능)
+- **빌드 로직 허용 예외 논의:**
+  - `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/JpaDslRenderer.kt:137` 원문: `import org.springframework.data.jpa.repository.JpaRepository`
+  - `build-logic`은 공통 도구이므로 `storage/jpa` 안으로 옮기거나 전역 예외로 명시적 허용이 필요하다.
+- **런타임 조합 허용 예외:**
+  - `core/application/build.gradle:15` 원문: `    runtimeOnly project(':storage:mybatis')` (애플리케이션 진입점에서의 조합이므로 예외 허용)
 
 ### 6.2 경계 복원 및 가드 추천
-- **계약 테스트 복원 (추천):** `domain`의 `java-test-fixtures`에 포트 계약 테스트 키트(추상 클래스 및 hook)를 두고, 각 storage 모듈이 이를 상속받아 자기 인프라 어댑터로 실행하도록 이관한다.
-- **설정 복원 (추천):** 각 storage 모듈이 `AutoConfiguration.imports` 기반으로 자기 모듈의 자동 구성 및 `@PropertySource` 기본값을 소유하고, `application.yml`에는 `spring.profiles.active=jpa`만 남긴다.
-- **가드 도입 (추천):** 루트 `build.gradle`의 `verification` 태스크에 스캔 스크립트나 ArchUnit을 두어, `storage` 외부 모듈이 `cc.midolog.storage.(jpa|mybatis)`나 인프라 패키지를 import할 때 실패(`"인프라 계층 캡슐화 위반"`)하도록 강제한다.
+- **계약 테스트 복원 (추천):** `domain`의 `java-test-fixtures`에 포트 계약 테스트 키트를 두고 각 `storage` 모듈이 의존성을 역전시켜 자기 어댑터로 상속 실행하도록 한다. 별도 `storage/contract-tests` 모듈을 만드는 것보다 도메인 응집도가 높다.
+- **설정 복원 (추천):** 각 storage 모듈이 `AutoConfiguration.imports`로 자기 모듈의 `@PropertySource` 기본값 및 설정을 소유하도록 구성하고, `application.yml`에는 프로파일 활성화(`spring.profiles.active`)만 남긴다.
+- **가드 도입 (추천):** 루트 `build.gradle`의 `verification` 태스크에서 스캔을 수행하여 `storage/jpa`, `storage/mybatis` 외부의 모듈(main+test)이 `jakarta.persistence`, `org.mybatis`, `cc.midolog.storage.(jpa|mybatis)` 패키지를 import 시 빌드 실패를 유도한다. 이는 core/application 테스트 단계보다 더 빠르고 원칙적으로 캡슐화를 강제한다.
