@@ -1,4 +1,4 @@
-package cc.midolog.common.security
+package cc.midolog.infra.security
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -29,7 +29,7 @@ import reactor.core.publisher.Mono
  * - /api, /internal/gateway 하위 전체 경로: Authorization Bearer JWT 인증 필수
  * - 명시적으로 허용되지 않은 나머지 모든 경로는 전부 차단한다(denyAll).
  *
- * 자격 증명이 설정되지 않거나 빈 값인 상태에서도 토큰이 발급되지 않고 차단되는 보안 특성은 [cc.midolog.common.security.AuthFailClosedTest]에 의해 fail-closed 성질로 보장된다.
+ * 자격 증명이 설정되지 않거나 빈 값인 상태에서도 토큰이 발급되지 않고 차단되는 보안 특성은 [cc.midolog.infra.security.AuthFailClosedTest]에 의해 fail-closed 성질로 보장된다.
  */
 @Configuration
 @EnableWebFluxSecurity

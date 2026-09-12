@@ -126,11 +126,12 @@ core/application/
 │   ├── FileService.kt
 │   ├── SampleService.kt
 │   └── UserService.kt
-├── common/security/
-│   ├── JwtProvider.kt
-│   └── SecurityConfig.kt
-├── infra/cache/
-│   └── RedisSampleCacheAdapter.kt
+├── infra/
+│   ├── cache/
+│   │   └── RedisSampleCacheAdapter.kt
+│   └── security/
+│       ├── JwtProvider.kt
+│       └── SecurityConfig.kt
 └── web/
     ├── auth/
     │   └── AuthController.kt

@@ -71,13 +71,12 @@ cc.midolog
 │   │   └── UserService.kt
 │   └── util
 │       └── IdGenerator.kt
-├── common
+├── infra
+│   ├── cache
+│   │   └── RedisSampleCacheAdapter.kt
 │   └── security
 │       ├── JwtProvider.kt
 │       └── SecurityConfig.kt
-├── infra
-│   └── cache
-│       └── RedisSampleCacheAdapter.kt
 └── web
     ├── auth
     │   └── AuthController.kt
