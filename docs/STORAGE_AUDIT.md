@@ -34,12 +34,39 @@
 ## 2. 문자열 JPQL 및 MyBatis 쿼리 비교
 
 ### 2.1 SELECT 및 UPDATE 상태/조건 쿼리
-* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:53`
+* **과거 감사 시점 파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:53`
 * **원문:** `                "SELECT e FROM FileMetaJpaEntity e WHERE e.status = :status AND e.updatedAt < :cutoff ORDER BY e.updatedAt ASC",`
-* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:40`
+* **과거 감사 시점 파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:40`
 * **원문:** `                "UPDATE FileMetaJpaEntity e SET e.status = :status, e.updatedAt = :now WHERE e.id = :id"`
-* **판정:** 결함
-* **근거:** JPA 어댑터는 SELECT/UPDATE 모두 컴파일 타임 검증이 불가능한 문자열 JPQL을 사용하며, LIMIT은 코드 레벨(`query.maxResults`)로 제어합니다.
+* **판정:** 결함 (과거 감사 시점) -> **[복원됨 (PR #45)]**
+* **근거:** (과거) JPA 어댑터는 SELECT/UPDATE 모두 컴파일 타임 검증이 불가능한 문자열 JPQL을 사용하며, LIMIT은 코드 레벨(`query.maxResults`)로 제어했음.
+* **복원 근거 및 현재 경로:**
+  - PR #45에서 OpenFeign QueryDSL 7.6 및 Kotlin kapt 기반 Q-Type 생성 체계를 도입하여, 문자열 JPQL을 완전히 제거하고 `JPAQueryFactory`와 타입 안전한 `QFileMetaJpaEntity` 기반 UPDATE/SELECT 쿼리로 전면 대체되었습니다.
+  - **UPDATE 현재 파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:39-44`
+    - 원문:
+      ```kotlin
+      val q = cc.midolog.storage.jpa.file.QFileMetaJpaEntity.fileMetaJpaEntity
+      jpaQueryFactory.update(q)
+          .set(q.status, status)
+          .set(q.updatedAt, clock.instant())
+          .where(q.id.eq(id))
+          .execute() > 0
+      ```
+  - **SELECT 현재 파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:51-60`
+    - 원문 (status/cutoff/order/limit):
+      ```kotlin
+      val q = cc.midolog.storage.jpa.file.QFileMetaJpaEntity.fileMetaJpaEntity
+      jpaQueryFactory.selectFrom(q)
+          .where(
+              q.status.eq(FileStatus.PENDING),
+              q.updatedAt.lt(cutoff)
+          )
+          .orderBy(q.updatedAt.asc())
+          .limit(limit.toLong())
+          .fetch()
+          .map(FileMetaJpaMapper::toDomain)
+      ```
+  - **문자열 JPQL 원천 차단 가드:** `storage/jpa/src/main` 내의 `createQuery(` 호출은 0건이며, `SelfContainedQueryDslGuardTest`(`storage/jpa/src/test/kotlin/cc/midolog/storage/jpa/sample/SelfContainedQueryDslGuardTest.kt`)가 `storage/jpa/src/main` 소스 전체에서 `createQuery(` 호출 0건과 6개 Q 클래스 파일(`QSampleJpaEntity.java`, `QUserJpaEntity.java`, `QFileMetaJpaEntity.java`, `QScalarSampleJpaEntity.java`, `QRelationParentJpaEntity.java`, `QRelationChildJpaEntity.java`)의 정확한 파일 경로 존재를 검증합니다.
 
 ### 2.2 MyBatis 결과 매핑 위험 (DEAD_CODE #12)
 * **파일:행:** `storage/mybatis/src/main/resources/mapper/file/FileMetaMapper.xml:6`

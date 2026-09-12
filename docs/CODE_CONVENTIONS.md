@@ -89,6 +89,10 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 - **영속성 경계 대원칙**: “JPA·MyBatis 관심사는 `storage/jpa`, `storage/mybatis` 밖으로 나오지 않는다.”
 - **영속성 어댑터 패키지**: `cc.midolog.storage.<기술>.<컨텍스트>` (예: `cc.midolog.storage.mybatis.sample`, `cc.midolog.storage.jpa.user`)
 - **어댑터 클래스 명명**: 어댑터 클래스는 기술명을 명시적 접두어로 사용합니다 (`MyBatis*RepositoryAdapter`, `Jpa*RepositoryAdapter`).
+- **storage/jpa 쿼리 작성 규칙**:
+  - 동적 쿼리 및 조건부 조회/수정은 **QueryDSL (`JPAQueryFactory`) 또는 Spring Data repository method**만 사용합니다.
+  - 문자열 기반 JPQL(`entityManager.createQuery(...)`) 사용은 전면 금지됩니다.
+  - `SelfContainedQueryDslGuardTest` 가드가 `storage/jpa/src/main` 소스 전체에서 문자열 JPQL(`createQuery(`) 0건과 6종의 QueryDSL Q 클래스(`QSampleJpaEntity.java`, `QUserJpaEntity.java`, `QFileMetaJpaEntity.java`, `QScalarSampleJpaEntity.java`, `QRelationParentJpaEntity.java`, `QRelationChildJpaEntity.java`)의 정확한 파일 경로 존재를 검증합니다.
 - **가드 대상 및 금지 import**:
   - `storage/**`, `build-logic/**`를 제외한 모든 모듈(`core/**`, `gateway/**`, `support/**`, `client/**`)의 실제 소스 트리(`src/main`, `src/test`, `src/testFixtures`) 내 `.kt`/`.java` 소스에서 아래 영속성 패키지 import를 전면 금지합니다 (`PersistenceBoundaryTest` 가드):
     - `jakarta.persistence`
@@ -98,6 +102,7 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
     - `org.apache.ibatis`
     - `cc.midolog.storage.jpa`
     - `cc.midolog.storage.mybatis`
+    - `com.querydsl`
 - **문자열 예외**: 주석, KDoc, 일반 문자열 리터럴은 import가 아니므로 허용됩니다. 예를 들어 `FileStorageIntegrationTest`의 `spring.autoconfigure.exclude`에 사용된 `org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration` 등의 property 설정 문자열은 import가 아니므로 명시적으로 허용됩니다.
 - **명시적 예외 두 가지**:
   1. `core/application/build.gradle`의 조합 루트 의존성:
@@ -148,7 +153,9 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 5. **`ApplicationPackageStructureTest`** (`core/application/src/test/kotlin/cc/midolog/ApplicationPackageStructureTest.kt`)
    - 지키는 것: `core:application` 내 인프라·설정 코드를 `infra/`로 통일하고 `common/` 패키지 사용을 원천 차단.
 6. **`PersistenceBoundaryTest`** (`core/application/src/test/kotlin/cc/midolog/PersistenceBoundaryTest.kt`)
-   - 지키는 것: `storage/jpa`, `storage/mybatis` 외 모듈(`core`, `gateway`, `support`, `client`) 소스 트리 전체에서 JPA, MyBatis, Hibernate 등 영속성 관심사의 import 유출을 원천 차단.
+   - 지키는 것: `storage/jpa`, `storage/mybatis` 외 모듈(`core`, `gateway`, `support`, `client`) 소스 트리 전체에서 JPA, MyBatis, Hibernate, QueryDSL(`com.querydsl`) 등 영속성 관심사의 import 유출을 원천 차단.
+7. **`SelfContainedQueryDslGuardTest`** (`storage/jpa/src/test/kotlin/cc/midolog/storage/jpa/sample/SelfContainedQueryDslGuardTest.kt`)
+   - 지키는 것: `storage/jpa/src/main` 내 문자열 JPQL(`createQuery(`) 0건 유지 및 6개 QueryDSL Q 클래스(`QSampleJpaEntity`, `QUserJpaEntity`, `QFileMetaJpaEntity`, `QScalarSampleJpaEntity`, `QRelationParentJpaEntity`, `QRelationChildJpaEntity`)의 정확한 파일 경로 존재를 검증.
 
 ---
 
