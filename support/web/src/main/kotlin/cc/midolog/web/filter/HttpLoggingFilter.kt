@@ -10,14 +10,13 @@ import org.springframework.web.server.WebFilterChain
 import reactor.core.publisher.Mono
 
 /**
- * 요청/응답 메타데이터 로깅 필터.
- * - method, path, status, duration, X-Request-Id만 INFO로 기록한다.
- * - 요청/응답 바디·쿼리스트링은 PII 노출 방지를 위해 절대 로깅하지 않는다.
- * - stateless: 요청 시작 시각을 로컬 변수로만 사용한다.
+ * HTTP 요청/응답 메타데이터를 INFO 레벨 로그로 기록하는 관측 필터.
  *
- * 최외곽 순서로 등록해 인증 거부(401)·기타 단축 응답을 포함한 모든 요청을
- * 결정적으로 관측한다. [RequestIdFilter](Order 0)가 응답 헤더에 세팅한
- * X-Request-Id를 완료 시점(doFinally)에 읽는다.
+ * Spring 컴포넌트 스캔을 통해 gateway와 application 양쪽 모듈에 자동 등록된다.
+ * `@Order(-2)`로 최외곽에 위치하여 인증 거부(401)나 한도 초과(429) 등 조기 종료 응답을 포함한 모든 인입 요청을
+ * 결정적으로 관측한다. 개인식별정보(PII) 노출을 방지하기 위해 요청/응답 본문과 쿼리스트링은 기록하지 않으며,
+ * 메서드, 경로, 상태 코드, 소요 시간, 요청 ID만 선별 기록한다.
+ * [RequestIdFilter](@Order(0))가 응답 헤더에 세팅한 식별자를 완료 시점(`doFinally`)에 읽어 출력한다.
  */
 @Component
 @Order(-2)

@@ -3,16 +3,12 @@ package cc.midolog.util.retry
 import cc.midolog.util.Validation
 
 /**
- * 재시도 정책을 정의하는 불변 데이터 클래스.
+ * 일시적 장애 대응을 위한 불변 재시도 정책 데이터 클래스.
  *
- * 재시도 횟수, 초기 지연 시간, 지수 백오프 승수, 최대 지연 시간,
- * 그리고 재시도 대상 예외를 필터링하는 조건을 포함한다.
- *
- * @param maxAttempts 최대 시도 횟수 (최소 1, 기본값으로 1은 재시도 없이 1회만 실행)
- * @param initialDelayMillis 첫 재시도의 지연 시간(밀리초, 최소 0)
- * @param multiplier 지연 시간의 지수 백오프 승수 (기본 2.0 = 각 시도마다 2배씩 증가)
- * @param maxDelayMillis 최대 지연 시간의 상한(밀리초, 기본 Long.MAX_VALUE = 제한 없음)
- * @param retryOn 주어진 예외에 대해 재시도할지 결정하는 술어 (기본값: 모든 예외 재시도)
+ * 최대 시도 횟수([maxAttempts]), 첫 재시도 지연 시간([initialDelayMillis]), 지수 백오프 승수([multiplier]),
+ * 최대 지연 상한([maxDelayMillis]), 재시도 대상 예외 필터 조건([retryOn])을 캡슐화한다.
+ * [maxAttempts]는 1 이상, [initialDelayMillis]는 0 이상이어야 하며 위반 시 예외를 던진다.
+ * 현재 프로젝트 내 외부 모듈 소비자는 없으나(docs/DEAD_CODE_CANDIDATES.md #11), 하위 호환성 검증 대상이다.
  */
 data class RetryPolicy(
     val maxAttempts: Int,
@@ -28,12 +24,9 @@ data class RetryPolicy(
 }
 
 /**
- * 주어진 정책에 따라 지연 시간을 계산한다.
+ * 지수 백오프 공식 min(initialDelayMillis * multiplier^attempt, maxDelayMillis)에 따라 회차별 지연 시간을 밀리초 단위로 계산한다.
  *
- * 지연 시간 = min(initialDelayMillis * multiplier^attempt, maxDelayMillis)
- *
- * @param attempt 0부터 시작하는 시도 번호 (0번째 시도는 첫 재시도의 지연)
- * @return 밀리초 단위의 지연 시간
+ * 0부터 시작하는 [attempt] 번호(0은 첫 재시도)를 전달받으며, [attempt]가 음수이거나 [RetryPolicy.initialDelayMillis]가 0이면 0을 반환한다.
  */
 fun RetryPolicy.delayForAttempt(attempt: Int): Long {
     if (initialDelayMillis == 0L) return 0L
@@ -45,20 +38,11 @@ fun RetryPolicy.delayForAttempt(attempt: Int): Long {
 }
 
 /**
- * 주어진 정책에 따라 블로킹 재시도를 수행한다.
+ * 주어진 정책에 따라 블로킹 작업을 실행하고, 실패 시 지수 백오프 대기 후 재시도한다.
  *
- * block()을 실행하고, 예외가 발생한 경우:
- * - retryOn이 false이면 즉시 예외를 던진다.
- * - retryOn이 true이고 시도가 남으면 지수 백오프 지연 후 재시도한다.
- * - 모든 시도가 실패하면 마지막 예외를 던진다.
- *
- * sleeper를 주입 가능하게 하여 테스트에서 실제 지연 대신 호출 추적이 가능하다.
- *
- * @param policy 재시도 정책
- * @param sleeper 지연을 수행하는 함수 (기본값: Thread.sleep)
- * @param block 실행할 블로킹 작업
- * @return block의 반환값
- * @throws Throwable block이 던진 마지막 예외
+ * 작업 실행 중 예외가 발생하면 [RetryPolicy.retryOn] 술어가 참이고 남은 시도가 있을 때만 지연 후 다시 시도하며,
+ * [RetryPolicy.retryOn]이 거짓이거나 모든 시도를 소진하면 마지막 예외를 그대로 다시 던진다.
+ * 테스트 격리를 위해 대기 함수([sleeper], 기본값 Thread.sleep)를 주입받을 수 있다.
  */
 fun <T> retry(
     policy: RetryPolicy,

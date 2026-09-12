@@ -1,50 +1,39 @@
 package cc.midolog.util.ext
 
 /**
- * 컬렉션 확장 함수 모음 (null-safety + 청킹).
+ * 컬렉션 null 안전성 및 연속 요소 청킹을 위한 확장 함수 모음.
  *
- * 순수 Kotlin stdlib 기반, 외부 의존성 없음.
+ * 순수 Kotlin stdlib 기반으로 작성되었다.
  */
 
 /**
- * nullable Iterable을 빈 반복 가능 객체로 변환한다.
- * null이면 emptyList()를 반환하므로 null-coalescing 루프가 안전하다.
+ * nullable [Iterable]이 null이면 빈 리스트(`emptyList()`)를 반환하고, null이 아니면 자기 자신을 반환한다.
  *
- * 예제:
- * val items: Iterable<String>? = null
- * items.orEmpty().forEach { ... } // NPE 없음
+ * Kotlin 표준 라이브러리(`kotlin.collections.orEmpty`)와 동일한 시그니처 및 동작의 중복 구현이나(docs/DEAD_CODE_CANDIDATES.md #9),
+ * 하위 호환성을 위해 유지된다.
  */
 fun <T> Iterable<T>?.orEmpty(): Iterable<T> = this ?: emptyList()
 
 /**
- * nullable Collection을 빈 컬렉션으로 변환한다.
- * null이면 emptyList()를 반환한다.
+ * nullable [Collection]이 null이면 빈 리스트(`emptyList()`)를 반환하고, null이 아니면 자기 자신을 반환한다.
+ *
+ * Kotlin 표준 라이브러리(`kotlin.collections.orEmpty`)와 동일한 시그니처 및 동작의 중복 구현이다(docs/DEAD_CODE_CANDIDATES.md #9).
  */
 fun <T> Collection<T>?.orEmpty(): Collection<T> = this ?: emptyList()
 
 /**
- * nullable List를 빈 리스트로 변환한다.
- * null이면 emptyList()를 반환한다.
+ * nullable [List]가 null이면 빈 리스트(`emptyList()`)를 반환하고, null이 아니면 자기 자신을 반환한다.
+ *
+ * Kotlin 표준 라이브러리(`kotlin.collections.orEmpty`)와 동일한 시그니처 및 동작의 중복 구현이다(docs/DEAD_CODE_CANDIDATES.md #9).
  */
 fun <T> List<T>?.orEmpty(): List<T> = this ?: emptyList()
 
 /**
- * 인접한 요소들의 key가 변할 때마다 새로운 청크로 분리한다.
+ * 키 추출 함수([keySelector])의 반환값이 동일한 인접 요소들을 묶어 청크 리스트로 분할한다.
  *
- * 동작:
- * - 같은 key를 가진 연속 요소는 하나의 청크로 묶인다.
- * - key가 변하면 새로운 청크가 시작된다.
- * - 빈 리스트를 입력하면 빈 리스트를 반환한다.
- *
- * 예제:
- * val data = listOf(1, 1, 2, 2, 2, 1, 3)
- * data.chunkedBy { it } == listOf(listOf(1, 1), listOf(2, 2, 2), listOf(1), listOf(3))
- *
- * 매개변수:
- * - keySelector: 각 요소에서 비교용 key를 추출하는 람다
- *
- * 반환값:
- * 청크의 리스트. 각 청크는 같은 key를 가진 인접 요소들.
+ * 같은 키를 가진 연속된 요소는 하나의 하위 리스트로 묶이며, 키가 달라지는 지점에서 새로운 청크가 시작된다.
+ * 리스트 전체의 정렬 여부와 무관하게 인접성만을 기준으로 그룹화하며, 빈 컬렉션인 경우 빈 리스트를 반환한다.
+ * 현재 프로젝트 내 실제 소비자는 없다(docs/DEAD_CODE_CANDIDATES.md #17).
  */
 fun <T, K> Iterable<T>.chunkedBy(keySelector: (T) -> K): List<List<T>> {
     val result = mutableListOf<List<T>>()
