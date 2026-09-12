@@ -1,3 +1,8 @@
-// 프레임워크 비의존 순수 Kotlin 모듈 (model + port 인터페이스)
+plugins {
+    id 'java-test-fixtures'
+}
+
 dependencies {
+    testFixturesImplementation(platform("org.junit:junit-bom:5.10.1"))
+    testFixturesImplementation("org.junit.jupiter:junit-jupiter-api")
 }

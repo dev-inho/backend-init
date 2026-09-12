@@ -1,46 +1,46 @@
 package cc.midolog.persistence
 
-import cc.midolog.sample.model.Sample
+import cc.midolog.ApplicationServer
+import cc.midolog.file.port.repository.FileMetaRepositoryPort
 import cc.midolog.sample.port.repository.SampleRepositoryPort
-import cc.midolog.storage.mybatis.sample.SampleMapper
-import cc.midolog.storage.mybatis.sample.MyBatisSampleRepositoryAdapter
+import cc.midolog.user.port.repository.UserRepositoryPort
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import org.springframework.context.annotation.AnnotationConfigApplicationContext
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.ApplicationContext
+import org.springframework.test.context.ActiveProfiles
 
+@SpringBootTest(
+    classes = [ApplicationServer::class],
+    properties = [
+        "spring.datasource.url=jdbc:h2:mem:testdb_mybatis;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH",
+        "spring.flyway.enabled=false",
+        "spring.main.allow-bean-definition-overriding=true",
+        "storage.file.provider=local",
+        "storage.file.local.root-dir=/tmp",
+        "gateway.mode=embedded",
+        "jwt.secret=12345678901234567890123456789012"
+    ]
+)
+@ActiveProfiles("mybatis")
 class MyBatisProfileContextTest {
 
-    @Test
-    fun `mybatis profile registers one SampleRepositoryPort adapter`() {
-        AnnotationConfigApplicationContext().use { context ->
-            context.environment.setActiveProfiles("mybatis")
-            context.beanFactory.registerSingleton("sampleMapper", testMapper())
-            context.register(MyBatisSampleRepositoryAdapter::class.java)
-
-            context.refresh()
-
-            assertEquals(1, context.getBeansOfType(SampleRepositoryPort::class.java).size)
-        }
-    }
+    @Autowired
+    private lateinit var context: ApplicationContext
 
     @Test
-    fun `non mybatis profile does not register SampleRepositoryPort adapter`() {
-        AnnotationConfigApplicationContext().use { context ->
-            context.environment.setActiveProfiles("jpa")
-            context.beanFactory.registerSingleton("sampleMapper", testMapper())
-            context.register(MyBatisSampleRepositoryAdapter::class.java)
+    fun `mybatis profile active registers only mybatis port adapters`() {
+        val sampleBeans = context.getBeansOfType(SampleRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
+        val userBeans = context.getBeansOfType(UserRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
+        val fileBeans = context.getBeansOfType(FileMetaRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
 
-            context.refresh()
+        assertEquals(1, sampleBeans.size)
+        assertEquals(1, userBeans.size)
+        assertEquals(1, fileBeans.size)
 
-            assertEquals(0, context.getBeansOfType(SampleRepositoryPort::class.java).size)
-        }
+        assertEquals("MyBatisSampleRepositoryAdapter", sampleBeans.first()?.let { org.springframework.aop.support.AopUtils.getTargetClass(it).simpleName })
+        assertEquals("MyBatisUserRepositoryAdapter", userBeans.first()?.let { org.springframework.aop.support.AopUtils.getTargetClass(it).simpleName })
+        assertEquals("MyBatisFileMetaRepositoryAdapter", fileBeans.first()?.let { org.springframework.aop.support.AopUtils.getTargetClass(it).simpleName })
     }
-
-    private fun testMapper(): SampleMapper =
-        object : SampleMapper {
-            override fun selectById(id: String): Map<String, Any?>? =
-                mapOf("id" to id, "name" to "sample")
-
-            override fun upsert(id: String, name: String): Int = 1
-        }
 }

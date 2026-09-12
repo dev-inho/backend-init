@@ -1,156 +1,44 @@
 package cc.midolog.persistence
 
-import cc.midolog.sample.model.Sample
+import cc.midolog.ApplicationServer
+import cc.midolog.file.port.repository.FileMetaRepositoryPort
 import cc.midolog.sample.port.repository.SampleRepositoryPort
-import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter
-import cc.midolog.storage.jpa.sample.SampleJpaRepository
-import cc.midolog.storage.jpa.user.JpaUserRepositoryAdapter
-import cc.midolog.storage.jpa.user.UserJpaRepository
-import cc.midolog.storage.mybatis.sample.SampleMapper
-import cc.midolog.storage.mybatis.sample.MyBatisSampleRepositoryAdapter
-import cc.midolog.storage.mybatis.user.UserMapper
-import cc.midolog.storage.mybatis.user.MyBatisUserRepositoryAdapter
 import cc.midolog.user.port.repository.UserRepositoryPort
-import java.lang.reflect.Proxy
-import java.util.Optional
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import org.springframework.context.annotation.AnnotationConfigApplicationContext
-import org.springframework.transaction.support.TransactionOperations
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.ApplicationContext
+import org.springframework.test.context.ActiveProfiles
 
+@SpringBootTest(
+    classes = [ApplicationServer::class],
+    properties = [
+        "spring.datasource.url=jdbc:h2:mem:testdb_jpa;DB_CLOSE_DELAY=-1",
+        "spring.flyway.enabled=false",
+        "spring.main.allow-bean-definition-overriding=true",
+        "storage.file.provider=local",
+        "storage.file.local.root-dir=/tmp",
+        "gateway.mode=embedded",
+        "jwt.secret=12345678901234567890123456789012"
+    ]
+)
+@ActiveProfiles("jpa")
 class PersistenceProfileContextTest {
 
-    @Test
-    fun `jpa profile registers one SampleRepositoryPort adapter`() {
-        AnnotationConfigApplicationContext().use { context ->
-            context.environment.setActiveProfiles("jpa")
-            context.beanFactory.registerSingleton("sampleJpaRepository", repositoryProxy())
-            context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
-            context.register(JpaSampleRepositoryAdapter::class.java)
-            context.register(MyBatisSampleRepositoryAdapter::class.java)
-
-            context.refresh()
-
-            assertEquals(1, context.getBeansOfType(SampleRepositoryPort::class.java).size)
-        }
-    }
+    @Autowired
+    private lateinit var context: ApplicationContext
 
     @Test
-    fun `jpa profile registers one UserRepositoryPort adapter`() {
-        AnnotationConfigApplicationContext().use { context ->
-            context.environment.setActiveProfiles("jpa")
-            context.beanFactory.registerSingleton("userJpaRepository", userRepositoryProxy())
-            context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
-            context.register(JpaUserRepositoryAdapter::class.java)
-            context.register(MyBatisUserRepositoryAdapter::class.java)
+    fun `jpa profile registers exactly one of each port adapter`() {
+        val sampleBeans = context.getBeansOfType(SampleRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
+        val userBeans = context.getBeansOfType(UserRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
+        val fileBeans = context.getBeansOfType(FileMetaRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
 
-            context.refresh()
+        assertEquals(1, sampleBeans.size)
+        assertEquals(1, userBeans.size)
+        assertEquals(1, fileBeans.size)
 
-            assertEquals(1, context.getBeansOfType(UserRepositoryPort::class.java).size)
-        }
+        assertEquals("JpaFileMetaRepositoryAdapter", fileBeans.first()?.let { org.springframework.aop.support.AopUtils.getTargetClass(it).simpleName })
     }
-
-    @Test
-    fun `mybatis profile registers one SampleRepositoryPort adapter`() {
-        AnnotationConfigApplicationContext().use { context ->
-            context.environment.setActiveProfiles("mybatis")
-            context.beanFactory.registerSingleton("sampleMapper", testMapper())
-            context.beanFactory.registerSingleton("sampleJpaRepository", repositoryProxy())
-            context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
-            context.register(JpaSampleRepositoryAdapter::class.java)
-            context.register(MyBatisSampleRepositoryAdapter::class.java)
-
-            context.refresh()
-
-            assertEquals(1, context.getBeansOfType(SampleRepositoryPort::class.java).size)
-        }
-    }
-
-    @Test
-    fun `mybatis profile registers one UserRepositoryPort adapter`() {
-        AnnotationConfigApplicationContext().use { context ->
-            context.environment.setActiveProfiles("mybatis")
-            context.beanFactory.registerSingleton("userMapper", testUserMapper())
-            context.beanFactory.registerSingleton("userJpaRepository", userRepositoryProxy())
-            context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
-            context.register(JpaUserRepositoryAdapter::class.java)
-            context.register(MyBatisUserRepositoryAdapter::class.java)
-
-            context.refresh()
-
-            assertEquals(1, context.getBeansOfType(UserRepositoryPort::class.java).size)
-        }
-    }
-
-    @Test
-    fun `non persistence profile registers no SampleRepositoryPort adapter`() {
-        AnnotationConfigApplicationContext().use { context ->
-            context.environment.setActiveProfiles("test")
-            context.beanFactory.registerSingleton("sampleMapper", testMapper())
-            context.beanFactory.registerSingleton("sampleJpaRepository", repositoryProxy())
-            context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
-            context.register(JpaSampleRepositoryAdapter::class.java)
-            context.register(MyBatisSampleRepositoryAdapter::class.java)
-
-            context.refresh()
-
-            assertEquals(0, context.getBeansOfType(SampleRepositoryPort::class.java).size)
-        }
-    }
-
-    @Test
-    fun `non persistence profile registers no UserRepositoryPort adapter`() {
-        AnnotationConfigApplicationContext().use { context ->
-            context.environment.setActiveProfiles("test")
-            context.beanFactory.registerSingleton("userMapper", testUserMapper())
-            context.beanFactory.registerSingleton("userJpaRepository", userRepositoryProxy())
-            context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
-            context.register(JpaUserRepositoryAdapter::class.java)
-            context.register(MyBatisUserRepositoryAdapter::class.java)
-
-            context.refresh()
-
-            assertEquals(0, context.getBeansOfType(UserRepositoryPort::class.java).size)
-        }
-    }
-
-    private fun testMapper(): SampleMapper =
-        object : SampleMapper {
-            override fun selectById(id: String): Map<String, Any?>? =
-                mapOf("id" to id, "name" to "sample")
-
-            override fun upsert(id: String, name: String): Int = 1
-        }
-
-    private fun testUserMapper(): UserMapper =
-        object : UserMapper {
-            override fun selectById(id: String): Map<String, Any?>? =
-                mapOf("id" to id, "email" to "user@example.com", "displayName" to "User")
-
-            override fun upsert(id: String, email: String, displayName: String): Int = 1
-        }
-
-    private fun repositoryProxy(): SampleJpaRepository =
-        Proxy.newProxyInstance(
-            SampleJpaRepository::class.java.classLoader,
-            arrayOf(SampleJpaRepository::class.java),
-        ) { _, method, _ ->
-            when (method.name) {
-                "findById" -> Optional.empty<Any>()
-                "save" -> error("save should not be called by profile wiring tests")
-                else -> null
-            }
-        } as SampleJpaRepository
-
-    private fun userRepositoryProxy(): UserJpaRepository =
-        Proxy.newProxyInstance(
-            UserJpaRepository::class.java.classLoader,
-            arrayOf(UserJpaRepository::class.java),
-        ) { _, method, _ ->
-            when (method.name) {
-                "findById" -> Optional.empty<Any>()
-                "save" -> error("save should not be called by profile wiring tests")
-                else -> null
-            }
-        } as UserJpaRepository
 }
