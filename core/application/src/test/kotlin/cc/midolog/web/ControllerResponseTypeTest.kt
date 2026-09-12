@@ -18,7 +18,7 @@ class ControllerResponseTypeTest {
         val failures = mutableListOf<String>()
         controllers.forEach { file ->
             val content = file.readText()
-            if (content.contains("ApiResponse<Sample>") || content.contains("ApiResponse<User>")) {
+            if (content.contains("ApiResponse<Sample>") || content.contains("ApiResponse<User>") || content.contains("ApiResponse<FileMeta>")) {
                 failures.add("${file.name} exposes domain model in ApiResponse")
             }
         }
