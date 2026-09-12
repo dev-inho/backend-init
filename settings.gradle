@@ -6,6 +6,8 @@ includeBuild 'build-logic'
 include 'core:application'
 include 'core:batch'
 include 'core:gateway'
+include 'gateway:core'
+include 'gateway:autoconfigure'
 include 'core:domain'
 
 // client
