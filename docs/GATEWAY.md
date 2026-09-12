@@ -431,17 +431,21 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
   - `RequestVisibilityFilter`: `@Order(100)` 필터. 체인 최하단에서 응답 완료 시점(`doFinally`)에 요청 메타데이터를 이벤트 저장소에 기록 (단, 앞선 필터에서 429/401로 조기 거절되어 체인이 단축된 요청은 이 필터에 도달하지 않으므로 저장되지 않으며, 최외곽 `HttpLoggingFilter`만 로깅을 남김). `GatewayClockConfig`의 `Clock` 빈을 주입받아 정확한 시각 계측.
   - `RequestVisibilityController`: `GET /internal/gateway/requests` 내부 조회 REST 컨트롤러.
   - `RequestVisibilityProperties`: `gateway.request-visibility.enabled`(기본 false), `gateway.request-visibility.capacity`(기본 200).
-- **조건부 빈 등록**: `gateway.request-visibility.enabled=true`일 때만 저장소, 필터, 컨트롤러 빈이 활성화됩니다 (`RequestVisibilityTest`로 검증).
+- **조건부 빈 등록**: `gateway.request-visibility.enabled=true`일 때만 저장소, 필터, 컨트롤러 빈이 활성화됩니다 (`GatewayAutoConfigurationTest`의 `visibility beans are enabled only when property is true`로 검증).
 - **보안**: `/internal/gateway/**` 경로는 standalone/remote에서는 `JwtAuthFilter`의 검증 대상에 포함되며, embedded에서는 호스트 `SecurityConfig`가 담당합니다.
 - **민감정보 보호**: 요청/응답 본문, 쿼리스트링, Authorization 헤더 등 PII 및 민감 자격증명은 일절 저장하지 않으며 method, path, status, requestId, timestamp, durationMs 메타데이터만 보관합니다.
 
-#### 보장 테스트 (`gateway/core/src/test/kotlin/cc/midolog/gateway/visibility/RequestVisibilityTest.kt`)
-- `visibility beans are disabled by default`
-- `visibility beans are enabled only when property is true`
+#### 보장 테스트
+
+**`gateway/core/src/test/kotlin/cc/midolog/gateway/visibility/RequestVisibilityTest.kt`**
 - `store keeps bounded recent events`
 - `filter records minimal event data after response completion`
 - `controller returns recent events without raw body or headers`
 - `internal gateway requests require a valid jwt`
+
+**`gateway/autoconfigure/src/test/kotlin/cc/midolog/gateway/autoconfigure/GatewayAutoConfigurationTest.kt`**
+- `visibility beans are disabled by default`
+- `visibility beans are enabled only when property is true`
 
 ### 7.3 후속 후보
 - Redis-backed 분산 request event store
