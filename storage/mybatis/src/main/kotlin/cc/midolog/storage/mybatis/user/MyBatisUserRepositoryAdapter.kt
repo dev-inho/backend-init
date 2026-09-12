@@ -1,4 +1,4 @@
-package cc.midolog.storage.user
+package cc.midolog.storage.mybatis.user
 
 import cc.midolog.user.model.User
 import cc.midolog.user.port.repository.UserRepositoryPort
@@ -9,7 +9,7 @@ import org.springframework.stereotype.Repository
 
 @Profile("mybatis")
 @Repository
-class UserRepositoryAdapter(
+class MyBatisUserRepositoryAdapter(
     private val userMapper: UserMapper,
 ) : UserRepositoryPort {
     override suspend fun findById(id: String): User? = withContext(Dispatchers.IO) {

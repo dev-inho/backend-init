@@ -1,4 +1,4 @@
-package cc.midolog.storage.user
+package cc.midolog.storage.mybatis.user
 
 import cc.midolog.user.model.User
 import kotlinx.coroutines.runBlocking
@@ -6,12 +6,12 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
-class UserRepositoryAdapterTest {
+class MyBatisMyBatisUserRepositoryAdapterTest {
 
     @Test
     fun `save delegates to mapper upsert and returns the saved user`() = runBlocking {
         val mapper = RecordingUserMapper(upsertResult = 1)
-        val adapter = UserRepositoryAdapter(mapper)
+        val adapter = MyBatisUserRepositoryAdapter(mapper)
         val user = User(id = "user_1000", email = "stored@example.com", displayName = "Stored")
 
         val saved = adapter.save(user)
@@ -22,7 +22,7 @@ class UserRepositoryAdapterTest {
 
     @Test
     fun `save fails fast when mapper upsert affects no rows`() = runBlocking {
-        val adapter = UserRepositoryAdapter(RecordingUserMapper(upsertResult = 0))
+        val adapter = MyBatisUserRepositoryAdapter(RecordingUserMapper(upsertResult = 0))
 
         assertFailsWith<IllegalStateException> {
             adapter.save(User(id = "user_1001", email = "missing@example.com", displayName = "Missing"))
@@ -31,7 +31,7 @@ class UserRepositoryAdapterTest {
 
     @Test
     fun `findById maps mapper row to domain user`() = runBlocking {
-        val adapter = UserRepositoryAdapter(
+        val adapter = MyBatisUserRepositoryAdapter(
             RecordingUserMapper(
                 row = mapOf(
                     "id" to "user_1002",

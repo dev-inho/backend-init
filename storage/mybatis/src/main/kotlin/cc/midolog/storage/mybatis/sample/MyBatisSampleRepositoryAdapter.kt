@@ -1,4 +1,4 @@
-package cc.midolog.storage.sample
+package cc.midolog.storage.mybatis.sample
 
 import cc.midolog.sample.model.Sample
 import cc.midolog.sample.port.repository.SampleRepositoryPort
@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository
  */
 @Profile("mybatis")
 @Repository
-class SampleRepositoryAdapter(
+class MyBatisSampleRepositoryAdapter(
     private val sampleMapper: SampleMapper,
 ) : SampleRepositoryPort {
     override suspend fun findById(id: String): Sample? = withContext(Dispatchers.IO) {

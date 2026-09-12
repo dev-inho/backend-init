@@ -1,4 +1,4 @@
-package cc.midolog.storage.config
+package cc.midolog.storage.mybatis.config
 
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -10,7 +10,7 @@ class MyBatisStorageConfigTest {
     fun `mapper scan includes sample and user packages`() {
         val mapperScan = MyBatisStorageConfig::class.java.getAnnotation(MapperScan::class.java)
 
-        assertTrue("cc.midolog.storage.sample" in mapperScan.basePackages)
-        assertTrue("cc.midolog.storage.user" in mapperScan.basePackages)
+        assertTrue("cc.midolog.storage.mybatis.sample" in mapperScan.basePackages)
+        assertTrue("cc.midolog.storage.mybatis.user" in mapperScan.basePackages)
     }
 }

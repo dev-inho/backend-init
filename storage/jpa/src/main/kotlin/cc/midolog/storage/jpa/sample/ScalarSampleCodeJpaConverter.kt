@@ -1,6 +1,6 @@
 package cc.midolog.storage.jpa.sample
 
-import cc.midolog.sample.model.ScalarSampleCode
+import cc.midolog.jpadsl.fixture.ScalarSampleCode
 
 object ScalarSampleCodeJpaConverter {
     fun toStorage(code: ScalarSampleCode): String = code.value

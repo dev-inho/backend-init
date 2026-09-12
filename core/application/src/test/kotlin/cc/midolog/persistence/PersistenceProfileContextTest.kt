@@ -6,10 +6,10 @@ import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter
 import cc.midolog.storage.jpa.sample.SampleJpaRepository
 import cc.midolog.storage.jpa.user.JpaUserRepositoryAdapter
 import cc.midolog.storage.jpa.user.UserJpaRepository
-import cc.midolog.storage.sample.SampleMapper
-import cc.midolog.storage.sample.SampleRepositoryAdapter
-import cc.midolog.storage.user.UserMapper
-import cc.midolog.storage.user.UserRepositoryAdapter
+import cc.midolog.storage.mybatis.sample.SampleMapper
+import cc.midolog.storage.mybatis.sample.MyBatisSampleRepositoryAdapter
+import cc.midolog.storage.mybatis.user.UserMapper
+import cc.midolog.storage.mybatis.user.MyBatisUserRepositoryAdapter
 import cc.midolog.user.port.repository.UserRepositoryPort
 import java.lang.reflect.Proxy
 import java.util.Optional
@@ -27,7 +27,7 @@ class PersistenceProfileContextTest {
             context.beanFactory.registerSingleton("sampleJpaRepository", repositoryProxy())
             context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
             context.register(JpaSampleRepositoryAdapter::class.java)
-            context.register(SampleRepositoryAdapter::class.java)
+            context.register(MyBatisSampleRepositoryAdapter::class.java)
 
             context.refresh()
 
@@ -42,7 +42,7 @@ class PersistenceProfileContextTest {
             context.beanFactory.registerSingleton("userJpaRepository", userRepositoryProxy())
             context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
             context.register(JpaUserRepositoryAdapter::class.java)
-            context.register(UserRepositoryAdapter::class.java)
+            context.register(MyBatisUserRepositoryAdapter::class.java)
 
             context.refresh()
 
@@ -58,7 +58,7 @@ class PersistenceProfileContextTest {
             context.beanFactory.registerSingleton("sampleJpaRepository", repositoryProxy())
             context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
             context.register(JpaSampleRepositoryAdapter::class.java)
-            context.register(SampleRepositoryAdapter::class.java)
+            context.register(MyBatisSampleRepositoryAdapter::class.java)
 
             context.refresh()
 
@@ -74,7 +74,7 @@ class PersistenceProfileContextTest {
             context.beanFactory.registerSingleton("userJpaRepository", userRepositoryProxy())
             context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
             context.register(JpaUserRepositoryAdapter::class.java)
-            context.register(UserRepositoryAdapter::class.java)
+            context.register(MyBatisUserRepositoryAdapter::class.java)
 
             context.refresh()
 
@@ -90,7 +90,7 @@ class PersistenceProfileContextTest {
             context.beanFactory.registerSingleton("sampleJpaRepository", repositoryProxy())
             context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
             context.register(JpaSampleRepositoryAdapter::class.java)
-            context.register(SampleRepositoryAdapter::class.java)
+            context.register(MyBatisSampleRepositoryAdapter::class.java)
 
             context.refresh()
 
@@ -106,7 +106,7 @@ class PersistenceProfileContextTest {
             context.beanFactory.registerSingleton("userJpaRepository", userRepositoryProxy())
             context.beanFactory.registerSingleton("transactionOperations", TransactionOperations.withoutTransaction())
             context.register(JpaUserRepositoryAdapter::class.java)
-            context.register(UserRepositoryAdapter::class.java)
+            context.register(MyBatisUserRepositoryAdapter::class.java)
 
             context.refresh()
 

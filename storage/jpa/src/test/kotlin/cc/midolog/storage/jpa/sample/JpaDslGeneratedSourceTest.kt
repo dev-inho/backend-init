@@ -24,15 +24,15 @@ class JpaDslGeneratedSourceTest {
             "cc/midolog/storage/jpa/user/UserJpaEntity.kt",
             "cc/midolog/storage/jpa/user/UserJpaRepository.kt",
             "cc/midolog/storage/jpa/user/UserJpaMapper.kt",
-            "cc/midolog/storage/jpa/sample/ScalarSampleJpaEntity.kt",
-            "cc/midolog/storage/jpa/sample/ScalarSampleJpaRepository.kt",
-            "cc/midolog/storage/jpa/sample/ScalarSampleJpaMapper.kt",
-            "cc/midolog/storage/jpa/sample/RelationParentJpaEntity.kt",
-            "cc/midolog/storage/jpa/sample/RelationParentJpaRepository.kt",
-            "cc/midolog/storage/jpa/sample/RelationParentJpaMapper.kt",
-            "cc/midolog/storage/jpa/sample/RelationChildJpaEntity.kt",
-            "cc/midolog/storage/jpa/sample/RelationChildJpaRepository.kt",
-            "cc/midolog/storage/jpa/sample/RelationChildJpaMapper.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaEntity.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaRepository.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaMapper.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/RelationParentJpaEntity.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/RelationParentJpaRepository.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/RelationParentJpaMapper.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/RelationChildJpaEntity.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/RelationChildJpaRepository.kt",
+            "cc/midolog/storage/jpa/jpadsl/fixture/RelationChildJpaMapper.kt",
         )
 
         val missingFiles = expectedFiles
@@ -42,7 +42,7 @@ class JpaDslGeneratedSourceTest {
         assertTrue(missingFiles.isEmpty(), "Missing generated files:\n${missingFiles.joinToString("\n")}")
 
         val scalarEntity = generatedRoot
-            .resolve("cc/midolog/storage/jpa/sample/ScalarSampleJpaEntity.kt")
+            .resolve("cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaEntity.kt")
             .readText()
         assertTrue(scalarEntity.contains("@Column(name = \"display_name\", nullable = false)"))
         assertTrue(scalarEntity.contains("@Column(name = \"nickname\", nullable = true)"))
@@ -50,29 +50,29 @@ class JpaDslGeneratedSourceTest {
         assertTrue(scalarEntity.contains("@Column(name = \"code_value\", nullable = false)"))
 
         val scalarMapper = generatedRoot
-            .resolve("cc/midolog/storage/jpa/sample/ScalarSampleJpaMapper.kt")
+            .resolve("cc/midolog/storage/jpa/jpadsl/fixture/ScalarSampleJpaMapper.kt")
             .readText()
         assertTrue(scalarMapper.contains("ScalarSampleCodeJpaConverter.toStorage(domain.code)"))
         assertTrue(scalarMapper.contains("ScalarSampleCodeJpaConverter.toDomain(entity.code)"))
 
         val parentEntity = generatedRoot
-            .resolve("cc/midolog/storage/jpa/sample/RelationParentJpaEntity.kt")
+            .resolve("cc/midolog/storage/jpa/jpadsl/fixture/RelationParentJpaEntity.kt")
             .readText()
         assertTrue(parentEntity.contains("@OneToMany(mappedBy = \"parent\", fetch = FetchType.LAZY)"))
 
         val childEntity = generatedRoot
-            .resolve("cc/midolog/storage/jpa/sample/RelationChildJpaEntity.kt")
+            .resolve("cc/midolog/storage/jpa/jpadsl/fixture/RelationChildJpaEntity.kt")
             .readText()
         assertTrue(childEntity.contains("@ManyToOne(fetch = FetchType.LAZY)"))
         assertTrue(childEntity.contains("@JoinColumn(name = \"parent_id\", referencedColumnName = \"id\", nullable = false)"))
 
         val parentMapper = generatedRoot
-            .resolve("cc/midolog/storage/jpa/sample/RelationParentJpaMapper.kt")
+            .resolve("cc/midolog/storage/jpa/jpadsl/fixture/RelationParentJpaMapper.kt")
             .readText()
         assertTrue(parentMapper.contains("children = emptyList()"))
 
         val childMapper = generatedRoot
-            .resolve("cc/midolog/storage/jpa/sample/RelationChildJpaMapper.kt")
+            .resolve("cc/midolog/storage/jpa/jpadsl/fixture/RelationChildJpaMapper.kt")
             .readText()
         assertTrue(childMapper.contains("parentId = entity.parent.id"))
         assertTrue(childMapper.contains("parent = RelationParentJpaEntity(id = domain.parentId)"))
