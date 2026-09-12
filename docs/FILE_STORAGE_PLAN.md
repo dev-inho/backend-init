@@ -152,6 +152,8 @@ interface FilePresignPort {
 
 기존 프로젝트의 `core:domain`, `core:application` 경계를 유지하여 헥사고날 아키텍처의 비즈니스 응집도를 보호합니다. 모든 도메인, 포트, 비즈니스 서비스, 웹 컨트롤러를 단일 모듈에 몰아넣는 방식은 계층 경계를 무너뜨리므로, **인프라 어댑터만 별도의 스토리지 모듈 트리로 캡슐화**합니다.
 
+> **코디네이터 결정: 1차는 `storage/file-local` 단일 모듈, 5모듈은 S3 도입 때**
+
 ### 3.1 권고 모듈 트리 의존성 그래프
 
 ```text
@@ -170,8 +172,8 @@ storage/
 ### 3.2 Spring Boot 4 표준 자동 설정 및 Fail-Fast
 
 - **AutoConfiguration.imports 표준 채택**: Spring Boot 4.0.6 규격 및 L1 게이트웨이 starter 패턴과 통일하여 `META-INF/spring.factories`를 배제하고 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`에 자동 구성 FQCN(`cc.midolog.storage.file.autoconfigure.FileStorageAutoConfiguration`)을 1줄로 선언합니다.
-- **`@AutoConfiguration` 및 `@ConditionalOnClass`**: 자동 구성 진입점을 선언하고 클래스패스에 `LocalFileStorageAdapter` 또는 AWS SDK `S3AsyncClient`가 존재할 때만 해당 어댑터 빈을 조건부로 등록합니다.
-- **`@ConfigurationProperties` 유효성 검증 (Fail-Fast)**: `storage.file.provider` (`local` | `s3`) 값을 바인딩하고 기동 시점에 허용되지 않은 값이거나 필수 속성이 누락되었을 때 즉시 `IllegalStateException`을 발생시켜 애플리케이션 기동을 즉각 차단합니다.
+- **`@AutoConfiguration` 및 `@ConditionalOnProperty` 조건부 등록**: `storage:file-local` 자동 설정은 `storage.file.provider=local`에서만 조건부 등록하며 provider 누락·`s3` 포함 다른 값은 fail-fast로 검증합니다. S3용 조건/자동 설정은 S3 도입 때 추가합니다.
+- **`@ConfigurationProperties` 유효성 검증 (Fail-Fast)**: `storage.file.provider` 필수 및 `"local"` 일치 여부, `storage.file.local.root-dir` 절대 경로, `storage.file.max-size-bytes` 양수 검증을 기동 시점에 수행하여 위반 시 즉시 `IllegalStateException`을 발생시켜 애플리케이션 기동을 즉각 차단합니다.
 
 ---
 
@@ -218,8 +220,8 @@ jpaDsl {
 **MyBatis 및 JPA 이중 어댑터 파일 경계**:
 - **도메인 포트**: `core/domain/src/main/kotlin/cc/midolog/file/port/repository/FileMetaRepositoryPort.kt`
 - **JPA 어댑터 계층**:
-  - `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaRepository.kt` (Spring Data JPA)
   - `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt` (포트 구현체)
+  - *(참고: `FileMetaJpaEntity`, `FileMetaJpaRepository`, `FileMetaJpaMapper`는 `build-logic`의 `JpaDslPlugin`에 의해 빌드 시 `build/generated`에 자동 생성)*
 - **MyBatis 어댑터 계층**:
   - `storage/mybatis/src/main/resources/mapper/file/FileMetaMapper.xml`
   - `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/file/FileMetaMapper.kt`
@@ -248,14 +250,14 @@ jpaDsl {
 
 ---
 
-## 6. 🔶 사용자 결정 필요 항목 (Decision Records)
+## 6. ✅ 확정 결정 기록 (Decision Records)
 
-| 결정 항목 | 선택지 | 각 선택지의 영향 | 권고 기본값 |
-| --- | --- | --- | --- |
-| **Provider 지원 범위 (1차)** | 1) **Local 단독 우선 구축**<br>2) Local + S3 동시 구현 | 1)은 외부 인프라 비용/공수 없이 즉시 착수 가능하나, presign 미지원으로 Phase 1은 서버 경유 스트리밍으로 동작하며 게이트웨이 응답 버퍼링 제약을 감수해야 함 (Phase 4 S3 전환 시 해소). 2)는 초기부터 게이트웨이 OOM을 해소하나 SDK 튜닝 및 Testcontainers 셋업 공수가 큼. | **1) Local 기반 우선 구축 (S3는 Phase 4로 연기)** |
-| **모듈 경계 및 의존 구조** | 1) **기존 `core:domain/application` 유지 + `file-starter`**<br>2) 신규 Bounded Context 분리 | 1)은 헥사고날 경계를 엄격히 유지하면서 인프라 어댑터만 캡슐화함. 2)는 도메인 분리로 인한 보일러플레이트 급증 우려. | **1) 기존 `core:domain/application` 유지** |
-| **업로드 접근 방식** | 1) **하이브리드 (Local 서버경유 / S3 Presigned)**<br>2) 전 구간 서버 스트리밍 전용 | 1)은 Local 환경의 현실적 제약을 수용하면서 향후 S3 확장 시 완벽한 서버리스 I/O 전환이 가능함. 2)는 게이트웨이 OOM 위험이 영구히 잔존함. | **1) 하이브리드 접근 방식** |
-| **S3 업로드 방식 (Phase 4)** | 1) **Presigned PUT (Finalize 사후 검증)**<br>2) Presigned POST (사전 Policy 제한) | 1)은 단순 URL 발급 및 클라이언트 호환이 용이함. 2)는 사전 크기 제한이 가능하나 멀티파트 폼 필드 구성 제약이 큼. | **1) Presigned PUT** |
+| 결정 항목 | 확정 내용 및 근거 | 확정 상태 |
+| --- | --- | --- |
+| **Provider 지원 범위 (1차)** | **Local 단독 우선 구축 확정**<br>외부 인프라 비용/공수 없이 로컬 환경 및 개발 사이클을 우선 확보하며, S3는 추후 Phase로 연기. | **확정 (구현 완료)** |
+| **모듈 경계 및 의존 구조** | **기존 `core:domain/application` 유지 + `storage/file-local` 단일 모듈 확정**<br>도메인 분리로 인한 보일러플레이트를 줄이고 헥사고날 경계를 유지. 5모듈 세분화는 S3 도입 시점에 진행. | **확정 (구현 완료)** |
+| **업로드 접근 방식** | **하이브리드 접근 방식 확정**<br>1차 Local 환경은 서버 경유 논블로킹 스트리밍으로 구현 완료되었으며, 2차 S3 확장 시 Presigned 업로드로 전환. | **확정 (1차 완료)** |
+| **S3 업로드 방식 (Phase 4)** | **Presigned PUT (Finalize 사후 검증) 확정**<br>향후 S3 도입 시 단순 URL 발급 및 클라이언트 호환이 용이한 Presigned PUT 방식 채택 예정. | **확정 (S3 도입 시 적용)** |
 
 ---
 
@@ -263,21 +265,21 @@ jpaDsl {
 
 이 로드맵은 점진적 검증과 통합을 목표로 총 5단계(Phase 0 ~ 4)로 구성되며, 각 Phase는 독립된 하나의 워커 브리프 단위입니다.
 
-### Phase 0: 심볼 보존 및 헥사고날 뼈대 분리 (난이도: flash)
-- **내용**: 기존 데드 코드를 무작정 삭제하지 않고 호환 Shim으로 유지하여 빌드 무결성을 보호합니다. `core:domain`에 새 포트 인터페이스를 정의하고, `storage/file-autoconfigure` 및 `storage/file-starter-local` 모듈의 뼈대를 신규 생성합니다.
-- **파일 경계**: `settings.gradle`, `core/domain/build.gradle`, `ChunkReader.kt`, `StoredFile.kt`, `FileStoragePort.kt`, `FilePresignPort.kt`, 기존 `client/storage-file`의 `@Deprecated` 어댑터.
+### Phase 0: 심볼 보존 및 헥사고날 뼈대 분리 (✅ 완료)
+- **내용**: 기존 데드 코드를 무작정 삭제하지 않고 호환 Shim으로 유지하여 빌드 무결성을 보호합니다. 5모듈 세분화 대신 `storage/file-local` 단일 모듈 구조를 채택하고, `core:domain`에 새 포트 인터페이스(`FileStoragePort.kt`, `FilePresignPort.kt`)와 청크 입출력 추상화(`ChunkReader.kt`, `ChunkWriter.kt`), 도메인 엔티티(`FileMeta.kt`, `StoredFile.kt`)를 정의합니다.
+- **파일 경계**: `settings.gradle`, `core/domain/build.gradle`, `ChunkReader.kt`, `ChunkWriter.kt`, `StoredFile.kt`, `FileMeta.kt`, `FileStoragePort.kt`, `FilePresignPort.kt`, 기존 `client/storage-file`의 `@Deprecated` 어댑터.
 - **선행 조건**: 없음.
 - **가드 테스트**: `DomainPurityTest`가 새 `cc.midolog.file.port` 패키지 내 클래스들의 외부 라이브러리 비의존성을 검증하여 100% 통과해야 합니다.
 
-### Phase 1: Local-first 인프라 및 서버 경유 스트리밍 구현 (난이도: pro)
-- **내용**: (사용자 결정 1에 따라 S3를 배제하고) `storage/file-local` 모듈에 Local FS 전용 파일 I/O 구현체(`LocalFileStorageAdapter.kt`)를 작성합니다. 로컬 환경은 presign capability를 지원하지 않으므로, `core:application`에 서버 경유 WebFlux 논블로킹 스트리밍(업로드 `Multipart`/`DataBuffer` 소비, 다운로드 `DataBuffer` 응답) 컨트롤러를 구현합니다. 게이트웨이 `ProxyHandler` 버퍼링 제약이 존재함을 명시합니다. `file-autoconfigure`에 `AutoConfiguration.imports` 기반의 자동 구성을 배치하고, 기동 시 provider 설정 유효성을 검사하여 잘못된 값이면 즉각 실패(`fail-fast`)합니다.
-- **파일 경계**: `LocalFileStorageAdapter.kt`, `FileStoragePropertiesValidator.kt`, `FileStorageAutoConfiguration.kt`, `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`, `FileStreamingController.kt`.
+### Phase 1: Local-first 인프라 및 서버 경유 스트리밍 구현 (✅ 완료)
+- **내용**: (사용자 결정에 따라 S3를 배제하고) `storage/file-local` 단일 모듈에 Local FS 전용 파일 I/O 어댑터(`LocalFileStorageAdapter.kt`)를 작성합니다. 로컬 환경은 presign capability를 지원하지 않으므로, `core:application`에 서버 경유 Spring WebFlux 논블로킹 스트리밍 컨트롤러(`FileController.kt`)와 `WebFluxChunkBridge.kt`를 구현합니다. `storage/file-local`의 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 기반으로 Spring Boot 자동 구성을 등록하고, 기동 시 provider 설정 유효성을 검사하여 미지원 값이면 즉각 실패(`fail-fast`)합니다.
+- **파일 경계**: `storage/file-local/build.gradle`, `LocalFileStorageAdapter.kt`, `FileStoragePropertiesValidator.kt`, `FileStorageProperties.kt`, `FileStorageAutoConfiguration.kt`, `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`, `FileController.kt`, `WebFluxChunkBridge.kt`, `FileResponse.kt`.
 - **선행 조건**: Phase 0 완료.
 - **가드 테스트**: 설정 누락/오타(`storage.file.provider=invalid`) 시 Fail-fast 기동 실패 검증. JUnit `@TempDir`을 활용한 대용량 파일 읽기/쓰기 모의 통합 테스트 통과.
 
-### Phase 2: 메타데이터 영속성 트랜잭션 전이 (난이도: pro)
-- **내용**: 메타데이터 영속성 관리를 위해 `storage/jpa/build.gradle`의 `jpaDsl` 블록에 `FileMeta` 엔티티를 배선하고, MyBatis 매퍼 XML 및 리포지토리 어댑터를 작성합니다. Flyway 마이그레이션 스크립트를 생성합니다.
-- **파일 경계**: `V{next}__create_file_meta_table.sql`, `storage/jpa/build.gradle`, `FileMetaJpaRepository.kt`, `JpaFileMetaRepositoryAdapter.kt`, `FileMetaMapper.xml`, `FileMetaMapper.kt`, `MyBatisFileMetaRepositoryAdapter.kt`.
+### Phase 2: 메타데이터 영속성 트랜잭션 전이 (✅ 완료)
+- **내용**: 메타데이터 영속성 관리를 위해 `core/application`의 Flyway 마이그레이션 스크립트(`V2__create_file_meta.sql`)를 작성하고, `storage/jpa/build.gradle`의 `jpaDsl` 블록에 `FileMeta` 엔티티를 배선하여 JPA DSL 인터페이스(`FileMetaJpaRepository`)를 자동 생성합니다. JPA 어댑터(`JpaFileMetaRepositoryAdapter.kt`)와 MyBatis 매퍼 XML(`FileMetaMapper.xml`) 및 어댑터(`MyBatisFileMetaRepositoryAdapter.kt`)를 구현합니다.
+- **파일 경계**: `core/application/src/main/resources/db/migration/V2__create_file_meta.sql`, `storage/jpa/build.gradle`, JPA DSL 자동 생성물(`FileMetaJpaRepository`), `JpaFileMetaRepositoryAdapter.kt`, `FileMetaMapper.xml`, `FileMetaMapper.kt`, `MyBatisFileMetaRepositoryAdapter.kt`.
 - **선행 조건**: Phase 1 완료.
 - **가드 테스트**: 기본 `test` 태스크에서 H2 In-Memory DB로 자동 생성된 JPA DSL 매핑 스모크 테스트 수행. 분리된 `livePostgresTest` 태스크에서 PENDING -> READY 트랜잭션 상태 전이 및 롤백 검증.
 

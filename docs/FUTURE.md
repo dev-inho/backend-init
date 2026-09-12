@@ -66,7 +66,7 @@
 
 ### 고려사항
 - **저장소 선택**: 인메모리(간편, 서버 재시작 시 소실) vs. Redis(분산, 지속성)
-- **보안**: 모니터링/가시성 엔드포인트 접근 제어는 Basic Auth/IP whitelist 대신 JWT Bearer 토큰 인증으로 결정 및 구현 완료(`core/gateway/src/main/kotlin/cc/midolog/gateway/filter/JwtAuthFilter.kt`의 `/internal/gateway/` 경로 분기)
+- **보안**: 모니터링/가시성 엔드포인트 접근 제어는 Basic Auth/IP whitelist 대신 JWT Bearer 토큰 인증으로 결정 및 구현 완료(`gateway/core/src/main/kotlin/cc/midolog/gateway/filter/JwtAuthFilter.kt`의 `/internal/gateway/` 경로 분기)
 - **실시간성**: 요청 데이터 업데이트 주기 및 화면 갱신 방식
 - **성능**: 요청 로깅이 게이트웨이 성능에 미치는 영향 최소화
 
@@ -146,7 +146,7 @@
 자체 구현 필터 체인(가시성, JWT, Rate Limit 등)을 보존하면서 starter 형태로 모듈화하는 단계별 로드맵을 수립함:
 - **Phase 0**: 사전 준비 (패키지 재배치 및 JWT 공유 모듈화)
 - **Phase 1**: `gateway-core` 및 `gateway-autoconfigure` 분할
-- **Phase 2**: 단독 실행 애플리케이션 껍데기 `apps/gateway-app` 및 `gateway-starter` 신설
+- **Phase 2**: 단독 실행 애플리케이션 껍데기 `gateway/app` 및 `gateway-starter` 신설
 - **Phase 3**: 동일 프로세스 내 In-process 디스패치 또는 루프백 라우팅 및 보안 체인 분리
 - **Phase 4**: 원격 모드 대상 헬스체크 및 `ProxyHandler` 재시도/서킷 브레이커 고도화
 

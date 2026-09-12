@@ -47,9 +47,33 @@ Spring Boot 4 + Kotlin 기반의 헥사고날(Ports & Adapters) 멀티모듈 백
 - JPA, Mybatis, 외부 라이브러리 사용 불가
 - Port는 domain 내 interface로만 정의
 
+**도메인 모델 및 포트 계약**
+- **`StoredFile` vs `FileMeta` 구분**:
+  - `StoredFile`: 실제 스토리지 I/O(저장 완료) 결과 및 확정된 파일 속성(`id`, `ownerId`, `storageKey`, `sizeBytes`, `contentType`, `checksum`, `status`)을 담는 값객체(Value Object).
+  - `FileMeta`: 파일 생명주기 전체를 추적하는 DB 영속 메타데이터 모델. 업로드 대기(`PENDING`) 상태에서는 크기, 컨텐츠 타입, 체크섬 등이 미확정(nullable)이며 생성/수정 시각(`createdAt`, `updatedAt`)을 포함한다.
+- **포트 계약**:
+  - `FileStoragePort` (`cc.midolog.file.port.storage`): 청크 기반 비동기 스트리밍 저장(`store`), 읽기 청크 리더 반환(`load`), 멱등 삭제(`delete`), 존재 확인(`exists`)을 정의.
+  - `FileMetaRepositoryPort` (`cc.midolog.file.port.repository`): 식별자 조회(`findById`), 저장/갱신(`save`), 상태 변경(`updateStatus`), 만료 대기 건 일괄 조회를 위한 **cutoff+limit 계약**(`findExpiredPending(cutoff, limit)`)을 정의.
+- **레거시 포트 호환**:
+  - `cc.midolog.sample.port.file.FileStoragePort`: `@Deprecated` 처리되어 신규 포트(`cc.midolog.file.port.storage.FileStoragePort`)로 대체되었으나, 기존 어댑터와의 하위 호환성을 위해 심볼을 유지한다.
+
 **실제 구조**
 ```
 core/domain/
+├── file/
+│   ├── model/
+│   │   ├── FileMeta.kt
+│   │   ├── FileStatus.kt
+│   │   ├── PresignedRequest.kt
+│   │   └── StoredFile.kt
+│   └── port/
+│       ├── repository/
+│       │   └── FileMetaRepositoryPort.kt
+│       └── storage/
+│           ├── ChunkReader.kt
+│           ├── ChunkWriter.kt
+│           ├── FilePresignPort.kt
+│           └── FileStoragePort.kt
 ├── jpadsl/fixture/
 │   ├── RelationChild.kt
 │   ├── RelationParent.kt
@@ -79,9 +103,18 @@ core/domain/
 - Adapter(구현체) 주입 및 의존성 해결
 - 트랜잭션 관리
 
+**제공 API**
+- `POST /api/auth/token`: 인증 토큰 발급
+- `GET /api/sample/ping`, `GET /api/sample/{id}`, `POST /api/sample`: Sample API
+- `POST /api/user`, `GET /api/user/{id}`: User API
+- `POST /api/files`: 멀티파트 파일 업로드 (`HttpStatus.CREATED` 201). 크기 초과 시 413 Payload Too Large, 허용되지 않는 미디어 타입 시 415 Unsupported Media Type.
+- `GET /api/files/{id}`: 파일 메타데이터 조회 (`ApiResponse<FileResponse>`)
+- `GET /api/files/{id}/content`: 파일 스트리밍 다운로드 (`ResponseEntity<Flux<DataBuffer>>`, 청크 버퍼 기반 논블로킹 스트리밍)
+- `DELETE /api/files/{id}`: 파일 및 메타데이터 삭제 (`ApiResponse<Unit>`)
+
 **특징**
 - Domain 및 Support(util, logging, web, jwt)에 의존
-- Adapter(client, storage)는 **runtimeOnly**로 의존 (컴파일 의존성 제거)
+- Adapter(client, storage)는 **runtimeOnly**로 의존 (`client:storage-file`, `storage:mybatis`, `storage:jpa`, `storage:file-local` — 컴파일 의존성 제거)
 - Spring Application Context 진입점
 - WebFlux + Coroutine 사용
 
@@ -90,6 +123,7 @@ core/domain/
 core/application/
 ├── ApplicationServer.kt
 ├── business/service/
+│   ├── FileService.kt
 │   ├── SampleService.kt
 │   └── UserService.kt
 ├── common/security/
@@ -100,6 +134,11 @@ core/application/
 └── web/
     ├── auth/
     │   └── AuthController.kt
+    ├── file/
+    │   ├── FileController.kt
+    │   ├── WebFluxChunkBridge.kt
+    │   └── dto/
+    │       └── FileResponse.kt
     ├── sample/
     │   ├── SampleController.kt
     │   ├── SampleStreamController.kt
@@ -201,10 +240,11 @@ core/batch/
 - Domain Port 구현(Adapter)
 
 **모듈**
-- **client:storage-file** — 파일 스토리지 클라이언트 (현재 로컬 파일 스토리지 어댑터 제공, 원격 오브젝트 스토리지 연동은 FUTURE 참조)
+- **client:storage-file** — 구버전 파일 스토리지 클라이언트 (`@Deprecated`). 구 `cc.midolog.sample.port.file.FileStoragePort` 포트 구현체.
 
 **특징**
-- Domain Port(`FileStoragePort`)를 구현하는 Adapter
+- 신규 파일 저장 기능은 `storage:file-local`로 대체되었으나, 기존 호출부와의 하위 호환성을 위해 유지
+- `@Component`로 등록되어 기본 빈 이름 `localFileStorageAdapter`를 가지며, 신규 자동 설정 빈 `fileLocalStorageAdapter`와 충돌 없이 공존 (`FileStorageIntegrationTest` 가드)
 - Application에서 runtimeOnly로 의존
 
 **실제 구조**
@@ -217,24 +257,38 @@ client/storage-file/
 ### 2.6 Storage (cc.midolog.storage.*)
 
 **책임**
-- 데이터 영속성(Database Access)
+- 데이터 영속성(Database Access) 및 파일 시스템 영속 저장
 - Domain Port 구현(Adapter)
 
 **모듈**
 - **storage:mybatis** — MyBatis 기반 데이터 접근
 - **storage:jpa** — Spring Data JPA 기반 데이터 접근
+- **storage:file-local** — 로컬 파일 시스템 파일 저장소 어댑터 및 Spring Boot 4 자동 설정
 
 **특징**
 - Domain model을 저장소 전용 schema/entity/mapper에 매핑
-- Domain Port(Repository) 구현
+- Domain Port(Repository, FileStoragePort) 구현
 - MyBatis SQL query 또는 JPA repository 관리
-- Persistence 구현은 profile로 하나만 선택
+- Persistence 구현은 profile로 하나만 선택 (`mybatis` vs `jpa`)
+- **`storage:file-local` 자동 설정 및 Fail-Fast**:
+  - `cc.midolog.file.port.storage.FileStoragePort` 구현체(`cc.midolog.storage.file.local.LocalFileStorageAdapter`) 제공.
+  - Spring Boot 4 규격 `AutoConfiguration.imports`를 통해 `cc.midolog.storage.file.autoconfigure.FileStorageAutoConfiguration` 등록.
+  - 충돌 방지를 위해 `@Bean("fileLocalStorageAdapter")` 명시적 이름 사용.
+  - 기동 시 필수 프로퍼티 유효성을 검증하여 잘못된 설정 시 즉각 fail-fast (`storage.file.provider=local` 필수, `storage.file.local.root-dir` 절대 경로 필수, `storage.file.max-size-bytes` > 0, `storage.file.allowed-content-types`).
+- **FileMeta 영속성 및 cutoff+limit 계약**:
+  - `storage:mybatis`와 `storage:jpa`는 V2 Flyway 스키마(`file_meta` 테이블)를 바탕으로 `FileMetaRepositoryPort`를 구현.
+  - 만료 대기 건 일괄 정리를 위한 `findExpiredPending(cutoff, limit)` cutoff+limit 계약 준수.
+- **livePostgresTest 분리 격리**:
+  - `storage:jpa`의 단위/통합 테스트는 H2 In-Memory DB로 수행되며, 실제 PostgreSQL 검증 태스크(`livePostgresTest`)는 기본 `./gradlew build` 및 `./gradlew test`에서 제외되어 별도로 실행.
 
 **실제 구조**
 ```
 storage/mybatis/
 ├── config/
 │   └── MyBatisStorageConfig.kt
+├── file/
+│   ├── FileMetaMapper.kt
+│   └── MyBatisFileMetaRepositoryAdapter.kt
 ├── sample/
 │   ├── MyBatisSampleRepositoryAdapter.kt
 │   └── SampleMapper.kt
@@ -245,11 +299,24 @@ storage/mybatis/
 storage/jpa/
 ├── config/
 │   └── JpaStorageConfig.kt
+├── file/
+│   └── JpaFileMetaRepositoryAdapter.kt
 ├── sample/
 │   ├── JpaSampleRepositoryAdapter.kt
 │   └── ScalarSampleCodeJpaConverter.kt
 └── user/
     └── JpaUserRepositoryAdapter.kt
+
+storage/file-local/
+├── cc/midolog/storage/file/
+│   ├── autoconfigure/
+│   │   ├── FileStorageAutoConfiguration.kt
+│   │   ├── FileStorageProperties.kt
+│   │   └── FileStoragePropertiesValidator.kt
+│   └── local/
+│       └── LocalFileStorageAdapter.kt
+└── resources/META-INF/spring/
+    └── org.springframework.boot.autoconfigure.AutoConfiguration.imports
 ```
 *(참고: JPA Entity, Repository, Mapper는 `build-logic`의 `JpaDslPlugin`에 의해 빌드 시 `build/generated`에 자동 생성됩니다)*
 
@@ -257,7 +324,7 @@ storage/jpa/
 - `core:domain`에는 Plain Kotlin model과 port만 둔다.
 - JPA `@Entity`, `@Table`, Spring Data repository는 `storage:jpa` 내부에만 둔다.
 - MyBatis mapper interface와 XML mapper는 `storage:mybatis` 내부에만 둔다.
-- `core:application`은 `SampleRepositoryPort`, `UserRepositoryPort` 같은 domain port만 사용하고 구체 storage 구현을 main source에서 import하지 않는다.
+- `core:application`은 `SampleRepositoryPort`, `UserRepositoryPort`, `FileMetaRepositoryPort`, `FileStoragePort` 같은 domain port만 사용하고 구체 storage 구현을 main source에서 import하지 않는다.
 - 운영 실행에서는 `mybatis`와 `jpa` profile을 동시에 켜지 않는다.
 
 ### 2.7 Support (cc.midolog.support.*)
@@ -336,11 +403,12 @@ support/jwt/
 | `gateway:starter` | `gateway:core` (api), `gateway:autoconfigure` (api) | 게이트웨이 의존성 묶음 스타터 라이브러리 |
 | `gateway:autoconfigure` | `gateway:core` | `gateway.mode` 기반 자동 설정 및 조건부 빈 등록 |
 | `gateway:core` | `support:logging`, `support:util`, `support:web`, `support:jwt` | 요청 수신, 라우팅, Rate Limit, 인증, 관측성 핵심 로직 |
-| `core:application` | `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`, (runtimeOnly) `client:storage-file`, `storage:mybatis`, `storage:jpa` | 비즈니스 유스케이스 조율, REST API 제공, 어댑터 런타임 주입 |
+| `core:application` | `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`, (runtimeOnly) `client:storage-file`, `storage:mybatis`, `storage:jpa`, `storage:file-local` | 비즈니스 유스케이스 조율, REST API 제공, 어댑터 런타임 주입 |
 | `core:batch` | `support:logging` | 정기 배치 작업 실행 (Spring Batch 기반, domain/storage 직접 의존 없음) |
-| `client:storage-file` | `core:domain` | Domain FileStoragePort 구현 (로컬 파일 스토리지) |
+| `client:storage-file` | `core:domain` | Domain FileStoragePort 구현 (로컬 파일 스토리지, 레거시 `@Deprecated`) |
 | `storage:mybatis` | `core:domain`, `support:util` | Domain RepositoryPort 구현 (MyBatis SQL 매핑) |
 | `storage:jpa` | `core:domain`, `support:util` | Domain RepositoryPort 구현 (Spring Data JPA 및 JPA DSL 생성 코드) |
+| `storage:file-local` | `core:domain`, `support:util` | Domain FileStoragePort 구현 및 Spring Boot 4 자동 설정 (로컬 파일 스토리지) |
 | `core:domain` | (없음) | 순수 Kotlin 도메인 모델 및 포트 인터페이스 (프로젝트 의존 0) |
 | `support:util` | (없음) | 프로젝트 공통 유틸리티 (문자열, 컬렉션, 마스킹 등) |
 | `support:logging` | `support:util` | 통합 로깅 및 MDC 유틸리티 |
@@ -401,6 +469,7 @@ graph TD
     CSF["Client:Storage<br/>(client:storage-file)"]
     MYB["Storage:Mybatis<br/>(storage:mybatis)"]
     JPA["Storage:JPA<br/>(storage:jpa)"]
+    SFL["Storage:File-Local<br/>(storage:file-local)"]
     LOG["Support:Logging<br/>(support:logging)"]
     UTL["Support:Util<br/>(support:util)"]
     WEB["Support:Web<br/>(support:web)"]
@@ -428,6 +497,7 @@ graph TD
     APP -.->|runtimeOnly| CSF
     APP -.->|runtimeOnly| MYB
     APP -.->|runtimeOnly| JPA
+    APP -.->|runtimeOnly| SFL
 
     BAT -->|depends| LOG
 
@@ -438,6 +508,9 @@ graph TD
 
     JPA -->|depends| DOM
     JPA -->|depends| UTL
+
+    SFL -->|depends| DOM
+    SFL -->|depends| UTL
 
     WEB -->|depends| LOG
     WEB -->|depends| UTL
@@ -462,6 +535,7 @@ graph TD
     style CSF fill:#f1f8e9
     style MYB fill:#f1f8e9
     style JPA fill:#f1f8e9
+    style SFL fill:#f1f8e9
     style BL fill:#eceff1
 ```
 
