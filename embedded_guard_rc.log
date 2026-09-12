@@ -1,0 +1,67 @@
+> Task :build-logic:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :build-logic:compileKotlin UP-TO-DATE
+> Task :build-logic:compileJava NO-SOURCE
+> Task :build-logic:pluginDescriptors UP-TO-DATE
+> Task :build-logic:processResources UP-TO-DATE
+> Task :build-logic:classes UP-TO-DATE
+> Task :build-logic:jar UP-TO-DATE
+> Task :gateway:autoconfigure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gateway:core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :support:jwt:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :support:util:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :support:util:compileKotlin UP-TO-DATE
+> Task :support:util:compileJava NO-SOURCE
+> Task :support:util:processResources NO-SOURCE
+> Task :support:util:classes UP-TO-DATE
+> Task :support:util:jar UP-TO-DATE
+> Task :support:jwt:compileKotlin UP-TO-DATE
+> Task :support:jwt:compileJava NO-SOURCE
+> Task :support:logging:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :support:logging:compileKotlin UP-TO-DATE
+> Task :support:logging:compileJava NO-SOURCE
+> Task :support:logging:processResources UP-TO-DATE
+> Task :support:logging:classes UP-TO-DATE
+> Task :support:logging:jar UP-TO-DATE
+> Task :support:web:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :support:web:compileKotlin UP-TO-DATE
+> Task :support:web:compileJava NO-SOURCE
+> Task :support:web:processResources NO-SOURCE
+> Task :support:web:classes UP-TO-DATE
+> Task :support:web:jar UP-TO-DATE
+> Task :gateway:core:compileKotlin UP-TO-DATE
+> Task :gateway:core:compileJava NO-SOURCE
+> Task :gateway:core:processResources NO-SOURCE
+> Task :gateway:core:classes UP-TO-DATE
+> Task :gateway:core:jar UP-TO-DATE
+> Task :gateway:autoconfigure:processResources UP-TO-DATE
+> Task :gateway:autoconfigure:processTestResources NO-SOURCE
+> Task :support:jwt:processResources NO-SOURCE
+> Task :support:jwt:classes UP-TO-DATE
+> Task :support:jwt:jar UP-TO-DATE
+> Task :gateway:autoconfigure:compileKotlin
+> Task :gateway:autoconfigure:compileJava NO-SOURCE
+> Task :gateway:autoconfigure:classes UP-TO-DATE
+> Task :gateway:autoconfigure:jar
+> Task :gateway:autoconfigure:compileTestKotlin
+> Task :gateway:autoconfigure:compileTestJava NO-SOURCE
+> Task :gateway:autoconfigure:testClasses UP-TO-DATE
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+
+> Task :gateway:autoconfigure:test FAILED
+
+GatewayAutoConfigurationTest > embedded 모드 빈 구성 가드() FAILED
+    org.opentest4j.AssertionFailedError at GatewayAutoConfigurationTest.kt:141
+
+1 test completed, 1 failed
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':gateway:autoconfigure:test'.
+> There were failing tests. See the report at: file:///Users/jinsungkim/orca/workspaces/backend-init/gw-split-autoconfig/gateway/autoconfigure/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 2s
+20 actionable tasks: 4 executed, 16 up-to-date

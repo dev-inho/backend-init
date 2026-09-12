@@ -1,0 +1,34 @@
+--- gateway/autoconfigure/src/test/kotlin/cc/midolog/gateway/autoconfigure/GatewayAutoConfigurationTest.kt
++++ gateway/autoconfigure/src/test/kotlin/cc/midolog/gateway/autoconfigure/GatewayAutoConfigurationTest.kt
+@@ -10,6 +10,7 @@
+ import cc.midolog.gateway.visibility.RequestVisibilityController
+ import cc.midolog.gateway.visibility.RequestVisibilityFilter
+ import org.junit.jupiter.api.Assertions.*
++import org.junit.jupiter.api.DisplayName
+ import org.junit.jupiter.api.Test
+ import org.springframework.boot.autoconfigure.AutoConfigurations
+ import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner
+@@ -43,7 +44,6 @@
+     fun `gateway mode 미설정시 fail-fast`() {
+         contextRunner.run { context ->
+             assertTrue(context.startupFailure != null)
+-            context.startupFailure!!.printStackTrace()
+             val rootCauseMessage = generateSequence(context.startupFailure) { it.cause }.joinToString { it.message ?: "" }
+             assertTrue(rootCauseMessage.contains("gateway.mode must be exactly one of"), "Message was: $rootCauseMessage")
+         }
+@@ -79,6 +79,15 @@
+             assertNotNull(context.getBean(GatewayRouteSelector::class.java))
+             assertNotNull(context.getBean(GatewayRouteProperties::class.java))
+             assertNotNull(context.getBean(JwtAuthFilter::class.java))
++
++            val requestMapping = context.getBean("requestMappingHandlerMapping", RequestMappingHandlerMapping::class.java)
++            val hasRecent = requestMapping.handlerMethods.values.any { 
++                it.beanType == RequestVisibilityController::class.java && it.method.name == "recent" 
++            }
++            assertTrue(
++                hasRecent,
++                "RequestVisibilityController.recent must be registered as a WebFlux handler method"
++            )
+         }
+     }
+ 

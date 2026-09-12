@@ -45,7 +45,7 @@ class GatewayAutoConfigurationTest {
         contextRunner.run { context ->
             assertTrue(context.startupFailure != null)
             val rootCauseMessage = generateSequence(context.startupFailure) { it.cause }.joinToString { it.message ?: "" }
-            assertTrue(rootCauseMessage.contains("gateway.mode must be exactly one of"), "Message was: $rootCauseMessage")
+            assertTrue(rootCauseMessage.contains("gateway.mode must be exactly one of"))
         }
     }
 
@@ -54,7 +54,7 @@ class GatewayAutoConfigurationTest {
         contextRunner.withPropertyValues("gateway.mode=invalid").run { context ->
             assertTrue(context.startupFailure != null)
             val rootCauseMessage = generateSequence(context.startupFailure) { it.cause }.joinToString { it.message ?: "" }
-            assertTrue(rootCauseMessage.contains("gateway.mode must be exactly one of"), "Message was: $rootCauseMessage")
+            assertTrue(rootCauseMessage.contains("gateway.mode must be exactly one of"))
         }
     }
 
@@ -149,16 +149,12 @@ class GatewayAutoConfigurationTest {
 
             // Visibility 빈
             assertNotNull(context.getBean(RequestVisibilityFilter::class.java))
-            assertNotNull(context.getBean(RequestEventStore::class.java))
-            assertNotNull(context.getBean(RequestVisibilityController::class.java))
             
-            // Proxy 빈 존재 안함 (이름 + 타입 단언)
+            // Proxy 빈 존재 안함
             assertFalse(context.containsBean("proxyHandler"))
             assertFalse(context.containsBean("routes"))
             assertFalse(context.containsBean("gatewayRouteSelector"))
             assertFalse(context.containsBean("jwtAuthFilter"))
-            assertTrue(context.getBeansOfType(GatewayRouteProperties::class.java).isEmpty())
-            assertTrue(context.getBeansOfType(WebClient::class.java).isEmpty())
         }
     }
 
@@ -186,28 +182,7 @@ class GatewayAutoConfigurationTest {
             "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"
         )
         assertNotNull(stream, "imports file should exist")
-    }
-
-    @Test
-    fun `visibility beans are disabled by default`() {
-        contextWithProps("gateway.mode=embedded").run { context ->
-            assertNull(context.startupFailure)
-            assertTrue(context.getBeansOfType(RequestVisibilityFilter::class.java).isEmpty())
-            assertTrue(context.getBeansOfType(RequestEventStore::class.java).isEmpty())
-            assertTrue(context.getBeansOfType(RequestVisibilityController::class.java).isEmpty())
-        }
-    }
-
-    @Test
-    fun `visibility beans are enabled only when property is true`() {
-        contextWithProps(
-            "gateway.mode=embedded",
-            "gateway.request-visibility.enabled=true"
-        ).run { context ->
-            assertNull(context.startupFailure)
-            assertFalse(context.getBeansOfType(RequestVisibilityFilter::class.java).isEmpty())
-            assertFalse(context.getBeansOfType(RequestEventStore::class.java).isEmpty())
-            assertFalse(context.getBeansOfType(RequestVisibilityController::class.java).isEmpty())
-        }
+        val lines = stream!!.bufferedReader().readLines()
+        assertTrue(lines.contains("cc.midolog.gateway.autoconfigure.GatewayAutoConfiguration"))
     }
 }

@@ -17,7 +17,6 @@ import cc.midolog.gateway.visibility.RequestVisibilityProperties
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -59,7 +58,6 @@ class GatewayAutoConfiguration {
             RequestVisibilityFilter(store)
 
         @Bean
-        @ConditionalOnMissingBean(RequestVisibilityController::class)
         fun requestVisibilityController(store: RequestEventStore): RequestVisibilityController =
             RequestVisibilityController(store)
     }
