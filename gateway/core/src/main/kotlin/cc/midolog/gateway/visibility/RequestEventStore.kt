@@ -1,8 +1,6 @@
 package cc.midolog.gateway.visibility
 
-import java.time.Instant
 import java.util.ArrayDeque
-
 
 /**
  * 최근 처리된 요청 가시성 이벤트를 메모리에 보관하는 링 버퍼 저장소.

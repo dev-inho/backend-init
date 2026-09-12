@@ -3,9 +3,7 @@ package cc.midolog.gateway.visibility
 import cc.midolog.logging.LoggingMdc
 import java.time.Clock
 import java.time.Instant
-
 import org.springframework.core.annotation.Order
-import org.springframework.stereotype.Component
 import org.springframework.web.server.ServerWebExchange
 import org.springframework.web.server.WebFilter
 import org.springframework.web.server.WebFilterChain

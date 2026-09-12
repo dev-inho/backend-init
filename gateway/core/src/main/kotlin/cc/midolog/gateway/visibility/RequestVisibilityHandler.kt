@@ -1,8 +1,5 @@
 package cc.midolog.gateway.visibility
 
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.RequestMapping
-
 /**
  * 메모리에 버퍼링된 최근 요청 가시성 목록을 제공하는 내부 관리용 핸들러.
  *
