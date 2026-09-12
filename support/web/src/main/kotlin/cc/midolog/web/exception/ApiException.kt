@@ -27,5 +27,8 @@ class ApiException(
          * 현재 비즈니스 코드 내 소비자는 없으나(docs/DEAD_CODE_CANDIDATES.md #6), 파라미터 유효성 검증용 팩토리로 유효하다.
          */
         fun invalidInput(detail: String? = null) = ApiException(ErrorCode.INVALID_INPUT, detail)
+        fun badRequest(detail: String? = null) = ApiException(ErrorCode.INVALID_INPUT, detail)
+        fun payloadTooLarge(detail: String? = null) = ApiException(ErrorCode.PAYLOAD_TOO_LARGE, detail)
+        fun unsupportedMediaType(detail: String? = null) = ApiException(ErrorCode.UNSUPPORTED_MEDIA_TYPE, detail)
     }
 }

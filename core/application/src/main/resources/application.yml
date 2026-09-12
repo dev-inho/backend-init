@@ -35,3 +35,14 @@ spring:
     jpa:
       repositories:
         enabled: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+storage:
+  file:
+    provider: local
+    local:
+      root-dir: ${STORAGE_FILE_ROOT_DIR:./build/files}
