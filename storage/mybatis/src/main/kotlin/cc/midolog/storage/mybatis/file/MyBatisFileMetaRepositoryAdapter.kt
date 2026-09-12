@@ -33,9 +33,7 @@ class MyBatisFileMetaRepositoryAdapter(
             createdAt = file.createdAt,
             updatedAt = file.updatedAt
         )
-        if (affected != 1 && affected != 2) { // Upsert can return 2 on update in MySQL/H2 sometimes, but we should assert > 0 or 1. Let's assert affected > 0
-            error("Save failed, affected rows: $affected")
-        }
+        check(affected == 1) { "Save failed, affected rows: $affected" }
         file
     }
 

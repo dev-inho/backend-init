@@ -46,7 +46,13 @@ class MyBatisFileMetaMapperH2Test {
         val row = mapper.selectById("f1")!!
         assertEquals(FileStatus.READY.name, row["status"] ?: row["STATUS"])
         val rowUpdatedAt = row["updatedAt"] ?: row["UPDATED_AT"]
-        assertTrue(rowUpdatedAt.toString().startsWith(now.toString().substring(0, 10)), "updated_at should be changed")
+        val actualInstant = when (rowUpdatedAt) {
+            is java.time.LocalDateTime -> rowUpdatedAt.atZone(java.time.ZoneId.of("UTC")).toInstant()
+            is java.sql.Timestamp -> rowUpdatedAt.toInstant()
+            is Instant -> rowUpdatedAt
+            else -> error("Unknown type: \${rowUpdatedAt?.javaClass}")
+        }
+        assertEquals(now, actualInstant, "updated_at should be correctly persisted and retrieved")
     }
 
     @org.springframework.boot.SpringBootConfiguration

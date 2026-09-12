@@ -78,6 +78,14 @@ class FileMetaRepositoryPortContractTest {
             assertEquals(2, expired.size)
             assertEquals("pending_old1", expired[0].id)
             assertEquals("pending_old2", expired[1].id)
+
+            // limit <= 0 check
+            kotlin.test.assertFailsWith<IllegalArgumentException> {
+                repository.findExpiredPending(now, 0)
+            }
+            kotlin.test.assertFailsWith<IllegalArgumentException> {
+                repository.findExpiredPending(now, -1)
+            }
         }
     }
 
