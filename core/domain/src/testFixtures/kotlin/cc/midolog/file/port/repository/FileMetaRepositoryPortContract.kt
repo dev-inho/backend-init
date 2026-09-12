@@ -102,6 +102,7 @@ abstract class FileMetaRepositoryPortContract {
     @Test
     fun `findExpiredPending returns only pending before cutoff, ordered by updatedAt, up to limit`() = runTestBlocking {
         val now = clock().instant()
+        val cutoff = now.minusSeconds(1800)
         val old1 = FileMeta(
             id = "file-old-1",
             ownerId = "owner-1",
@@ -126,8 +127,17 @@ abstract class FileMetaRepositoryPortContract {
             storageKey = "key-3",
             sizeBytes = 10L, contentType = "text", checksum = "chk",
             status = FileStatus.PENDING,
-            createdAt = now.minusSeconds(1800),
-            updatedAt = now.minusSeconds(1800) // exact cutoff
+            createdAt = now.minusSeconds(2400),
+            updatedAt = now.minusSeconds(2400) // third oldest, strictly before cutoff
+        )
+        val exactCutoff = FileMeta(
+            id = "file-exact-cutoff",
+            ownerId = "owner-exact",
+            storageKey = "key-exact",
+            sizeBytes = 10L, contentType = "text", checksum = "chk",
+            status = FileStatus.PENDING,
+            createdAt = cutoff,
+            updatedAt = cutoff // exact cutoff, must be excluded
         )
         val readyOld = FileMeta(
             id = "file-ready-old",
@@ -151,16 +161,15 @@ abstract class FileMetaRepositoryPortContract {
         port().save(old1)
         port().save(old2)
         port().save(old3)
+        port().save(exactCutoff)
         port().save(readyOld)
         port().save(recent)
 
-        val cutoff = now.minusSeconds(1800)
-        
         // Fetch up to limit = 2.
         // We do NOT filter the result. We expect EXACTLY 2 items returned, ordered by updatedAt.
         val expired = port().findExpiredPending(cutoff, limit = 2)
-        
-        // Exact cutoff is EXCLUDED. Only old1 and old2 should be returned.
+
+        // Exact cutoff is EXCLUDED. Only the earliest 2 of 3 expired pending items (old1 and old2) should be returned.
         assertEquals(2, expired.size)
         assertEquals("file-old-1", expired[0].id)
         assertEquals("file-old-2", expired[1].id)

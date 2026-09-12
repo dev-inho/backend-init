@@ -6,15 +6,22 @@
 - JPA entity, repository, mapper, adapter는 이 모듈 내부에 둔다.
 - `core:domain` 모델에는 `@Entity`, `@Table`, Spring Data import를 추가하지 않는다.
 - `core:application`은 `SampleRepositoryPort`만 의존하고 JPA 구현 클래스를 직접 import하지 않는다.
+- QueryDSL(`querydsl-jpa`)은 `storage/jpa`의 내부 `implementation`이며, 생성된 Q 타입(`Q*JpaEntity`)은 모듈 밖으로 절대 노출하지 않는다 (`PersistenceBoundaryTest`가 타 모듈의 `com.querydsl` import를 원천 차단).
 
-## Generated JPA Sources
+## Generated JPA Sources & QueryDSL
 - `core:domain` 모델은 어노테이션 없이 plain data class로 유지한다.
 - `storage:jpa`는 `build-logic`의 `cc.midolog.jpa-dsl` 내부 Gradle plugin을 적용한다.
 - `storage:jpa/build.gradle`의 typed `jpaDsl { ... }` 선언이 JPA table/id/field/relation 매핑의 source다.
 - `build-logic` plugin production code가 domain data class의 primary constructor를 읽어 `*JpaEntity`, `*JpaRepository`, `*JpaMapper`를 생성한다.
-- `storage/jpa/build.gradle`은 DSL 선언과 storage dependency만 담당한다. generated source directory, sourceSets, task wiring은 plugin이 소유한다.
+- JPA DSL 자체의 generated source directory, sourceSets, 기본 compile task wiring은 plugin이 소유한다. 단, QueryDSL kapt 파이프라인과의 연동(`kaptGenerateStubsKotlin.dependsOn('generateJpaDslSources')`)은 `storage/jpa/build.gradle`의 `afterEvaluate`에서 모듈 수준으로 와이어링한다.
+- 빌드/컴파일 파이프라인의 태스크 체인은 다음과 같이 순차적으로 동작한다:
+  `domain → generateJpaDslSources(Kotlin entity) → kaptGenerateStubsKotlin → kaptKotlin(Q Java) → compileKotlin`
+- 생성 소스는 두 개의 서로 다른 generated root로 격리되어 관리된다:
+  1. JPA DSL 생성 Kotlin 소스: `build/generated/sources/jpaDsl/main/kotlin` (`*JpaEntity`, `*JpaRepository`, `*JpaMapper`)
+  2. QueryDSL kapt 생성 Java 소스: `build/generated/source/kapt/main` (`Q*JpaEntity.java`)
 - 생성 파일은 Gradle build directory 아래에만 위치하며, `src/main/kotlin`에는 adapter/config 같은 hand-written persistence code만 둔다.
 - `validateJpaDslGeneratorNegativeCases` task는 unsupported DSL 선언이 invalid Kotlin compile error로 넘어가기 전에 `GradleException`으로 실패하는지 검증한다.
+- `SelfContainedQueryDslGuardTest`는 문자열 JPQL(`createQuery(`) 0건 유지와 6개 Q 클래스의 정확한 파일 경로 존재를 검증한다.
 
 ### Pluginization Status
 - Phase 1은 plugin shell/parity harness 단계로 완료됐다.
@@ -133,9 +140,9 @@ jpaDsl {
 - `build-logic`의 TestKit은 plugin apply, marker task, malformed marker DSL failure를 검증한다.
 - `build-logic`의 TestKit은 typed Groovy DSL positive generation, custom generated source directory, empty DSL failure, check task dependency, and malformed DSL negative failures를 검증한다.
 - `generateJpaDslSources`는 항상 output directory를 삭제한 뒤 다시 생성해 stale generated source를 남기지 않는다.
-- `compileKotlin`은 `generateJpaDslSources`에 의존한다.
+- 빌드/컴파일 체인은 `domain → generateJpaDslSources(Kotlin entity) → kaptGenerateStubsKotlin → kaptKotlin(Q Java) → compileKotlin` 순서로 의존성이 연결된다.
 - `check`는 `validateJpaDslGeneratorNegativeCases`에 의존한다.
-- generated source 검증 테스트는 Gradle이 실제 사용하는 `jpaDsl.generatedSourceDir` system property를 읽는다. 이 프로젝트는 build directory가 repo 내부가 아닐 수 있으므로 테스트에서 `build/` 경로를 직접 가정하지 않는다.
+- `SelfContainedQueryDslGuardTest`는 Gradle `queryDsl.generatedSourceDir` system property(`build/generated/source/kapt/main`)를 통해 6개 Q Java 파일(`QSampleJpaEntity.java`, `QUserJpaEntity.java`, `QFileMetaJpaEntity.java`, `QScalarSampleJpaEntity.java`, `QRelationParentJpaEntity.java`, `QRelationChildJpaEntity.java`)의 존재를 검증하고, `src/main`의 문자열 JPQL `createQuery(` 호출이 0건임을 보장한다.
 - 새 domain field를 추가할 때는 `core:domain` data class와 `jpaDsl { ... }` 선언만 수정한다. JPA annotation은 domain에 추가하지 않는다.
 
 ### Escalation Criteria

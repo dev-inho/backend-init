@@ -676,7 +676,7 @@ cc.midolog.storage.jpa
 
 **File 도메인 지원, 설정 소유권 및 livePostgresTest 격리**:
 - `JpaFileMetaRepositoryAdapter`: `FileMetaRepositoryPort` 포트 구현체로, blocking JPA 호출을 `Dispatchers.IO` 및 `TransactionOperations` 경계 내에서 안전하게 실행합니다.
-- `FileMetaRepositoryPort`의 cutoff+limit 계약(`findExpiredPending(cutoff, limit)`)을 `entityManager` 쿼리 파라미터(`setMaxResults(limit)`)를 통해 구현합니다.
+- `FileMetaRepositoryPort`의 cutoff+limit 계약(`findExpiredPending(cutoff, limit)`) 및 `updateStatus`를 QueryDSL `JPAQueryFactory`와 `QFileMetaJpaEntity`를 사용하여 컴파일 타임에 타입 안전하게 구현합니다 (`.limit(limit.toLong())`).
 - **설정 소유권 (`application-jpa.yml`)**: JPA repository 활성화 설정(`spring.data.jpa.repositories.enabled: true`) 등 JPA 특화 설정은 모듈 내부 `resources/application-jpa.yml`이 자체 소유합니다.
 - **H2 인메모리 실제 어댑터 계약 테스트**: `core:domain`의 testFixtures 계약(`FileMetaRepositoryPortContract`, `SampleRepositoryPortContract`, `UserRepositoryPortContract`)을 상속받아 `@DataJpaTest` 환경에서 실제 H2 DB를 대상으로 어댑터 계약을 실증합니다.
 - **테스트 분리 정책**: 기본 `./gradlew build` 및 `./gradlew test`에서는 H2 In-Memory DB로 어댑터를 검증하며, 실제 PostgreSQL DB 연결이 필요한 `livePostgresTest` 태스크는 기본 빌드 실행에서 제외되어 선택적으로만 수행됩니다.
@@ -684,6 +684,7 @@ cc.midolog.storage.jpa
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`
 - **JPA**: `spring-boot-starter-data-jpa`
+- **QueryDSL (7.6)**: `io.github.openfeign.querydsl:querydsl-jpa:7.6` (`implementation`), `io.github.openfeign.querydsl:querydsl-apt:7.6:jakarta` (`kapt`)
 - **Database**: `org.postgresql:postgresql` (runtimeOnly)
 - **라이브러리**: `kotlinx-coroutines-core`
 - **Test**: `testFixtures(project(':core:domain'))`, `spring-boot-starter-data-jpa-test`, `spring-boot-starter-flyway`, `com.h2database:h2`(testRuntimeOnly), `flyway-database-postgresql`(testRuntimeOnly)
@@ -692,6 +693,53 @@ cc.midolog.storage.jpa
 ```groovy
 plugins {
     id 'cc.midolog.jpa-dsl'
+    id 'org.jetbrains.kotlin.plugin.spring'
+    id 'org.jetbrains.kotlin.plugin.jpa'
+    id 'org.jetbrains.kotlin.kapt'
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.6"
+    }
+}
+
+dependencies {
+    implementation project(':core:domain')
+    implementation project(':support:util')
+
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
+    implementation 'io.github.openfeign.querydsl:querydsl-jpa:7.6'
+    kapt 'io.github.openfeign.querydsl:querydsl-apt:7.6:jakarta'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation testFixtures(project(':core:domain'))
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-flyway'
+    testRuntimeOnly 'com.h2database:h2'
+    testRuntimeOnly 'org.flywaydb:flyway-database-postgresql'
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'live-postgres'
+    }
+    systemProperty "queryDsl.generatedSourceDir", layout.buildDirectory.dir("generated/source/kapt/main").get().asFile.absolutePath
+}
+
+tasks.register('livePostgresTest', Test) {
+    group = 'verification'
+    description = 'Runs generated JPA mapping smoke tests against a live PostgreSQL database.'
+
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    shouldRunAfter tasks.named('test')
+
+    useJUnitPlatform {
+        includeTags 'live-postgres'
+    }
 }
 
 jpaDsl {
@@ -771,28 +819,28 @@ jpaDsl {
     }
 }
 
-dependencies {
-    implementation project(':core:domain')
-    implementation project(':support:util')
-
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
-    runtimeOnly 'org.postgresql:postgresql'
-
-    testImplementation testFixtures(project(':core:domain'))
-    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
-    testImplementation 'org.springframework.boot:spring-boot-starter-flyway'
-    testRuntimeOnly 'com.h2database:h2'
-    testRuntimeOnly 'org.flywaydb:flyway-database-postgresql'
+afterEvaluate {
+    tasks.named('kaptGenerateStubsKotlin') {
+        dependsOn('generateJpaDslSources')
+    }
 }
 ```
 
-### JPA DSL 요약
+### JPA DSL 및 QueryDSL 빌드 체인 요약
 
-JPA DSL은 `core:domain`의 어노테이션 없는 순수 data class를 읽어 JPA Entity, Spring Data Repository, Domain Mapper 소스코드를 build 디렉터리에 자동 생성합니다. 스칼라 매핑, ENUM 전략, 커스텀 컨버터, 부모-자식 관계(`manyToOne`, `oneToMany`)를 선언할 수 있으며, 지원하지 않는 DSL 선언은 컴파일 전에 검증 태스크에서 차단됩니다. 상세 명세와 PostgreSQL 실환경 스모크 테스트 가이드는 [storage/jpa/README.md](../storage/jpa/README.md)를 참고하십시오.
+1. **JPA DSL (Kotlin 소스 생성)**:
+   - `core:domain`의 어노테이션 없는 순수 data class를 읽어 JPA Entity(`*JpaEntity`), Spring Data Repository(`*JpaRepository`), Domain Mapper(`*JpaMapper`) Kotlin 소스코드를 `build/generated/sources/jpaDsl/main/kotlin` 디렉터리에 자동 생성합니다 (`generateJpaDslSources` 태스크).
+   - 스칼라 매핑, ENUM 전략, 커스텀 컨버터, 부모-자식 관계(`manyToOne`, `oneToMany`)를 선언할 수 있으며, 지원하지 않는 DSL 선언은 컴파일 전에 `validateJpaDslGeneratorNegativeCases` 태스크에서 차단됩니다.
+
+2. **QueryDSL 7.6 및 kapt (Q-Type Java 소스 생성)**:
+   - OpenFeign QueryDSL `7.6`(`querydsl-jpa`)과 kapt(`querydsl-apt:7.6:jakarta`)를 사용하여 타입 안전한 쿼리 빌더를 지원합니다.
+   - 빌드/컴파일 파이프라인 태스크 체인은 `generateJpaDslSources → kaptGenerateStubsKotlin → kaptKotlin / compileKotlin` 순으로 연결됩니다 (`storage/jpa/build.gradle`의 `afterEvaluate`에서 `kaptGenerateStubsKotlin.dependsOn('generateJpaDslSources')` 선언).
+   - 생성된 QueryDSL Q-Type Java 클래스들은 `storage/jpa/build/generated/source/kapt/main` 디렉터리에 출력되며, 기존 JPA DSL 생성 Kotlin 소스(`build/generated/sources/jpaDsl/main/kotlin`)와 엄격히 구분됩니다.
+   - **모듈 캡슐화 경계 (`implementation`)**: QueryDSL 라이브러리와 Q-Type은 `storage:jpa` 모듈의 내부 구현 디테일(`implementation`)이며, 외부 모듈(`core`, `gateway`, `client`, `support`)로 절대 노출되지 않습니다. `PersistenceBoundaryTest` 아키텍처 가드가 `com.querydsl` import 유출을 원천 차단합니다.
 
 - **이 모듈의 가드 및 계약 테스트**:
-  - `cc.midolog.storage.jpa.sample.JpaDslGeneratedSourceTest` (JPA DSL 생성 소스코드 검증), `validateJpaDslGeneratorNegativeCases` 태스크.
+  - `cc.midolog.storage.jpa.sample.SelfContainedQueryDslGuardTest` (`storage/jpa/src/main`의 문자열 JPQL `createQuery(` 0건 및 6개 Q 클래스 파일 정확 경로 존재 검증).
+  - `validateJpaDslGeneratorNegativeCases` 태스크 (DSL 부정 케이스 검증).
   - `cc.midolog.storage.jpa.sample.JpaSampleRepositoryPortContractTest` (Sample 포트 계약 H2 실증).
   - `cc.midolog.storage.jpa.user.JpaUserRepositoryPortContractTest` (User 포트 계약 H2 실증).
   - `cc.midolog.storage.jpa.file.JpaFileMetaRepositoryPortContractTest` (FileMeta 포트 계약 H2 실증).
