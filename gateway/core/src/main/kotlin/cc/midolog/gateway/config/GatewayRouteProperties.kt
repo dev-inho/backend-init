@@ -34,7 +34,7 @@ data class GatewayRouteProperties(
 /**
  * 백엔드 애플리케이션 서버를 주기적으로 핑(ping)하여 실패한 타겟을 라우팅 대상에서 제외하는 설정.
  *
- * interval 주기마다 path에 HTTP GET 요청을 보내 2xx 응답이 unhealthyThreshold만큼 연속 실패하면 해당 대상을 제외하며,
+ * interval 주기마다 path에 HTTP GET 요청을 보내며, 2xx 응답은 성공으로, 비 2xx 응답이나 요청 오류는 실패로 간주한다. 실패가 unhealthyThreshold만큼 연속되면 해당 대상을 라우팅에서 제외하며,
  * 제외된 타겟이 다시 healthyThreshold만큼 연속 성공하면 라우팅에 복귀시킨다.
  * 단, 네트워크 연결 실패 등의 즉시 복구 불가능한 에러 시에는 ProxyHandler를 통해 threshold와 무관하게 즉시 unhealthy로 마킹될 수 있다.
  */
