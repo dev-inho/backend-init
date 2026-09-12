@@ -1,6 +1,6 @@
 # 모듈 가이드 (Module Guide)
 
-Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 14개 모듈 및 build-logic 빌드 도구별 책임, 패키지 구조, 의존성 정의 가이드.
+Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 15개 모듈 및 build-logic 빌드 도구별 책임, 패키지 구조, 의존성 정의 가이드.
 
 ---
 
@@ -17,11 +17,12 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 14개 �
    - [8. client:storage-file](#8-clientstorage-file)
    - [9. storage:mybatis](#9-storagemybatis)
    - [10. storage:jpa](#10-storagejpa)
-   - [11. support:util](#11-supportutil)
-   - [12. support:logging](#12-supportlogging)
-   - [13. support:web](#13-supportweb)
-   - [14. support:jwt](#14-supportjwt)
-   - [15. build-logic](#15-build-logic)
+   - [11. storage:file-local](#11-storagefile-local)
+   - [12. support:util](#12-supportutil)
+   - [13. support:logging](#13-supportlogging)
+   - [14. support:web](#14-supportweb)
+   - [15. support:jwt](#15-supportjwt)
+   - [16. build-logic](#16-build-logic)
 3. [헥사고날 의존 규칙](#헥사고날-의존-규칙)
 4. [설정 파일 (settings.gradle)](#설정-파일)
 5. [관련 문서](#관련-문서)
@@ -32,16 +33,17 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 14개 �
 
 | 계층 | 모듈 | 책임 | 주요 의존성 |
 |------|------|------|----------|
-| **Core Application** | `core:application` | 웹 컨트롤러 + 비즈니스 서비스 + 공통 설정 | `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`, `client:storage-file`(runtime), `storage:mybatis`(runtime), `storage:jpa`(runtime), `webflux`, `security`, `data-redis-reactive`, `actuator`, `validation`, `flyway` |
+| **Core Application** | `core:application` | 웹 컨트롤러 + 비즈니스 서비스 + 공통 설정 | `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`, `client:storage-file`(runtime), `storage:mybatis`(runtime), `storage:jpa`(runtime), `storage:file-local`(runtime), `webflux`, `security`, `data-redis-reactive`, `actuator`, `validation`, `flyway` |
 | **Core Batch** | `core:batch` | 배치/스케줄 작업 부트스트랩 | `support:logging`, `spring-boot-starter-batch`, `spring-boot-starter-jdbc`, `postgresql`(runtime), `jackson-module-kotlin` |
 | **Gateway Core** | `gateway:core` | WebFilter + 라우팅 + 프록시 + 관측성 핵심 로직 | `support:logging`, `support:util`, `support:web`, `support:jwt`, `webflux`, `data-redis-reactive`, `jackson-module-kotlin` |
 | **Gateway Autoconfigure** | `gateway:autoconfigure` | `gateway.mode` 기반 자동 설정 및 조건부 빈 등록 | `gateway:core`, `spring-boot-autoconfigure`, `webflux`, `data-redis-reactive` |
 | **Gateway Starter** | `gateway:starter` | 게이트웨이 탑재용 스타터 라이브러리 (core + autoconfigure) | `gateway:core`(api), `gateway:autoconfigure`(api), `webflux`(api), `data-redis-reactive`(api) |
 | **Gateway App** | `gateway:app` | 독립 실행형 API 게이트웨이 부트 애플리케이션 (포트 8080) | `gateway:starter`, `support:logging` |
 | **Core Domain** | `core:domain` | 순수 Kotlin 도메인 모델 + 포트 인터페이스 | 없음 (외부 라이브러리 및 프레임워크 비의존 순수 Kotlin) |
-| **Client Storage File** | `client:storage-file` | 로컬 파일 저장 어댑터 | `core:domain`, `webflux`, `kotlinx-coroutines-reactor` |
+| **Client Storage File** | `client:storage-file` | 로컬 파일 저장 어댑터 (레거시 `@Deprecated`) | `core:domain`, `webflux`, `kotlinx-coroutines-reactor` |
 | **Storage MyBatis** | `storage:mybatis` | MyBatis + PostgreSQL 저장소 구현 | `core:domain`, `support:util`, `mybatis-spring-boot-starter:4.0.1`, `postgresql`(runtime), `jackson-module-kotlin` |
 | **Storage JPA** | `storage:jpa` | Spring Data JPA + PostgreSQL 저장소 구현 | `core:domain`, `support:util`, `spring-boot-starter-data-jpa`, `postgresql`(runtime), `cc.midolog.jpa-dsl`(plugin) |
+| **Storage File Local** | `storage:file-local` | 로컬 파일 시스템 저장 어댑터 및 Spring Boot 4 자동 설정 | `core:domain`, `support:util`, `spring-boot-starter`, `kotlinx-coroutines-core` |
 | **Support Util** | `support:util` | 순수 Kotlin 유틸 (IdGenerator, 확장함수, 유효성 검증 등) | 없음 (순수 Kotlin) |
 | **Support Logging** | `support:logging` | 로깅 설정 (logback-classic, logback-spring.xml, Reactor MDC) | `support:util`, `logback-classic`, `reactor-core`, `logstash-logback-encoder:8.0` |
 | **Support Web** | `support:web` | 공통 WebFlux 필터, API 응답 봉투, 전역 예외 처리 | `support:logging`, `support:util`, `webflux` |
@@ -60,6 +62,7 @@ cc.midolog
 ├── ApplicationServer.kt
 ├── business
 │   └── service
+│       ├── FileService.kt
 │       ├── SampleService.kt
 │       └── UserService.kt
 ├── common
@@ -72,6 +75,11 @@ cc.midolog
 └── web
     ├── auth
     │   └── AuthController.kt
+    ├── file
+    │   ├── FileController.kt
+    │   ├── WebFluxChunkBridge.kt
+    │   └── dto
+    │       └── FileResponse.kt
     ├── sample
     │   ├── SampleController.kt
     │   ├── SampleStreamController.kt
@@ -87,9 +95,19 @@ cc.midolog
 
 **부트 클래스**: `cc.midolog.ApplicationServer`
 
+**제공 API**:
+- **인증**: `POST /api/auth/token`
+- **Sample**: `GET /api/sample/ping`, `GET /api/sample/{id}`, `POST /api/sample`
+- **User**: `POST /api/user`, `GET /api/user/{id}`
+- **File**:
+  - `POST /api/files`: 멀티파트 파일 업로드 (`HttpStatus.CREATED` 201, `ApiResponse<FileResponse>`). 크기 초과 시 413 Payload Too Large, 허용되지 않는 미디어 타입 시 415 Unsupported Media Type.
+  - `GET /api/files/{id}`: 파일 메타데이터 조회 (`ApiResponse<FileResponse>`).
+  - `GET /api/files/{id}/content`: 파일 스트리밍 다운로드 (`ResponseEntity<Flux<DataBuffer>>`, 청크 버퍼 기반 논블로킹 스트리밍).
+  - `DELETE /api/files/{id}`: 파일 및 메타데이터 삭제 (`ApiResponse<Unit>`).
+
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`
-- `runtimeOnly`: `client:storage-file`, `storage:mybatis`, `storage:jpa`, `org.flywaydb:flyway-database-postgresql`
+- `runtimeOnly`: `client:storage-file`, `storage:mybatis`, `storage:jpa`, `storage:file-local`, `org.flywaydb:flyway-database-postgresql`
 - **Spring Boot**: `webflux`, `security`, `data-redis-reactive`, `actuator`, `validation`, `flyway`
 - **라이브러리**: `reactor-kotlin-extensions`, `kotlinx-coroutines-reactor`, `tools.jackson.module:jackson-module-kotlin`
 
@@ -105,6 +123,7 @@ dependencies {
     runtimeOnly project(':client:storage-file')
     runtimeOnly project(':storage:mybatis')
     runtimeOnly project(':storage:jpa')
+    runtimeOnly project(':storage:file-local')
 
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'io.projectreactor.kotlin:reactor-kotlin-extensions'
@@ -126,7 +145,9 @@ dependencies {
 }
 ```
 
-- **이 모듈의 가드**: `cc.midolog.web.ControllerResponseTypeTest` (컨트롤러 반환 타입이 도메인 모델을 직접 노출하지 않고 `ApiResponse` 봉투 규약을 준수하는지 검증).
+- **이 모듈의 가드**:
+  - `cc.midolog.web.ControllerResponseTypeTest` (컨트롤러 반환 타입이 도메인 모델을 직접 노출하지 않고 `ApiResponse` 봉투 규약을 준수하는지 검증).
+  - `cc.midolog.storage.FileStorageIntegrationTest` (호스트 scanBasePackages = ["cc.midolog"]와 `FileStorageAutoConfiguration`이 함께 로드될 때 레거시 빈 `localFileStorageAdapter`와 신규 자동 설정 빈 `fileLocalStorageAdapter`의 이름 충돌 없이 두 `FileStoragePort`가 공존함을 가드).
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#3 `SampleService.findPair`, #4 `SampleController.echo`, #5 `SampleStreamController.stream`, #20 `CreateSampleRequest`).
 
 ---
@@ -407,6 +428,20 @@ dependencies {
 **패키지 구조**:
 ```
 cc.midolog
+├── file
+│   ├── model
+│   │   ├── FileMeta.kt
+│   │   ├── FileStatus.kt
+│   │   ├── PresignedRequest.kt
+│   │   └── StoredFile.kt
+│   └── port
+│       ├── repository
+│       │   └── FileMetaRepositoryPort.kt
+│       └── storage
+│           ├── ChunkReader.kt
+│           ├── ChunkWriter.kt
+│           ├── FilePresignPort.kt
+│           └── FileStoragePort.kt
 ├── jpadsl.fixture
 │   ├── RelationChild.kt
 │   ├── RelationParent.kt
@@ -429,6 +464,16 @@ cc.midolog
             └── UserRepositoryPort.kt
 ```
 
+**도메인 모델 및 포트 계약**:
+- **`StoredFile` vs `FileMeta` 구분**:
+  - `StoredFile`: 스토리지 I/O(저장 완료) 결과 및 확정된 파일 속성(`id`, `ownerId`, `storageKey`, `sizeBytes`, `contentType`, `checksum`, `status`)을 담는 값객체(Value Object).
+  - `FileMeta`: 파일의 생명주기 전체를 추적하는 DB 영속 메타데이터 모델. 업로드 대기(`PENDING`) 상태에서는 크기, 컨텐츠 타입, 체크섬이 미확정(nullable)이며, 만료 추적을 위한 시간 속성(`createdAt`, `updatedAt`)을 포함한다.
+- **포트 계약**:
+  - `FileStoragePort` (`cc.midolog.file.port.storage`): 청크 기반 비동기 스트리밍 저장(`store`), 읽기 청크 리더 반환(`load`), 멱등 삭제(`delete`), 존재 확인(`exists`)을 정의.
+  - `FileMetaRepositoryPort` (`cc.midolog.file.port.repository`): 식별자 조회(`findById`), 저장/갱신(`save`), 상태 변경(`updateStatus`), 만료 대기 건 일괄 조회를 위한 **cutoff+limit 계약**(`findExpiredPending(cutoff, limit)`)을 정의.
+- **레거시 포트 호환**:
+  - `cc.midolog.sample.port.file.FileStoragePort`: `@Deprecated` 처리되어 신규 포트(`cc.midolog.file.port.storage.FileStoragePort`)로 대체되었으나, 기존 어댑터와의 하위 호환성을 위해 심볼을 유지한다.
+
 **주요 의존성**:
 - 없음 (프레임워크 비의존 순수 Kotlin 모듈)
 
@@ -440,18 +485,24 @@ dependencies {
 ```
 
 - **이 모듈의 가드**: `cc.midolog.sample.DomainPurityTest` (도메인 소스 내 Spring, JPA, MyBatis, 어노테이션 등이 들어가지 않도록 검증하는 순수성 가드).
-- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#1 `FileStoragePort`).
+- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#1 레거시 `FileStoragePort`).
 
 ---
 
 ### 8. client:storage-file
-**책임**: 로컬 파일 저장 어댑터. `core:domain`의 `FileStoragePort` 포트 구현.
+**책임**: 구버전 로컬 파일 저장 어댑터 (`@Deprecated`). 구 `cc.midolog.sample.port.file.FileStoragePort` 포트 구현체.
+
+신규 파일 저장소 표준 구현은 `storage:file-local`로 대체되었으며, 하위 호환성을 위해 유지됩니다.
 
 **패키지 구조**:
 ```
 cc.midolog.client.storage
 └── LocalFileStorageAdapter.kt
 ```
+
+**빈 등록 및 공존 정책**:
+- `@Component`로 선언되어 Spring의 기본 빈 명명 규칙에 따라 `localFileStorageAdapter` 이름으로 등록됩니다.
+- 신규 자동 설정 모듈(`storage:file-local`)의 `@Bean("fileLocalStorageAdapter")`와 빈 이름이 서로 다르므로 충돌 없이 공존하며, `core:application`의 `FileStorageIntegrationTest`가 두 포트 구현체의 정상 등록을 가드합니다.
 
 **주요 의존성**:
 - `implementation`: `core:domain`
@@ -481,6 +532,9 @@ dependencies {
 cc.midolog.storage.mybatis
 ├── config
 │   └── MyBatisStorageConfig.kt
+├── file
+│   ├── FileMetaMapper.kt
+│   └── MyBatisFileMetaRepositoryAdapter.kt
 ├── sample
 │   ├── MyBatisSampleRepositoryAdapter.kt
 │   └── SampleMapper.kt
@@ -489,11 +543,17 @@ cc.midolog.storage.mybatis
     └── UserMapper.kt
 
 resources/mapper/
+├── file
+│   └── FileMetaMapper.xml
 ├── sample
 │   └── SampleMapper.xml
 └── user
     └── UserMapper.xml
 ```
+
+**File 도메인 지원**:
+- `MyBatisFileMetaRepositoryAdapter`: `core:domain`의 `FileMetaRepositoryPort` 구현체. V2 Flyway 마이그레이션(`V2__create_file_meta.sql`)으로 생성된 `file_meta` 테이블을 대상으로 `upsert`, `selectById`, `updateStatus`를 처리합니다.
+- **cutoff+limit 계약 준수**: `findExpiredPending(cutoff, limit)` 메서드를 통해 PENDING 상태이면서 cutoff 시각 이전에 갱신된 만료 레코드를 `limit` 건수만큼 정렬 조회합니다.
 
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`
@@ -516,7 +576,7 @@ dependencies {
 }
 ```
 
-- **이 모듈의 가드**: `cc.midolog.storage.mybatis.config.MyBatisStorageConfigTest` (`@MapperScan`이 `sample`과 `user` 패키지를 포함하는지 검증).
+- **이 모듈의 가드**: `cc.midolog.storage.mybatis.config.MyBatisStorageConfigTest` (`@MapperScan`이 `sample`, `user`, `file` 패키지를 포함하는지 검증).
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#12 `UserMapper.xml` SQL 별칭 중복).
 
 ---
@@ -530,6 +590,9 @@ dependencies {
 cc.midolog.storage.jpa
 ├── config
 │   └── JpaStorageConfig.kt
+├── file
+│   ├── FileMetaJpaRepository.kt
+│   └── JpaFileMetaRepositoryAdapter.kt
 ├── sample
 │   ├── JpaSampleRepositoryAdapter.kt
 │   └── ScalarSampleCodeJpaConverter.kt
@@ -537,7 +600,12 @@ cc.midolog.storage.jpa
     └── JpaUserRepositoryAdapter.kt
 ```
 
-※ `SampleJpaEntity`, `UserJpaEntity` 같은 entity/repository/mapper 타입은 `generateJpaDslSources` task가 build directory에 생성한다.
+※ `SampleJpaEntity`, `UserJpaEntity`, `FileMetaJpaEntity` 같은 entity/repository/mapper 타입은 `generateJpaDslSources` task가 build directory에 생성한다.
+
+**File 도메인 지원 및 livePostgresTest 격리**:
+- `JpaFileMetaRepositoryAdapter`: `FileMetaRepositoryPort` 포트 구현체로, blocking JPA 호출을 `Dispatchers.IO` 및 `TransactionOperations` 경계 내에서 안전하게 실행합니다.
+- `FileMetaRepositoryPort`의 cutoff+limit 계약(`findExpiredPending(cutoff, limit)`)을 `entityManager` 쿼리 파라미터(`setMaxResults(limit)`)를 통해 구현합니다.
+- **테스트 분리 정책**: 기본 `./gradlew build` 및 `./gradlew test`에서는 H2 In-Memory DB로 어댑터를 검증하며, 실제 PostgreSQL DB 연결이 필요한 `livePostgresTest` 태스크는 기본 빌드 실행에서 제외되어 선택적으로만 수행됩니다.
 
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`
@@ -565,6 +633,19 @@ jpaDsl {
         field('displayName') {
             column = 'display_name'
         }
+    }
+
+    entity('cc.midolog.file.model.FileMeta') {
+        table = 'file_meta'
+        id = 'id'
+        field('ownerId') { column = 'owner_id' }
+        field('storageKey') { column = 'storage_key' }
+        field('status') { enumStrategy = 'STRING' }
+        field('sizeBytes') { column = 'size_bytes'; nullable = true }
+        field('contentType') { column = 'content_type'; nullable = true }
+        field('checksum') { nullable = true }
+        field('createdAt') { column = 'created_at' }
+        field('updatedAt') { column = 'updated_at' }
     }
 
     entity('cc.midolog.jpadsl.fixture.ScalarSample') {
@@ -640,7 +721,62 @@ JPA DSL은 `core:domain`의 어노테이션 없는 순수 data class를 읽어 J
 
 ---
 
-### 11. support:util
+### 11. storage:file-local
+**책임**: 로컬 파일 시스템 기반의 파일 영속 저장소 어댑터 및 Spring Boot 4 표준 자동 설정. `core:domain`의 `cc.midolog.file.port.storage.FileStoragePort` 포트를 구현합니다.
+
+**패키지 구조**:
+```
+cc.midolog.storage.file
+├── autoconfigure
+│   ├── FileStorageAutoConfiguration.kt
+│   ├── FileStorageProperties.kt
+│   └── FileStoragePropertiesValidator.kt
+└── local
+    └── LocalFileStorageAdapter.kt
+
+resources/META-INF/spring/
+└── org.springframework.boot.autoconfigure.AutoConfiguration.imports
+```
+
+**자동 설정 및 빈 등록**:
+- **AutoConfiguration.imports 표준 채택**: `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`에 `cc.midolog.storage.file.autoconfigure.FileStorageAutoConfiguration`을 선언하여 Spring Boot 4 표준 방식으로 자동 등록합니다.
+- **충돌 방지 빈 명명 규칙**: 레거시 `client:storage-file`의 `@Component` 기본 빈 이름(`localFileStorageAdapter`)과 충돌을 방지하기 위해 `@Bean("fileLocalStorageAdapter")`로 명시적 이름을 부여하여 컨텍스트 내 공존을 보장합니다.
+- **조건부 등록**: `@ConditionalOnProperty(name = ["storage.file.provider"], havingValue = "local")`를 통해 `storage.file.provider=local`일 때만 어댑터 빈을 등록합니다.
+
+**설정 프로퍼티 및 Fail-Fast 유효성 검증 (`FileStoragePropertiesValidator`)**:
+애플리케이션 기동 시 `InitializingBean.afterPropertiesSet()`에서 필수 프로퍼티를 엄격히 검증하여 부적합 시 즉시 `IllegalStateException`으로 fail-fast합니다:
+- `storage.file.provider`: 필수값이며 반드시 `"local"`이어야 함 (누락 또는 오타 시 기동 실패).
+- `storage.file.local.root-dir`: 필수값이며 반드시 **절대 경로**여야 함 (누락 또는 상대 경로 시 기동 실패).
+- `storage.file.max-size-bytes`: 0보다 커야 함 (기본값: `10485760`, 즉 10MB).
+- `storage.file.allowed-content-types`: 허용 MIME 타입 목록 (기본값: 빈 목록 = 전체 허용).
+
+**주요 의존성**:
+- `implementation project(':core:domain')`
+- `implementation project(':support:util')`
+- `implementation 'org.springframework.boot:spring-boot-starter'`
+- `implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'`
+
+**build.gradle 예시**:
+```groovy
+dependencies {
+    implementation project(':core:domain')
+    implementation project(':support:util')
+
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test'
+}
+```
+
+- **이 모듈의 가드**:
+  - `cc.midolog.storage.file.autoconfigure.FileStorageAutoConfigurationTest` (provider 누락/오타 fail-fast, 상대경로 root-dir fail-fast, max-size-bytes fail-fast, imports 파일 무결성, 컴포넌트 스캔 중복 시 단일 빈 보장, 레거시 빈 `localFileStorageAdapter` 공존 검증).
+  - `cc.midolog.storage.file.local.LocalFileStorageAdapterTest` (로컬 FS 저장, 청크 스트리밍 읽기, 멱등 삭제, 파일 존재 확인 기능 검증).
+
+---
+
+### 12. support:util
 **책임**: 순수 Kotlin 유틸리티. IdGenerator, 시간 제공자, 확장함수, 유효성 검증, 페이징/결과/재시도 헬퍼.
 
 **패키지 구조**:
@@ -680,46 +816,40 @@ dependencies {
 
 ---
 
-### 12. support:logging
-**책임**: 로깅 공통 설정 및 컨텍스트 전파. logback-spring.xml, Reactor Context MDC 전파, 민감정보 마스킹 로깅.
+### 13. support:logging
+**책임**: 로깅 설정 및 MDC 컨텍스트 전파 헬퍼. Logback XML 구성, 콘솔/JSON 인코더, Reactor 파이프라인 MDC 연동.
 
 **패키지 구조**:
 ```
 cc.midolog.logging
-├── LoggingMdc.kt
-├── MaskingMessageConverter.kt
-├── MaskingSupport.kt
+├── MaskingPatternLayout.kt
 └── ReactorMdc.kt
-
-resources/
-└── logback-spring.xml
 ```
 
 **주요 의존성**:
 - `implementation`: `support:util`
-- **Logback**: `ch.qos.logback:logback-classic`
+- **로깅**: `ch.qos.logback:logback-classic:1.5.18`, `net.logstash.logback:logstash-logback-encoder:8.0`
 - **Reactor**: `io.projectreactor:reactor-core`
-- **Logstash**: `net.logstash.logback:logstash-logback-encoder:8.0`
 
 **build.gradle 예시**:
 ```groovy
 dependencies {
     implementation project(':support:util')
 
-    implementation 'ch.qos.logback:logback-classic'
-    implementation 'io.projectreactor:reactor-core'
+    implementation 'ch.qos.logback:logback-classic:1.5.18'
     implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
+    implementation 'io.projectreactor:reactor-core'
 
     testImplementation 'io.projectreactor:reactor-test'
 }
 ```
 
-- **이 모듈의 가드**: `cc.midolog.logging.MaskingLoggingTest`, `cc.midolog.logging.ReactorMdcTest` (민감정보 마스킹 및 리액티브 MDC 전파 가드).
+- **이 모듈의 가드**: `cc.midolog.logging.ReactorMdcTest`, `cc.midolog.logging.MaskingLoggingTest`.
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md).
 
 ---
 
-### 13. support:web
+### 14. support:web
 **책임**: 공통 WebFlux 필터, 표준 API 응답 봉투, 전역 예외 처리 핸들러.
 
 **패키지 구조**:
@@ -806,7 +936,7 @@ dependencies {
 
 ---
 
-### 14. support:jwt
+### 15. support:jwt
 **책임**: JJWT(Java JWT) 라이브러리 의존성을 단일 모듈로 격리하고, JWT 토큰 발급 및 서명 검증/파싱 기능을 담당하는 `JwtCodec` 제공.
 
 **패키지 구조**:
@@ -827,10 +957,6 @@ cc.midolog.jwt
 
 **build.gradle 예시**:
 ```groovy
-plugins {
-    id 'java-library'
-}
-
 dependencies {
     api project(':support:util')
     api 'io.jsonwebtoken:jjwt-api:0.12.6'
@@ -844,7 +970,7 @@ dependencies {
 
 ---
 
-### 15. build-logic
+### 16. build-logic
 **책임**: 내부 Gradle 플러그인(`cc.midolog.jpa-dsl`) 및 스키마 마이그레이션 도구 빌드 로직 제공.
 
 **주요 태스크 (6개)**:
@@ -906,7 +1032,8 @@ core:application ──→ core:domain
     ▼                    │ (implements port)
 client:storage-file ─────┤
 storage:mybatis ─────────┤
-storage:jpa ─────────────┘
+storage:jpa ─────────────┤
+storage:file-local ──────┘
 ```
 
 **핵심 규칙**:
@@ -943,6 +1070,7 @@ include 'client:storage-file'
 // storage
 include 'storage:mybatis'
 include 'storage:jpa'
+include 'storage:file-local'
 
 // support
 include 'support:util'
@@ -954,7 +1082,7 @@ include 'support:jwt'
 ### 빌드 순서
 1. `support:util` (외부 의존성 없음)
 2. `core:domain`, `support:logging`, `support:jwt` (`support:util` 의존 / 도메인은 의존성 0)
-3. `support:web`, `client:storage-file`, `storage:mybatis`, `storage:jpa` (`support:*`, `core:domain` 의존)
+3. `support:web`, `client:storage-file`, `storage:mybatis`, `storage:jpa`, `storage:file-local` (`support:*`, `core:domain` 의존)
 4. `gateway:core` (`support:web`, `support:jwt`, `support:logging`, `support:util` 의존)
 5. `gateway:autoconfigure` (`gateway:core` 의존)
 6. `gateway:starter` (`gateway:core`, `gateway:autoconfigure` 의존)

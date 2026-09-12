@@ -16,7 +16,7 @@
 
 | Package | Path | Description | Dependencies |
 |---------|------|-------------|-------------|
-| core:application | core/application | 비즈니스 애플리케이션 부트스트랩 | core:domain, support:util, support:logging, support:web, support:jwt (runtimeOnly: client:storage-file, storage:mybatis, storage:jpa) |
+| core:application | core/application | 비즈니스 애플리케이션 부트스트랩 | core:domain, support:util, support:logging, support:web, support:jwt (runtimeOnly: client:storage-file, storage:mybatis, storage:jpa, storage:file-local) |
 | core:batch | core/batch | 배치/스케줄 작업 | support:logging |
 | gateway:core | gateway/core | 게이트웨이 코어 필터, 라우팅, 프록시, 관측성 | support:logging, support:util, support:web, support:jwt |
 | gateway:autoconfigure | gateway/autoconfigure | gateway.mode 기반 자동 설정 및 조건부 빈 등록 | gateway:core |
@@ -26,6 +26,7 @@
 | client:storage-file | client/storage-file | 외부 로컬 파일 저장소 연동 | core:domain |
 | storage:mybatis | storage/mybatis | MyBatis 데이터 접근 계층 | core:domain, support:util |
 | storage:jpa | storage/jpa | Spring Data JPA 데이터 접근 계층 | core:domain, support:util |
+| storage:file-local | storage/file-local | 로컬 파일 시스템 저장 어댑터 및 자동 설정 | core:domain, support:util |
 | support:util | support/util | 공유 유틸리티 및 순수 Kotlin 헬퍼 | - |
 | support:logging | support/logging | 통합 로깅 및 마스킹 | support:util |
 | support:web | support/web | 공통 WebFlux 필터, API 응답, 예외 처리 | support:logging, support:util |
@@ -52,7 +53,7 @@ SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:bootRun
 ## Build Order
 1. `support:util`
 2. `core:domain`, `support:logging`, `support:jwt`
-3. `support:web`, `client:storage-file`, `storage:mybatis`, `storage:jpa`
+3. `support:web`, `client:storage-file`, `storage:mybatis`, `storage:jpa`, `storage:file-local`
 4. `gateway:core`
 5. `gateway:autoconfigure`
 6. `gateway:starter`
@@ -85,6 +86,7 @@ backend-init/
 ├── client/
 │   └── storage-file/
 ├── storage/
+│   ├── file-local/
 │   ├── jpa/
 │   └── mybatis/
 └── support/
@@ -104,6 +106,7 @@ backend-init/
 - **도메인 순수성 유지**: `core:domain`은 프레임워크 비의존 순수 Kotlin으로 유지하며 Spring/JPA/MyBatis 어노테이션 및 패키지 토큰을 일절 포함하지 않는다 (`DomainPurityTest` 가드)
 - **게이트웨이 설정 의존 방향**: `cc.midolog.gateway.config` 패키지는 하위 프록시/라우트 패키지(`gateway.proxy`, `gateway.route` 등)를 역방향으로 참조하지 않는다 (`GatewayPackageDependencyTest` 가드)
 - **컨트롤러 응답 DTO 분리**: `cc.midolog.web`의 컨트롤러는 도메인 엔티티를 ApiResponse에 직접 반환하지 않고 전용 응답 DTO(`*Response`)를 사용한다 (`ControllerResponseTypeTest` 가드)
+- **파일 저장소 빈 공존 및 호환 가드**: 자동 설정 빈 `fileLocalStorageAdapter`(`storage:file-local`)와 레거시 빈 `localFileStorageAdapter`(`client:storage-file`)가 빈 이름 충돌 없이 공존하며 두 `FileStoragePort`가 정상 등록된다 (`FileStorageIntegrationTest` 가드)
 - **KDoc 문체**: 한국어 산문형으로 목적과 제약/이유를 서술하며 Javadoc 태그(`@param` 등) 및 코드 재서술을 금지한다 (상세: [docs/CODE_CONVENTIONS.md](docs/CODE_CONVENTIONS.md) 참조)
 
 ## Goals

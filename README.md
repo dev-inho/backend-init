@@ -11,7 +11,7 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 - **게이트웨이 분기**: 클라이언트 요청을 게이트웨이(`gateway:app`)에서 받아 비즈니스 서버(`core:application`)로 라우팅
 - **헥사고날 아키텍처**: Ports & Adapters 패턴으로 비즈니스 로직과 인프라를 분리
 - **트랜잭션 ID 관리**: 모든 요청에 `X-Request-Id`를 부여하여 분산 환경에서 추적 가능
-- **멀티모듈 구조**: 14개 모듈로 기능을 명확히 분리
+- **멀티모듈 구조**: 15개 모듈로 기능을 명확히 분리
 - **반응형 스택**: WebFlux + Kotlin 코루틴으로 고성능 비동기 처리
 
 ---
@@ -32,7 +32,7 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 
 ## 모듈 구조
 
-프로젝트는 5개 범주(core, gateway, client, storage, support)의 14개 모듈로 구성됩니다.
+프로젝트는 5개 범주(core, gateway, client, storage, support)의 15개 모듈로 구성됩니다.
 
 ### 모듈 개요
 
@@ -45,9 +45,10 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 | **gateway:autoconfigure** | `gateway.mode` 기반 Spring Boot 자동 설정 및 조건부 빈 등록 |
 | **gateway:starter** | 게이트웨이 탑재용 스타터 라이브러리 (core + autoconfigure) |
 | **gateway:app** | 독립 실행형 Spring Boot 게이트웨이 서비스 (포트 8080) |
-| **client:storage-file** | 파일 저장소 클라이언트 (Ports 적응자) |
+| **client:storage-file** | 파일 저장소 클라이언트 (레거시 Ports 적응자, `@Deprecated`) |
 | **storage:mybatis** | MyBatis 데이터 접근 계층 (Adapters) |
 | **storage:jpa** | Spring Data JPA 데이터 접근 계층 (Adapters) |
+| **storage:file-local** | 로컬 파일 시스템 저장소 어댑터 및 자동 설정 (Fail-fast 검증) |
 | **support:util** | 공유 유틸리티 및 헬퍼 함수 |
 | **support:logging** | 통합 로깅 및 모니터링 |
 | **support:web** | 공통 WebFlux 필터, API 응답, 예외 처리 |
@@ -104,6 +105,7 @@ backend-init/
 ├── client/
 │   └── storage-file/
 ├── storage/
+│   ├── file-local/
 │   ├── mybatis/
 │   └── jpa/
 └── support/
@@ -214,7 +216,7 @@ CI는 의존성·시크릿 스캔만 돌린다(`.github/workflows/security.yml`)
 설계 및 운영 관련 상세 문서는 `docs/` 디렉토리를 참조하세요:
 
 - **[아키텍처](docs/ARCHITECTURE.md)** — 헥사고날 패턴, 의존성 방향, 모듈 간 상호작용 다이어그램
-- **[모듈 가이드](docs/MODULE_GUIDE.md)** — 14개 모듈의 상세 가이드, 책임, 사용 방법
+- **[모듈 가이드](docs/MODULE_GUIDE.md)** — 15개 모듈의 상세 가이드, 책임, 사용 방법
 - **[코드 컨벤션](docs/CODE_CONVENTIONS.md)** — KDoc 문체 원칙, 도메인 금지 토큰, 패키지 규칙, 구조 가드 및 품질 검사 정책
 - **[게이트웨이](docs/GATEWAY.md)** — 게이트웨이 아키텍처, 트랜잭션 ID(X-Request-Id) 관리, 라우팅 규칙
 - **[향후 설계](docs/FUTURE.md)** — 다중 인스턴스 지원, Config 서버, 요청 확인 화면 등 향후 계획
@@ -238,16 +240,17 @@ CI는 의존성·시크릿 스캔만 돌린다(`.github/workflows/security.yml`)
 ## 현재 상태
 
 **검증된 범위**
-- 14개 Gradle 멀티모듈 설정 및 모듈 간 의존성 연결
+- 15개 Gradle 멀티모듈 설정 및 모듈 간 의존성 연결
 - `gateway:core`: JWT 인증 필터, 토큰 발급 엔드포인트(`POST /api/auth/token`)에 대한 IP 기준 rate limit(10회/60초, Redis, fail-open), 프록시(`cc.midolog.gateway.proxy.*`) 및 라우팅, optional 다중 application 라운드로빈, 기본 비활성화 request visibility (요청 ID 필터는 `support:web` 소유 및 호스트 스캔 연계)
 - `gateway:autoconfigure`: `gateway.mode` 프로퍼티 기반 조건부 자동 설정 및 Boot 4 imports 등록
 - `gateway:starter`: `gateway:core` 및 `gateway:autoconfigure`를 통합한 탑재용 스타터 라이브러리
 - `gateway:app`: 독립 실행형 Spring Boot 4 게이트웨이 애플리케이션 (8080 포트)
-- `core:application`: sample API, user 생성/조회 API, 전용 응답 DTO(`*Response`), Redis 캐시 인프라(`cc.midolog.infra.cache.RedisSampleCacheAdapter`), 인증 토큰 발급, SecurityConfig, 예외 응답 처리
+- `core:application`: sample API, user 생성/조회 API, file API 4종(`POST /api/files`, `GET /api/files/{id}`, `GET /api/files/{id}/content` 스트리밍, `DELETE /api/files/{id}`), 전용 응답 DTO(`*Response`), Redis 캐시 인프라(`cc.midolog.infra.cache.RedisSampleCacheAdapter`), 인증 토큰 발급, SecurityConfig, 예외 응답 처리
 - `core:domain`: Spring/JPA/MyBatis annotation 없는 Plain Kotlin domain model/port (`DomainPurityTest` 가드)
-- `storage:mybatis`: `mybatis` profile adapter(`cc.midolog.storage.mybatis.*`), `MyBatis*RepositoryAdapter`, mapper upsert, sample/user profile wiring 테스트
-- `storage:jpa`: `jpa` profile adapter, `Jpa*RepositoryAdapter`, DSL 생성 JPA entity/repository/mapper, JPA 픽스처(`cc.midolog.jpadsl.fixture`), H2 기반 sample/user adapter 테스트
-- `client:storage-file`, `support:*`: 도메인 포트/어댑터, `support:web`(`RequestIdFilter`, `HttpLoggingFilter`), `support:jwt`(`JwtCodec`) 및 공통 유틸리티/웹/로깅 골격
+- `storage:file-local`: Local FS 기반 파일 저장 어댑터(`cc.midolog.storage.file.local.*`), Spring Boot 4 `AutoConfiguration.imports` 기반 자동 설정(`FileStorageAutoConfiguration`), Fail-fast 설정 검증(`storage.file.provider=local`, `storage.file.local.root-dir`, `storage.file.max-size-bytes`), 레거시 빈(`localFileStorageAdapter`)과의 공존 가드(`FileStorageIntegrationTest` 통과)
+- `storage:mybatis`: `mybatis` profile adapter(`cc.midolog.storage.mybatis.*`), `MyBatis*RepositoryAdapter` (Sample/User 및 `MyBatisFileMetaRepositoryAdapter`), mapper upsert, cutoff+limit 계약(`findExpiredPending`), V2 Flyway `file_meta`, sample/user profile wiring 테스트
+- `storage:jpa`: `jpa` profile adapter, `Jpa*RepositoryAdapter` (Sample/User 및 `JpaFileMetaRepositoryAdapter`), DSL 생성 JPA entity/repository/mapper, JPA 픽스처(`cc.midolog.jpadsl.fixture`), H2 기반 sample/user adapter 테스트, live PostgreSQL 분리 검증(`livePostgresTest`)
+- `client:storage-file`, `support:*`: 도메인 포트/어댑터(레거시 `FileStoragePort` 호환 유지), `support:web`(`RequestIdFilter`, `HttpLoggingFilter`), `support:jwt`(`JwtCodec`) 및 공통 유틸리티/웹/로깅 골격
 - `./gradlew build && ./gradlew -p build-logic test` 통과
 
 **backend-init-evolution 완료 범위**
