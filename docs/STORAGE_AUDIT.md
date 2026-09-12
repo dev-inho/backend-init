@@ -12,13 +12,13 @@
 **JPA 어댑터 (Sample/User/FileMeta)**
 * **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/sample/JpaSampleRepositoryAdapter.kt:29`
 * **원문:** `        transactionOperations.execute {`
-* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/sample/JpaSampleRepositoryAdapter.kt:36`
+* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/sample/JpaSampleRepositoryAdapter.kt:41`
 * **원문:** `        } ?: error("JPA sample save transaction returned no result")`
 * **판정:** 양호/결함 혼재
 * **근거:** 블로킹 I/O를 `withContext(Dispatchers.IO)`로 격리하고 코루틴 환경에서 `TransactionOperations.execute`를 통해 트랜잭션을 관리하는 점은 양호하다(모든 JPA 어댑터 공통). 하지만 save 결과가 null일 때 런타임 예외를 던지며, upsert 대신 기본 persist/merge를 수행하므로 MyBatis의 upsert와 동치성이 맞지 않는다.
 
 **MyBatis 어댑터 (Sample/User/FileMeta)**
-* **파일:행:** `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/sample/MyBatisSampleRepositoryAdapter.kt:26`
+* **파일:행:** `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/sample/MyBatisSampleRepositoryAdapter.kt:31`
 * **원문:** `        check(affectedRows == 1) {`
 * **판정:** 양호
 * **근거:** I/O 격리가 되어 있으며, upsert 쿼리를 호출하고 반환된 영향 행 수가 1이 아닐 경우 예외를 던져 동시성 제어 및 무결성을 보장한다.
@@ -28,7 +28,7 @@
 ### 2.1 SELECT 및 UPDATE 상태/조건 쿼리
 * **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:53`
 * **원문:** `                "SELECT e FROM FileMetaJpaEntity e WHERE e.status = :status AND e.updatedAt < :cutoff ORDER BY e.updatedAt ASC",`
-* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:41`
+* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:40`
 * **원문:** `                "UPDATE FileMetaJpaEntity e SET e.status = :status, e.updatedAt = :now WHERE e.id = :id"`
 * **판정:** 결함
 * **근거:** JPA 어댑터는 SELECT/UPDATE 모두 컴파일 타임 검증이 불가능한 문자열 JPQL을 사용하며, LIMIT은 코드 레벨(`query.maxResults`)로 제어한다. 반면 MyBatis는 XML (`FileMetaMapper.xml:61` 등)에서 LIMIT과 정렬을 명시적으로 처리한다. 양쪽 모두 비관적/낙관적 잠금(Lock) 처리는 누락되어 있어 만료 처리 시 동시성 이슈 가능성이 있다.
@@ -42,7 +42,7 @@
 
 ## 4. JPA DSL 생성기 품질 확인
 
-* **파일:행:** `storage/jpa/build/generated/sources/jpaDsl/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaMapper.kt:6`
+* **파일:행:** `storage/jpa/build/generated/sources/jpaDsl/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaMapper.kt:7`
 * **원문:** `        FileMetaJpaEntity(`
 * **파일:행:** `storage/jpa/build/generated/sources/jpaDsl/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaEntity.kt:14`
 * **원문:** `class FileMetaJpaEntity(`
