@@ -117,10 +117,10 @@ cc.midolog
 - **파일 삭제 정합성 보장 (`deleteFile`)**:
   - **스토리지 물리 삭제 선행**: `fileStoragePort.delete(file.storageKey)`를 먼저 호출하여 스토리지의 물리 파일을 삭제합니다.
   - **성공 시 상태 전이**: 스토리지 삭제가 성공(true 반환)한 경우에만 DB 메타데이터를 `DELETED` 상태(`fileMetaRepositoryPort.updateStatus(id, FileStatus.DELETED)`)로 전이합니다.
-  - **실패 시 메타 불변**: 스토리지 삭제가 실패(false 반환 또는 예외 발생)한 경우 `IllegalStateException`을 발생시키며 DB 상태를 전이하지 않고 불변(`READY` 유지)으로 보존하여 메타데이터와 물리 스토리지 간의 정합성 불일치를 방지합니다.
+  - **실패/예외 경로 분리와 메타 불변**: storage delete가 `false`를 반환하면 새 `IllegalStateException`을 발생시키고, storage port 호출 중 예외를 던지면 원 예외가 그대로 전파됩니다. 두 경우 모두 DB 상태를 전이하지 않고 삭제 전 기존 상태로 불변 보존하여 메타데이터와 물리 스토리지 간의 정합성 불일치를 방지합니다.
 
 **고아 파일 정리 서비스 및 스케줄러 (`FileOrphanCleanupService`, `OrphanCleanupScheduler`, `ClockConfig`)**:
-- **배경 및 목적**: 클라이언트 네트워크 단절, 프로세스 강제 종료(kill), OOM(OutOfMemoryError) 등 비정상 중단으로 인해 `PENDING` 상태로 남겨져 스토리지와 DB 공간만 차지하는 고아(orphan) 파일을 주기적으로 감지하여 회수하고 `FAILED` 상태로 정리합니다.
+- **배경 및 목적**: 클라이언트 네트워크 단절, 프로세스 강제 종료(kill), OOM(OutOfMemoryError) 등 비정상 중단으로 인해 스토리지 쓰기 전 중단되어 DB에만 `PENDING` 레코드가 남거나 불완전한 부분 객체가 스토리지에 남겨진 고아(orphan) 파일을 주기적으로 감지하여 회수하고(스토리지 파일이 없는 경우에도 Local delete의 absent=true 멱등 계약으로 안전 처리), `FAILED` 상태로 정리합니다.
 - **`FileOrphanCleanupService` (정리 비즈니스 로직)**:
   - `cleanup(pendingTtl: Duration, batchSize: Int)` 메서드를 통해 동작합니다.
   - `batchSize`는 1 이상이어야 하며, 1 미만일 경우 `require(batchSize >= 1)`로 즉시 fail-fast합니다.
@@ -142,7 +142,7 @@ cc.midolog
   - `storage.file.orphan-cleanup.enabled`: 고아 정리 스케줄러 활성화 여부 (기본값: `false`).
   - `storage.file.orphan-cleanup.interval`: 스케줄러 실행 주기 (기본값: `10m`, 즉 10분).
   - `storage.file.orphan-cleanup.pending-ttl`: 고아로 간주할 PENDING 상태 유지 만료 시간 (기본값: `1h`, 즉 1시간).
-  - `storage.file.orphan-cleanup.batch-size`: 1회 반복 조회 시 처리할 일괄 건수 (기본값: `100`, `@field:Min(1)` 유효성 검증으로 1 미만 값 설정 시 애플리케이션 기동 fail-fast).
+  - `storage.file.orphan-cleanup.batch-size`: 1회 반복 실행에서 새로 처리할 목표 배치 크기 (기본값: `100`, `@field:Min(1)` 유효성 검증으로 1 미만 값 설정 시 애플리케이션 기동 fail-fast). 단, 이전 반복에서 처리에 실패한 영구 실패 ID가 있을 경우 이들을 건너뛰고 새 항목을 확보하기 위해 repository 조회 limit은 실패 ID 수만큼 확장(`limit = batchSize + failedIds.size`)될 수 있습니다.
 - **빈 등록 및 `ClockConfig` 조건부 동작 원칙**:
   - `storage.file.orphan-cleanup.enabled`가 `false`이거나 누락된 경우: `OrphanCleanupScheduler` 빈만 등록되지 않으며, `FileOrphanCleanupService`(@Service)와 UTC `Clock` 기본 빈은 정상 등록되어 컨텍스트 내에 존재합니다.
   - `ClockConfig`: `@Bean @ConditionalOnMissingBean(Clock::class)`를 통해 기본값으로 `Clock.systemUTC()`를 제공합니다. 테스트나 특수 환경에서 사용자가 정의한 `Clock` 빈(예: 고정 시계 `Clock.fixed(...)`)을 컨텍스트에 등록하면 기본 Clock 빈이 자동으로 물러나 시간 제어의 결정성을 보장합니다.
@@ -193,8 +193,8 @@ dependencies {
   - `cc.midolog.business.config.OrphanCleanupSchedulerContextTest` (스케줄러 조건부 빈 등록, enabled=false 시 서비스/Clock 빈 잔존, batch-size < 1 fail-fast, 사용자 정의 Clock 빈 우선 검증).
   - `cc.midolog.business.config.OrphanCleanupSchedulerBehaviorTest` (AtomicBoolean 틱 중복 무시, 작업 완료 및 예외 발생 후 정상 재개, destroy 시 scope.cancel 검증).
   - `cc.midolog.business.service.FileOrphanCleanupServiceTest` (TTL cutoff 만료 건 선별 정리, batchSize 분할 처리, 스토리지 실패 시 메타 불변 및 다음 건 계속 처리, 선두 실패 시 후속 행 기아 회피, 동일 실패 행 무한루프 방지, updateStatus 실패 안전 처리 검증).
-  - `cc.midolog.business.service.FileUploadInterruptionTest` (업로드 스트림 처리 도중 OOM 등 비정상 중단으로 방치된 PENDING 객체가 TTL 만료 후 고아 정리에 의해 FAILED로 회수되는 가드 검증).
-  - `cc.midolog.business.service.FileServiceTest` (uploadFile 정상 흐름 및 실패 시 FAILED 전이, deleteFile 시 스토리지 물리 삭제 성공 후 DELETED 전이 및 실패/예외 시 메타 불변 보존 가드, 타 소유자 파일 접근 차단 검증).
+  - `cc.midolog.business.service.FileUploadInterruptionTest` (in-memory fake 포트로 PENDING 저장 직후 OutOfMemoryError 중단 경계를 시뮬레이션하여, 스트림 도중 비정상 중단으로 남은 PENDING 레코드가 TTL 만료 후 고아 정리에 의해 FAILED로 회수되는 서비스 수준 통합 가드 검증).
+  - `cc.midolog.business.service.FileServiceTest` (uploadFile 정상 흐름 및 실패 시 FAILED 전이, deleteFile 시 스토리지 물리 삭제 성공 후 DELETED 전이, false 반환 시 IllegalStateException 및 예외 전파 시 메타 상태(삭제 전 기존 상태) 불변 보존 가드, 타 소유자 파일 접근 차단 검증).
   - `cc.midolog.web.file.FileControllerTest` (파일 업로드/조회/스트리밍 다운로드/삭제 WebFlux API 통합 테스트).
   - `cc.midolog.web.file.WebFluxChunkBridgeTest` (청크 브릿지 버퍼 해제 및 스트리밍 변환 단위 테스트).
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#3 `SampleService.findPair`, #4 `SampleController.echo`, #5 `SampleStreamController.stream`, #20 `CreateSampleRequest`).
