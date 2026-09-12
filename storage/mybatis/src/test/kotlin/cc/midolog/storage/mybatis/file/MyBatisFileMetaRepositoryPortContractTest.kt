@@ -34,7 +34,7 @@ class MyBatisFileMetaRepositoryPortContractTest : FileMetaRepositoryPortContract
 
     override fun port(): FileMetaRepositoryPort {
         // GUARD: Adapter is instantiated without Clock (current main behavior)
-        return MyBatisFileMetaRepositoryAdapter(mapper)
+        return MyBatisFileMetaRepositoryAdapter(mapper, clock())
     }
 
     override fun clock(): Clock {

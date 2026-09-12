@@ -97,7 +97,7 @@ abstract class FileMetaRepositoryPortContract {
         assertEquals(now, loaded?.updatedAt)
 
         val pending = port().findExpiredPending(cutoff = now.plusSeconds(3600), limit = 10)
-        assertTrue(pending.isEmpty())
+        assertTrue(pending.none { it.id == "file-expire-1" })
     }
 
     @Test

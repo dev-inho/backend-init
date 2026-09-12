@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 @Repository
 class MyBatisFileMetaRepositoryAdapter(
     private val mapper: FileMetaMapper,
+    private val clock: java.time.Clock = java.time.Clock.systemUTC(),
 ) : FileMetaRepositoryPort {
 
     override suspend fun findById(id: String): FileMeta? = withContext(Dispatchers.IO) {
@@ -38,7 +39,7 @@ class MyBatisFileMetaRepositoryAdapter(
     }
 
     override suspend fun updateStatus(id: String, status: FileStatus): Boolean = withContext(Dispatchers.IO) {
-        mapper.updateStatus(id, status.name, Instant.now()) > 0
+        mapper.updateStatus(id, status.name, clock.instant()) > 0
     }
 
     override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> = withContext(Dispatchers.IO) {
