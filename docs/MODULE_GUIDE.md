@@ -1,6 +1,6 @@
 # 모듈 가이드 (Module Guide)
 
-Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 11개 모듈 및 build-logic 빌드 도구별 책임, 패키지 구조, 의존성 정의 가이드.
+Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 14개 모듈 및 build-logic 빌드 도구별 책임, 패키지 구조, 의존성 정의 가이드.
 
 ---
 
@@ -9,16 +9,19 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 11개 �
 2. [모듈별 상세 가이드](#모듈별-상세-가이드)
    - [1. core:application](#1-coreapplication)
    - [2. core:batch](#2-corebatch)
-   - [3. core:gateway](#3-coregateway)
-   - [4. core:domain](#4-coredomain)
-   - [5. client:storage-file](#5-clientstorage-file)
-   - [6. storage:mybatis](#6-storagemybatis)
-   - [7. storage:jpa](#7-storagejpa)
-   - [8. support:util](#8-supportutil)
-   - [9. support:logging](#9-supportlogging)
-   - [10. support:web](#10-supportweb)
-   - [11. support:jwt](#11-supportjwt)
-   - [12. build-logic](#12-build-logic)
+   - [3. gateway:core](#3-gatewaycore)
+   - [4. gateway:autoconfigure](#4-gatewayautoconfigure)
+   - [5. gateway:starter](#5-gatewaystarter)
+   - [6. gateway:app](#6-gatewayapp)
+   - [7. core:domain](#7-coredomain)
+   - [8. client:storage-file](#8-clientstorage-file)
+   - [9. storage:mybatis](#9-storagemybatis)
+   - [10. storage:jpa](#10-storagejpa)
+   - [11. support:util](#11-supportutil)
+   - [12. support:logging](#12-supportlogging)
+   - [13. support:web](#13-supportweb)
+   - [14. support:jwt](#14-supportjwt)
+   - [15. build-logic](#15-build-logic)
 3. [헥사고날 의존 규칙](#헥사고날-의존-규칙)
 4. [설정 파일 (settings.gradle)](#설정-파일)
 5. [관련 문서](#관련-문서)
@@ -31,7 +34,10 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 11개 �
 |------|------|------|----------|
 | **Core Application** | `core:application` | 웹 컨트롤러 + 비즈니스 서비스 + 공통 설정 | `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`, `client:storage-file`(runtime), `storage:mybatis`(runtime), `storage:jpa`(runtime), `webflux`, `security`, `data-redis-reactive`, `actuator`, `validation`, `flyway` |
 | **Core Batch** | `core:batch` | 배치/스케줄 작업 부트스트랩 | `support:logging`, `spring-boot-starter-batch`, `spring-boot-starter-jdbc`, `postgresql`(runtime), `jackson-module-kotlin` |
-| **Core Gateway** | `core:gateway` | WebFilter + 라우팅 + 단일 진입점 | `support:logging`, `support:util`, `support:web`, `support:jwt`, `webflux`, `data-redis-reactive`, `jackson-module-kotlin` |
+| **Gateway Core** | `gateway:core` | WebFilter + 라우팅 + 프록시 + 관측성 핵심 로직 | `support:logging`, `support:util`, `support:web`, `support:jwt`, `webflux`, `data-redis-reactive`, `jackson-module-kotlin` |
+| **Gateway Autoconfigure** | `gateway:autoconfigure` | `gateway.mode` 기반 자동 설정 및 조건부 빈 등록 | `gateway:core`, `spring-boot-autoconfigure`, `webflux`, `data-redis-reactive` |
+| **Gateway Starter** | `gateway:starter` | 게이트웨이 탑재용 스타터 라이브러리 (core + autoconfigure) | `gateway:core`(api), `gateway:autoconfigure`(api), `webflux`(api), `data-redis-reactive`(api) |
+| **Gateway App** | `gateway:app` | 독립 실행형 API 게이트웨이 부트 애플리케이션 (포트 8080) | `gateway:starter`, `support:logging` |
 | **Core Domain** | `core:domain` | 순수 Kotlin 도메인 모델 + 포트 인터페이스 | 없음 (외부 라이브러리 및 프레임워크 비의존 순수 Kotlin) |
 | **Client Storage File** | `client:storage-file` | 로컬 파일 저장 어댑터 | `core:domain`, `webflux`, `kotlinx-coroutines-reactor` |
 | **Storage MyBatis** | `storage:mybatis` | MyBatis + PostgreSQL 저장소 구현 | `core:domain`, `support:util`, `mybatis-spring-boot-starter:4.0.1`, `postgresql`(runtime), `jackson-module-kotlin` |
@@ -165,49 +171,59 @@ dependencies {
 
 ---
 
-### 3. core:gateway
-**책임**: 단일 진입점. WebFilter(JWT 인증, 레이트 제한, 요청 관측) + 라우팅 설정 + 프록시 핸들러.
+### 3. gateway:core
+**책임**: WebFilter(인증, 레이트 제한, 요청 관측) + 라우팅 설정(`RouteConfig`) + 프록시 핸들러(`ProxyHandler`) + 라우트 선택(`GatewayRouteSelector`) + 요청 가시성(`RequestVisibility`) 등 게이트웨이의 핵심 도메인 및 비즈니스 컴포넌트 제공.
 
 **패키지 구조**:
 ```
-cc.midolog
-├── GatewayApplication.kt
-└── gateway
-    ├── config
-    │   ├── GatewayClockConfig.kt
-    │   ├── GatewayRouteProperties.kt
-    │   ├── RouteConfig.kt
-    │   └── WebClientConfig.kt
-    ├── filter
-    │   ├── AuthTokenRateLimitFilter.kt
-    │   └── JwtAuthFilter.kt
-    ├── proxy
-    │   ├── HeaderSanitizer.kt
-    │   └── ProxyHandler.kt
-    ├── ratelimit
-    │   ├── RateLimiter.kt
-    │   └── RedisRateLimiter.kt
-    ├── route
-    │   └── GatewayRouteSelector.kt
-    └── visibility
-        ├── RequestEventStore.kt
-        ├── RequestVisibilityController.kt
-        ├── RequestVisibilityEvent.kt
-        ├── RequestVisibilityFilter.kt
-        └── RequestVisibilityProperties.kt
+gateway/core/src/main/kotlin/cc/midolog/gateway/
+├── config/
+│   ├── GatewayClockConfig.kt
+│   ├── GatewayRouteProperties.kt
+│   ├── RouteConfig.kt
+│   └── WebClientConfig.kt
+├── filter/
+│   ├── AuthTokenRateLimitFilter.kt
+│   └── JwtAuthFilter.kt
+├── proxy/
+│   ├── HeaderSanitizer.kt
+│   └── ProxyHandler.kt
+├── ratelimit/
+│   ├── RateLimiter.kt
+│   └── RedisRateLimiter.kt
+├── route/
+│   └── GatewayRouteSelector.kt
+└── visibility/
+    ├── RequestEventStore.kt
+    ├── RequestVisibilityController.kt
+    ├── RequestVisibilityEvent.kt
+    ├── RequestVisibilityFilter.kt
+    └── RequestVisibilityProperties.kt
 ```
 
-`RequestIdFilter`, `HttpLoggingFilter`, 공통 API 응답/예외 처리는 `support:web`에 둔다. Gateway는 `support:web`에 의존해 공통 필터를 사용한다.
-
-**부트 클래스**: `cc.midolog.GatewayApplication`
+> **필터 책임 및 스캔 경계**: `support:web`의 `HttpLoggingFilter`(@Order(-2))와 `RequestIdFilter`(@Order(0))는 호스트 애플리케이션의 패키지 스캔(`cc.midolog`) 담당이며 `gateway:autoconfigure`가 등록하지 않습니다. `gateway:core`는 `support:web`에 의존하여 이들 필터와 연계 동작합니다.
 
 **주요 의존성**:
-- `implementation`: `support:logging`, `support:util`, `support:web`, `support:jwt`
-- **Spring Boot**: `webflux`, `data-redis-reactive`
-- **라이브러리**: `reactor-kotlin-extensions`, `kotlinx-coroutines-reactor`, `tools.jackson.module:jackson-module-kotlin`
+- `implementation`: `project(':support:logging')`, `project(':support:util')`, `project(':support:web')`, `project(':support:jwt')`
+- `implementation`: `org.springframework.boot:spring-boot-starter-webflux`
+- `implementation`: `io.projectreactor.kotlin:reactor-kotlin-extensions`
+- `implementation`: `org.jetbrains.kotlinx:kotlinx-coroutines-reactor`
+- `implementation`: `tools.jackson.module:jackson-module-kotlin`
+- `implementation`: `org.springframework.boot:spring-boot-starter-data-redis-reactive`
+- `testImplementation`: `org.springframework.boot:spring-boot-starter-webflux-test`
 
 **build.gradle 예시**:
 ```groovy
+plugins {
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.6"
+    }
+}
+
 dependencies {
     implementation project(':support:logging')
     implementation project(':support:util')
@@ -218,33 +234,174 @@ dependencies {
     implementation 'io.projectreactor.kotlin:reactor-kotlin-extensions'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-reactor'
     implementation 'tools.jackson.module:jackson-module-kotlin'
-
     implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
 }
 ```
 
-### Runtime Profile 원칙
-
-- `application.yml`은 `spring.profiles.active`를 설정하지 않는다.
-- 로컬 기본값은 각 모듈의 `application-local.yml`에 둔다.
-- 실행자는 `SPRING_PROFILES_ACTIVE=local,mybatis`, `local,jpa`, `local`처럼 필요한 profile을 명시한다.
-- 운영 환경은 환경변수나 secret manager로 `JWT_SECRET`, DB, Redis, Gateway route 값을 주입한다.
-
-### Platform Option 원칙
-
-- Gateway 다중 application 라우팅은 `gateway.routes.application-urls`가 있을 때만 라운드로빈으로 동작한다. 값이 없으면 `gateway.routes.application-url` 단일 target을 유지한다.
-- Gateway request visibility는 `gateway.request-visibility.enabled=true`일 때만 filter/store/controller bean이 등록된다.
-- request visibility는 method, path, status, request id, timestamp, duration만 저장한다. body, Authorization header, secret 값은 저장하지 않는다.
-- Config Server와 OpenTelemetry는 기본 모듈이 아니라 후속 optional 확장으로 둔다.
-
-- **이 모듈의 가드**: `cc.midolog.gateway.GatewayPackageDependencyTest` (`config` 패키지가 `handler`, `proxy`, `route` 패키지를 참조하지 않도록 의존 방향 잠금).
-- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#14 JWT 키 생성 및 검증 로직 중복, #15 `RequestIdFilterTest` 중복).
+- **이 모듈의 가드**: `gateway/core/src/test/kotlin/cc/midolog/gateway/GatewayPackageDependencyTest.kt` (`config` 패키지가 `handler`, `proxy`, `route` 패키지를 역참조하지 않도록 의존 방향 잠금).
+- **단위/통합 테스트**:
+  - `gateway/core/src/test/kotlin/cc/midolog/gateway/filter/AuthTokenRateLimitFilterTest.kt`
+  - `gateway/core/src/test/kotlin/cc/midolog/gateway/filter/JwtAuthFilterTest.kt`
+  - `gateway/core/src/test/kotlin/cc/midolog/gateway/proxy/ProxyHandlerTest.kt`
+  - `gateway/core/src/test/kotlin/cc/midolog/gateway/route/GatewayRouteSelectorTest.kt`
+  - `gateway/core/src/test/kotlin/cc/midolog/gateway/visibility/RequestVisibilityTest.kt`
 
 ---
 
-### 4. core:domain
+### 4. gateway:autoconfigure
+**책임**: `gateway.mode` 프로퍼티(`embedded`, `standalone`, `remote`)를 검증하고 모드 조건에 따라 게이트웨이 빈을 등록하는 Spring Boot 4 자동 설정 라이브러리.
+
+**패키지 및 리소스 구조**:
+```
+gateway/autoconfigure/
+├── src/main/kotlin/cc/midolog/gateway/autoconfigure/
+│   ├── GatewayAutoConfiguration.kt
+│   └── GatewayModeProperties.kt
+└── src/main/resources/META-INF/spring/
+    └── org.springframework.boot.autoconfigure.AutoConfiguration.imports
+```
+
+**자동 설정 등록 및 모드 정책**:
+- Spring Boot 4 규격에 따라 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`에 `cc.midolog.gateway.autoconfigure.GatewayAutoConfiguration`이 등록됩니다 (`spring.factories`는 사용하지 않음).
+- `gateway.mode`는 필수 프로퍼티로 기본값이 없으며, `embedded`, `standalone`, `remote` 중 하나가 아니면 컨텍스트 기동을 즉시 실패시킵니다 (fail-fast: `"gateway.mode must be exactly one of: embedded, standalone, remote. Found: '${mode ?: "null"}'"`).
+- **공통 등록 빈**: `AuthTokenRateLimitFilter`, `RedisRateLimiter`, `GatewayClockConfig` (UTC Clock), `RequestVisibility` 관련 빈(`gateway.request-visibility.enabled=true` 조건부).
+- **standalone / remote 모드**: 공통 빈 외에 `RouteConfig` (routes RouterFunction), `ProxyHandler`, `WebClientConfig` (proxyWebClient), `GatewayRouteSelector`, `GatewayRouteProperties`, `JwtAuthFilter`(`jwt.secret` 필수 검증)를 추가 등록합니다. (현재 구현에서 standalone과 remote는 동일한 프록시 빈 묶음을 공유하며 환경 설정값으로 구분합니다.)
+- **embedded 모드**: functional routes(`RouteConfig`)와 프록시 빈을 등록하지 않습니다. WebFlux의 Functional Router(`RouterFunctionMapping`, order=-1)가 컨트롤러 매핑(`RequestMappingHandlerMapping`, order=0)보다 우선순위가 높으므로, 프록시 라우트 빈을 제외함으로써 동일 JVM 내 `@RestController`가 요청을 직접 처리하도록 구성합니다.
+
+**주요 의존성**:
+- `implementation`: `project(':gateway:core')`
+- `implementation`: `org.springframework.boot:spring-boot-autoconfigure`
+- `implementation`: `org.springframework.boot:spring-boot-starter-webflux`
+- `implementation`: `org.springframework.boot:spring-boot-starter-data-redis-reactive`
+- `testImplementation`: `org.springframework.boot:spring-boot-starter-test`
+- `testImplementation`: `io.projectreactor:reactor-test`
+
+**build.gradle 예시**:
+```groovy
+plugins {
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.6"
+    }
+}
+
+dependencies {
+    implementation project(':gateway:core')
+    implementation 'org.springframework.boot:spring-boot-autoconfigure'
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+}
+```
+
+- **이 모듈의 가드**: `gateway/autoconfigure/src/test/kotlin/cc/midolog/gateway/autoconfigure/GatewayAutoConfigurationTest.kt` (mode 미설정/부적합 fail-fast, 모드별 빈 등록 검증, WebFlux order 실측 가드, AutoConfiguration.imports 리소스 가드).
+
+---
+
+### 5. gateway:starter
+**책임**: 게이트웨이 코어(`gateway:core`)와 자동 설정(`gateway:autoconfigure`), 그리고 필수 런타임 의존성(`webflux`, `data-redis-reactive`)을 `api`로 일괄 노출하는 스타터 라이브러리(java-library).
+
+**특징**:
+- 자체 Kotlin 코드는 없으며, 게이트웨이 탑재 시 의존성 관리를 단순화하는 의존성 번들 모듈입니다.
+- 독립 서비스(`gateway:app`)나 추후 임베디드 호스트(`core:application`)는 이 스타터 모듈 하나만 의존하여 게이트웨이의 모든 기능을 활성화할 수 있습니다.
+
+**build.gradle 예시**:
+```groovy
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.6"
+    }
+}
+
+dependencies {
+    api project(':gateway:core')
+    api project(':gateway:autoconfigure')
+    api 'org.springframework.boot:spring-boot-starter-webflux'
+    api 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
+}
+```
+
+---
+
+### 6. gateway:app
+**책임**: 독립 실행형 Spring Boot 4 게이트웨이 마이크로서비스 (포트 8080). `gateway:starter`를 탑재하여 외부 요청을 수신하고 비즈니스 애플리케이션(8081) 또는 배치 서버(8082)로 프록시 중계합니다.
+
+**패키지 구조**:
+```
+gateway/app/
+├── src/main/kotlin/cc/midolog/
+│   └── GatewayApplication.kt
+├── src/main/resources/
+│   ├── application.yml
+│   └── application-local.yml
+└── src/test/kotlin/cc/midolog/gateway/
+    ├── GatewayAppIntegrationTest.kt
+    └── config/
+        └── GatewayProfileConfigTest.kt
+```
+
+**부트 클래스**: `cc.midolog.GatewayApplication`
+
+**W1 알려진 제약 및 스캔 방어**:
+- `gateway:core`의 `RequestVisibilityController`가 `@RestController`로 선언되어 있어, 최상위 `cc.midolog` 패키지 스캔 시 `request-visibility.enabled=false` 환경에서도 강제 등록되는 문제가 있습니다.
+- `GatewayApplication`에서는 이를 방어하기 위해 `@ComponentScan(excludeFilters = [ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = [RequestVisibilityController::class])])`로 해당 컨트롤러를 스캔에서 제외하고, `GatewayAutoConfiguration`의 조건부 `@Bean` 등록에 전적으로 위임합니다.
+- (참고: L2에서 `core:application` 스타터 탑재 전 core/autoconfigure 후속 정리가 필요합니다.)
+
+**주요 의존성**:
+- `implementation`: `project(':gateway:starter')`
+- `implementation`: `project(':support:logging')`
+- `testImplementation`: `org.springframework.boot:spring-boot-starter-test`
+- `testImplementation`: `io.projectreactor:reactor-test`
+- `testImplementation`: `project(':support:web')`
+
+**build.gradle 예시**:
+```groovy
+plugins {
+    id 'org.jetbrains.kotlin.plugin.spring'
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.6"
+    }
+}
+
+dependencies {
+    implementation project(':gateway:starter')
+    implementation project(':support:logging')
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+    testImplementation project(':support:web')
+}
+```
+
+### Runtime Profile 및 실행 원칙
+- `application.yml`은 `gateway.mode: standalone`을 기본 명시하며 `spring.profiles.active`를 설정하지 않습니다.
+- 로컬 실행 시 `SPRING_PROFILES_ACTIVE=local JWT_SECRET=<32바이트 이상> ./gradlew :gateway:app:bootRun`을 사용합니다.
+- 무인증 상태로 보호 API(예: `/api/sample/ping`) 호출 시 `JwtAuthFilter`가 401 Unauthorized를 반환하며, 유효한 JWT를 전달했으나 업스트림(8081)이 부재한 경우 연결 실패로 502 Bad Gateway(또는 타임아웃 시 504 Gateway Timeout)가 반환되어 프록시 라우팅을 검증할 수 있습니다.
+
+- **이 모듈의 가드**:
+  - `gateway/app/src/test/kotlin/cc/midolog/gateway/GatewayAppIntegrationTest.kt` (컨텍스트 로드, standalone 필수 빈, visibility 빈, support:web 패키지 스캔 등록 검증).
+  - `gateway/app/src/test/kotlin/cc/midolog/gateway/config/GatewayProfileConfigTest.kt` (프로파일 및 기본 standalone 모드 프로퍼티 검증).
+
+---
+
+### 7. core:domain
 **책임**: 순수 도메인 모델 및 포트(인터페이스) 정의. 어떤 외부 프레임워크나 라이브러리 의존도 없는 순수 Kotlin 모듈.
 
 **패키지 구조**:
@@ -287,7 +444,7 @@ dependencies {
 
 ---
 
-### 5. client:storage-file
+### 8. client:storage-file
 **책임**: 로컬 파일 저장 어댑터. `core:domain`의 `FileStoragePort` 포트 구현.
 
 **패키지 구조**:
@@ -316,7 +473,7 @@ dependencies {
 
 ---
 
-### 6. storage:mybatis
+### 9. storage:mybatis
 **책임**: MyBatis + PostgreSQL 저장소 구현. `*RepositoryAdapter` + `*Mapper` + SQL 매핑 (`resources/mapper/{context}/*Mapper.xml`).
 
 **패키지 구조**:
@@ -364,7 +521,7 @@ dependencies {
 
 ---
 
-### 7. storage:jpa
+### 10. storage:jpa
 **책임**: Spring Data JPA + PostgreSQL 저장소 구현. JPA entity, repository, mapper, adapter를 domain 밖에 격리한다.
 도메인은 어노테이션 없는 plain data class로 유지하고, `storage:jpa/build.gradle`의 DSL에서 JPA 생성 대상을 선언한다.
 
@@ -483,7 +640,7 @@ JPA DSL은 `core:domain`의 어노테이션 없는 순수 data class를 읽어 J
 
 ---
 
-### 8. support:util
+### 11. support:util
 **책임**: 순수 Kotlin 유틸리티. IdGenerator, 시간 제공자, 확장함수, 유효성 검증, 페이징/결과/재시도 헬퍼.
 
 **패키지 구조**:
@@ -523,7 +680,7 @@ dependencies {
 
 ---
 
-### 9. support:logging
+### 12. support:logging
 **책임**: 로깅 공통 설정 및 컨텍스트 전파. logback-spring.xml, Reactor Context MDC 전파, 민감정보 마스킹 로깅.
 
 **패키지 구조**:
@@ -562,7 +719,7 @@ dependencies {
 
 ---
 
-### 10. support:web
+### 13. support:web
 **책임**: 공통 WebFlux 필터, 표준 API 응답 봉투, 전역 예외 처리 핸들러.
 
 **패키지 구조**:
@@ -585,10 +742,10 @@ cc.midolog.web
 | 순서 (`@Order`) | 필터 | 모듈 | 책임 및 동작 |
 |:---:|---|---|---|
 | `-2` | `HttpLoggingFilter` | `support:web` | 최외곽에서 요청 시작 시각을 기록하고, 완료 시점에 `method`, `path`, `status`, `durationMs`, `requestId` 메타데이터를 INFO로 로깅 (바디/쿼리스트링 제외). |
-| `-1` | `AuthTokenRateLimitFilter` | `core:gateway` | `POST /api/auth/token`에 대해 클라이언트 IP 기준 10회/60초(`gateway.rate-limit.auth-token.*`), Redis Lua 원자 카운터 (Redis 장애 시 fail-open). |
+| `-1` | `AuthTokenRateLimitFilter` | `gateway:core` | `POST /api/auth/token`에 대해 클라이언트 IP 기준 10회/60초(`gateway.rate-limit.auth-token.*`), Redis Lua 원자 카운터 (Redis 장애 시 fail-open). |
 | `0` | `RequestIdFilter` | `support:web` | `X-Request-Id` 헤더를 검증하거나 UUID를 신규 생성하여 다운스트림 요청/응답 헤더에 전파하고 Reactor Context 및 MDC에 바인딩. |
-| `1` | `JwtAuthFilter` | `core:gateway` | 공개 경로(`/api/auth/`, `/actuator/`, `/batch/`)는 무검증 통과, 보호 경로(`/api/`, `/internal/gateway/`)는 Bearer JWT 서명 검증 (실패 시 401, 성공 시 컨텍스트 주입 없이 그대로 통과). |
-| `100` | `RequestVisibilityFilter` | `core:gateway` | 요청 관측 활성화(`gateway.request-visibility.enabled=true`) 시 메타데이터 이벤트를 인메모리 저장소에 기록. |
+| `1` | `JwtAuthFilter` | `gateway:core` | 공개 경로(`/api/auth/`, `/actuator/`, `/batch/`)는 무검증 통과, 보호 경로(`/api/`, `/internal/gateway/`)는 Bearer JWT 서명 검증 (실패 시 401, 성공 시 컨텍스트 주입 없이 그대로 통과). |
+| `100` | `RequestVisibilityFilter` | `gateway:core` | 요청 관측 활성화(`gateway.request-visibility.enabled=true`) 시 메타데이터 이벤트를 인메모리 저장소에 기록. |
 
 #### 표준 API 응답 봉투 (ApiResponse)
 
@@ -625,7 +782,7 @@ data class ApiResponse<T>(
 
 #### 컴포넌트 자동 등록 (Base Packages Scan)
 
-`core:application`의 `ApplicationServer`는 `@SpringBootApplication(scanBasePackages = ["cc.midolog"])`로 지정되어 있고, `core:gateway`의 `GatewayApplication`은 `cc.midolog` 패키지 루트에 위치하므로, 두 서버 기동 시 `support:web`에 정의된 `@Component`(`HttpLoggingFilter`, `RequestIdFilter`)와 `@RestControllerAdvice`(`GlobalExceptionHandler`)가 별도 추가 설정 없이 컴포넌트 스캔을 통해 스프링 빈으로 자동 등록됩니다.
+`core:application`의 `ApplicationServer`는 `@SpringBootApplication(scanBasePackages = ["cc.midolog"])`로 지정되어 있고, `gateway:app`의 `GatewayApplication`은 `cc.midolog` 패키지 루트에 위치하므로, 두 서버 기동 시 `support:web`에 정의된 `@Component`(`HttpLoggingFilter`, `RequestIdFilter`)와 `@RestControllerAdvice`(`GlobalExceptionHandler`)가 별도 추가 설정 없이 컴포넌트 스캔을 통해 스프링 빈으로 자동 등록됩니다 (단, `GatewayApplication`은 `RequestVisibilityController` 빈 충돌 방지를 위해 ComponentScan exclude를 명시합니다).
 
 **주요 의존성**:
 - `implementation`: `support:logging`, `support:util`
@@ -649,7 +806,7 @@ dependencies {
 
 ---
 
-### 11. support:jwt
+### 14. support:jwt
 **책임**: JJWT(Java JWT) 라이브러리 의존성을 단일 모듈로 격리하고, JWT 토큰 발급 및 서명 검증/파싱 기능을 담당하는 `JwtCodec` 제공.
 
 **패키지 구조**:
@@ -687,7 +844,7 @@ dependencies {
 
 ---
 
-### 12. build-logic
+### 15. build-logic
 **책임**: 내부 Gradle 플러그인(`cc.midolog.jpa-dsl`) 및 스키마 마이그레이션 도구 빌드 로직 제공.
 
 **주요 태스크 (6개)**:
@@ -733,17 +890,27 @@ dependencies {
 
 ### 계층별 의존 방향
 ```
+[게이트웨이 계층 의존 흐름]
+gateway:app
+    │ (depends)
+    ▼
+gateway:starter ─────────┐ (api)
+    │ (api)              │
+    ▼                    ▼
+gateway:autoconfigure ──→ gateway:core ──→ support:* (web, jwt, logging, util)
+
+[비즈니스 및 도메인 계층 의존 흐름]
 core:application ──→ core:domain
-    ↓                    ↑
-core:gateway      client:* ──────┐
-                  storage:* ─────┤
-                  support:* ─────┘
-    ↓
-core:batch
+    │ (runtimeOnly)      ▲
+    ├────────────────────┤
+    ▼                    │ (implements port)
+client:storage-file ─────┤
+storage:mybatis ─────────┤
+storage:jpa ─────────────┘
 ```
 
 **핵심 규칙**:
-1. **상향식 의존**: 상위 계층(application, gateway, batch)은 하위 계층(domain, client, storage, support)에 의존.
+1. **상향식 의존**: 상위 계층(application, gateway:app, batch)은 하위 계층(domain, client, storage, support, gateway:core/autoconfigure/starter)에 의존.
 2. **역전 원칙**: domain은 client/storage에 의존하지 않음. 대신 client/storage가 domain의 포트(인터페이스)를 구현.
 3. **어댑터 주입**: application에서 client, storage는 `runtimeOnly`로 선언. Spring이 런타임에 자동 와이어링.
 4. **공유 모듈**: support:util, support:logging, support:web, support:jwt는 상위 모듈에서 필요에 따라 의존 가능 (단, domain은 프레임워크 비의존 순수 Kotlin 유지).
@@ -762,8 +929,13 @@ includeBuild 'build-logic'
 // core
 include 'core:application'
 include 'core:batch'
-include 'core:gateway'
 include 'core:domain'
+
+// gateway
+include 'gateway:core'
+include 'gateway:autoconfigure'
+include 'gateway:starter'
+include 'gateway:app'
 
 // client
 include 'client:storage-file'
@@ -781,11 +953,12 @@ include 'support:jwt'
 
 ### 빌드 순서
 1. `support:util` (외부 의존성 없음)
-2. `support:jwt`, `support:logging` (`support:util` 의존)
-3. `support:web` (`support:logging`, `support:util` 의존)
-4. `core:domain` (프레임워크 비의존 순수 Kotlin 모듈)
-5. `client:storage-file`, `storage:mybatis`, `storage:jpa` (`core:domain`, `support:util` 의존)
-6. `core:application`, `core:gateway`, `core:batch` (도메인, 어댑터, 지원 모듈 의존)
+2. `core:domain`, `support:logging`, `support:jwt` (`support:util` 의존 / 도메인은 의존성 0)
+3. `support:web`, `client:storage-file`, `storage:mybatis`, `storage:jpa` (`support:*`, `core:domain` 의존)
+4. `gateway:core` (`support:web`, `support:jwt`, `support:logging`, `support:util` 의존)
+5. `gateway:autoconfigure` (`gateway:core` 의존)
+6. `gateway:starter` (`gateway:core`, `gateway:autoconfigure` 의존)
+7. `core:batch`, `gateway:app`, `core:application` (도메인, 어댑터, 스타터/지원 모듈 의존)
 
 Gradle은 자동으로 의존도를 계산하여 올바른 순서로 빌드합니다.
 
