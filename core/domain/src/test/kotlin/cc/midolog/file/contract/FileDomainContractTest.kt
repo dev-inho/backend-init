@@ -59,7 +59,7 @@ class FileDomainContractTest {
         val file = StoredFile(
             id = "01ARZ3NDEKTSV4RRFFQ69G5FAV",
             ownerId = "user_123",
-            storageKey = "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
+            storageKey = "storage-key-001",
             sizeBytes = 1048576L,
             contentType = "image/png",
             checksum = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -68,7 +68,7 @@ class FileDomainContractTest {
 
         assertEquals("01ARZ3NDEKTSV4RRFFQ69G5FAV", file.id)
         assertEquals("user_123", file.ownerId)
-        assertEquals("c9bf9e57-1685-4c89-bafb-ff5af830be8a", file.storageKey)
+        assertEquals("storage-key-001", file.storageKey)
         assertEquals(1048576L, file.sizeBytes)
         assertEquals("image/png", file.contentType)
         assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", file.checksum)
