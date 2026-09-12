@@ -27,7 +27,7 @@ class FileMetaRepositoryPortContractTest {
     @Test
     fun `mybatis and jpa adapters save, find, update and expire pending the same FileMeta contract`() = runBlocking {
         val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
-        
+
         listOf(
             mybatisAdapter(),
             jpaAdapter(),
@@ -57,7 +57,7 @@ class FileMetaRepositoryPortContractTest {
             assertEquals(FileStatus.READY, updatedMeta.status)
             assertNotEquals(now, updatedMeta.updatedAt)
             assertTrue(updatedMeta.updatedAt.isAfter(now) || updatedMeta.updatedAt == now)
-            
+
             // updateStatus (not found)
             assertFalse(repository.updateStatus("unknown_id", FileStatus.READY))
 
@@ -160,7 +160,7 @@ class FileMetaRepositoryPortContractTest {
             if (method.name == "createQuery") {
                 val params = mutableMapOf<String, Any>()
                 var maxRes = Int.MAX_VALUE
-                
+
                 Proxy.newProxyInstance(
                     queryClass.classLoader,
                     arrayOf(queryClass, Class.forName("jakarta.persistence.TypedQuery"))
@@ -170,7 +170,7 @@ class FileMetaRepositoryPortContractTest {
                             val paramName = qArgs!![0] as String
                             val paramValue = qArgs[1]
                             params[paramName] = paramValue
-                            null 
+                            null
                         }
                         "setMaxResults" -> {
                             maxRes = qArgs!![0] as Int
@@ -190,8 +190,8 @@ class FileMetaRepositoryPortContractTest {
                         "getResultList" -> {
                             val status = params["status"] as? FileStatus
                             val cutoff = params["cutoff"] as? Instant
-                            rows.values.filter { 
-                                it.status == status && it.updatedAt.isBefore(cutoff) 
+                            rows.values.filter {
+                                it.status == status && it.updatedAt.isBefore(cutoff)
                             }.sortedBy { it.updatedAt }.take(maxRes)
                         }
                         else -> null

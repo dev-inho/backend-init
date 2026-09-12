@@ -27,7 +27,7 @@ interface FileMetaRepositoryPort {
     suspend fun updateStatus(id: String, status: FileStatus): Boolean
 
     /**
-     * 업로드 대기(PENDING) 상태에서 지정된 시각(cutoff) 이전에 업데이트된 만료된 파일 메타데이터 목록을 
+     * 업로드 대기(PENDING) 상태에서 지정된 시각(cutoff) 이전에 업데이트된 만료된 파일 메타데이터 목록을
      * 최대 지정 건수(limit)만큼 updatedAt 오름차순으로 정렬하여 조회한다.
      * 주기적인 고아 객체 정리 작업에서 활용된다.
      */

@@ -56,7 +56,7 @@ class JpaFileMetaRepositoryAdapter(
             query.setParameter("status", FileStatus.PENDING)
             query.setParameter("cutoff", cutoff)
             query.maxResults = limit
-            
+
             query.resultList.map(FileMetaJpaMapper::toDomain)
         } ?: emptyList()
     }

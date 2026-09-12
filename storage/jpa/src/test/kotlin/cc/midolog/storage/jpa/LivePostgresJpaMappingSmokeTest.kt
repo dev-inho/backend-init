@@ -132,7 +132,7 @@ class LivePostgresJpaMappingSmokeTest {
             createdAt = java.time.Instant.now(),
             updatedAt = java.time.Instant.now()
         )
-        
+
         assertEquals(fileMeta, fileAdapter.save(fileMeta))
         assertTrue(fileAdapter.updateStatus(fileMeta.id, cc.midolog.file.model.FileStatus.READY))
         val updated = fileAdapter.findById(fileMeta.id)!!
