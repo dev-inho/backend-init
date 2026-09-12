@@ -36,7 +36,7 @@ import java.time.ZoneOffset
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.MOCK,
     properties = [
-        "jwt.secret=0123456789abcdef0123456789abcdef-strong",
+        "jwt.secret=this_is_a_test_secret_for_jwt_auth_filter",
         "gateway.routes.application-url=http://localhost:8081",
         "gateway.routes.batch-url=http://localhost:8082",
         "gateway.request-visibility.enabled=true"
@@ -99,13 +99,5 @@ class GatewayAppIntegrationTest {
             applicationContext.getBean(RequestIdFilter::class.java),
             "RequestIdFilter must be registered via cc.midolog package scan"
         )
-
-        // 실물 bootRun 검증을 위한 JWT 토큰 발급 (토큰 원문은 로그에 남기지 않고 scratch 파일에만 보관)
-        val codec = cc.midolog.jwt.JwtCodec("0123456789abcdef0123456789abcdef-strong")
-        val token = codec.issue("test-user")
-        val scratchDir = java.io.File("/Users/jinsungkim/.gemini/antigravity-cli/brain/97ef038e-3e57-4219-93a8-227a81f43aa1/scratch")
-        if (scratchDir.exists()) {
-            java.io.File(scratchDir, "jwt.token").writeText(token)
-        }
     }
 }
