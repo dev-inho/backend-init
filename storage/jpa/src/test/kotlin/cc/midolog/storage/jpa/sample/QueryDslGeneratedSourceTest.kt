@@ -15,7 +15,7 @@ class QueryDslGeneratedSourceTest {
                 "queryDsl.generatedSourceDir system property must point to Gradle generated source directory"
             }
         )
-        
+
         val expectedFiles = listOf(
             "cc/midolog/storage/jpa/sample/QSampleJpaEntity.java",
             "cc/midolog/storage/jpa/user/QUserJpaEntity.java",
@@ -24,7 +24,7 @@ class QueryDslGeneratedSourceTest {
             "cc/midolog/storage/jpa/jpadsl/fixture/QRelationParentJpaEntity.java",
             "cc/midolog/storage/jpa/jpadsl/fixture/QRelationChildJpaEntity.java"
         )
-        
+
         val missingFiles = expectedFiles
             .map { generatedRoot.resolve(it) }
             .filterNot(Files::isRegularFile)
@@ -35,7 +35,7 @@ class QueryDslGeneratedSourceTest {
     @Test
     fun `no createQuery in storage jpa src main`() {
         val srcMain = Path.of(System.getProperty("user.dir")).resolve("src/main")
-        
+
         val sourceFiles = mutableListOf<Path>()
         Files.walk(srcMain).use { stream ->
             stream
