@@ -9,7 +9,8 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * 고아(PENDING 상태로 방치된) 파일 메타데이터 및 스토리지를 주기적으로 정리하는 서비스.
+ * PENDING 상태로 방치되어 스토리지 공간만 차지하는 고아 파일을 정기적으로 회수하고 삭제 상태(FAILED)로 전이하는 서비스.
+ * 재시도 과정에서 영구 실패한 ID들을 건너뜀으로써 후속 항목이 처리되지 못하는 기아 현상을 회피한다.
  */
 @Service
 class FileOrphanCleanupService(
@@ -24,10 +25,8 @@ class FileOrphanCleanupService(
 
         val cutoff = clock.instant().minus(pendingTtl)
         val failedIds = mutableSetOf<String>()
-        var totalProcessedCount = 0
-        val maxItemsToProcess = 1000
 
-        while (totalProcessedCount < maxItemsToProcess) {
+        while (true) {
             val limit = batchSize + failedIds.size
             val orphans = fileMetaRepositoryPort.findExpiredPending(cutoff, limit)
             if (orphans.isEmpty()) {
@@ -40,7 +39,6 @@ class FileOrphanCleanupService(
                     continue
                 }
                 newItemsProcessed++
-                totalProcessedCount++
 
                 try {
                     val deleted = fileStoragePort.delete(orphan.storageKey)

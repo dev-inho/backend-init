@@ -22,7 +22,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineName
 
 /**
- * 고아 파일 정리 스케줄러의 동작 방식을 정의하는 설정 속성 클래스.
+ * 고아 파일 정리 작업의 실행 주기, 만료 기준 시간, 일괄 처리 크기 등 운영 정책을 정의하는 설정.
+ * 스토리지 부하와 DB 부하 사이의 균형을 맞출 수 있도록 조정 가능하다.
  */
 @ConfigurationProperties(prefix = "storage.file.orphan-cleanup")
 @Validated
@@ -35,8 +36,9 @@ data class FileOrphanCleanupProperties(
 )
 
 /**
- * 주기적으로 고아 파일을 정리하는 스프링 스케줄러.
- * `storage.file.orphan-cleanup.enabled=true`일 때만 빈으로 등록된다.
+ * 고아 파일 정리를 시스템 백그라운드에서 주기적으로 트리거하는 스케줄러.
+ * 실행 간격보다 작업 시간이 길어질 경우 중복 실행을 막기 위해 AtomicBoolean 락을 사용하며,
+ * 비정상 종료 시에도 작업 유실이나 메모리 누수가 없도록 코루틴 생명주기를 스프링 컨텍스트에 맞춰 관리한다.
  */
 @Configuration
 @EnableScheduling
