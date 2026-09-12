@@ -2,14 +2,14 @@
 
 ## 1. 저장소 백엔드 비교
 
-| 저장소 | 공식 사실 (호환성 및 기능) | 작은 팀 기준 평가 (비용 및 운영) | 공식 문서 URL |
+| 저장소 | 공식 사실 (호환성 및 기능) | 작은 팀 기준 평가 (프로젝트 추론) | 공식 문서 URL |
 | --- | --- | --- | --- |
-| **Local FS** | Java NIO `Files`는 운영 체제의 로컬 파일 시스템을 제어하는 표준 API를 제공합니다. | 인프라 락인과 추가 비용이 없으나 스케일 아웃 시 파일 동기화 부담이 매우 큽니다. | [문서](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/nio/file/Files.html) |
-| **AWS S3** | 정적 웹 호스팅, 버저닝 및 높은 내구성을 제공하는 객체 스토리지 서비스입니다. | 관리 부담이 적고 사실상 표준 API로 락인 우려가 낮으나, 아웃바운드 트래픽 비용이 발생합니다. | [문서](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html) |
-| **MinIO** | AWS S3 API와 호환되는 고성능 객체 스토리지 서버입니다. | 자체 호스팅으로 트래픽 비용을 아낄 수 있으나, 서버 운영 및 장애 복구 부담이 존재합니다. | [문서](https://min.io/docs/minio/linux/index.html) |
-| **Cloudflare R2** | 기존 S3 호환 API를 지원하며 이그레스(Egress) 데이터 전송 수수료를 부과하지 않습니다. | AWS S3 대비 트래픽 비용이 크게 절감되어 대용량 다운로드 서비스에 유리합니다. | [문서](https://developers.cloudflare.com/r2/) |
-| **GCS** | 멀티 리전 스토리지와 S3 호환 API(XML) 및 자체 API(JSON)를 제공합니다. | 엣지 네트워크 캐싱이 뛰어나지만 S3 완벽 호환은 아니며 마이그레이션 테스트가 필요합니다. | [문서](https://cloud.google.com/storage/docs/introduction) |
-| **Azure Blob** | Microsoft 클라우드의 방대한 비정형 데이터용 객체 스토리지입니다. | Entra ID 등 MS 생태계 통합이 유리하나, S3 비호환으로 전용 SDK 락인이 발생합니다. | [문서](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-introduction) |
+| **Local FS** | Java NIO `Files`는 운영 체제의 로컬 파일 시스템을 조작(생성, 읽기, 쓰기, 삭제 등)하는 표준 API를 제공합니다. | [프로젝트 추론] 외부 인프라 비용과 초기 셋업 공수가 없으나, 다중 노드 확장 시 로컬 파일 동기화가 불가능하여 단일 인스턴스 개발/테스트 또는 임시 파일 처리로 용도가 제한됩니다. | [문서](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/nio/file/Files.html) |
+| **AWS S3** | 정적 웹 호스팅, 버저닝 및 99.999999999% 내구성을 제공하는 관리형 객체 스토리지 서비스입니다. | [프로젝트 추론] 스토리지 서버 운영 관리 부담이 최소화되고 사실상 업계 표준 API로 락인 우려가 낮으나, 데이터 아웃바운드(Egress) 및 API 호출에 따른 지속적인 비용 모니터링이 필요합니다. | [문서](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html) |
+| **MinIO** | AWS S3 API와 호환되는 고성능 오픈소스 객체 스토리지 서버로 자체 호스팅이 가능합니다. | [프로젝트 추론] 온프레미스/자체 호스팅 구축을 통해 클라우드 트래픽 비용을 절감할 수 있으나, 작은 팀이 고가용성 인프라 운영, 디스크 장애 복구 및 패치 책임을 직접 부담해야 합니다. | [문서](https://min.io/docs/minio/linux/index.html) |
+| **Cloudflare R2** | S3 호환 API를 제공하며 데이터 송신(Egress) 수수료를 부과하지 않는 분산 객체 스토리지입니다. | [프로젝트 추론] 다운로드 트래픽이 많은 환경에서 비용 예측성이 매우 우수하나, EventBridge 등 AWS 고유 관리형 생태계 서비스와의 직접 연계에는 제약이 따릅니다. | [문서](https://developers.cloudflare.com/r2/) |
+| **GCS** | 멀티 리전 스토리지와 XML API를 통한 S3 호환성 및 자체 JSON API를 동시 지원합니다. | [프로젝트 추론] 구글 클라우드 인프라 활용에 유리하나, S3 API와의 완전한 1:1 호환이 아니므로 XML API 호환 서브셋에 대한 별도 사전 정합성 검증이 요구됩니다. | [문서](https://cloud.google.com/storage/docs/introduction) |
+| **Azure Blob** | 대규모 비정형 데이터를 저장하기 위한 Microsoft Azure의 관리형 객체 스토리지입니다. | [프로젝트 추론] Entra ID 등 Microsoft 생태계 통합에 유리하나, S3 API와 직접 호환되지 않아 Azure 전용 SDK 도입에 따른 벤더 종속(Lock-in)이 불가피합니다. | [문서](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-introduction) |
 
 ## 2. 접근 방식 및 스트리밍 비교
 
@@ -18,16 +18,16 @@
 | **서버 경유 스트리밍** | Spring WebFlux는 논블로킹 방식으로 HTTP 요청/응답을 `Flux<DataBuffer>` 형태의 스트림으로 처리합니다. | [문서](https://docs.spring.io/spring-framework/reference/web/webflux/reactive-spring.html) |
 | **Presigned URL 직접 업로드** | 스토리지 소유자가 발급한 임시 서명 URL을 통해 클라이언트가 스토리지에 객체를 직접 업로드할 수 있습니다. | [문서](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html) |
 | **대용량 Multipart 업로드** | 큰 객체를 여러 파트로 나누어 독립적이고 병렬로 업로드하여 처리량을 향상시킬 수 있습니다. | [문서](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html) |
-| **DataBuffer vs ByteArray** | `DataBuffer`는 바이트 버퍼의 추상화로, Netty 메모리 버퍼 풀을 사용하여 메모리 할당을 최적화합니다. | [문서](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/io/buffer/DataBuffer.html) |
+| **DataBuffer vs ByteArray** | `DataBuffer`는 다양한 바이트 버퍼 조작을 위한 데이터 추상화 인터페이스이며, 런타임 구현체(`NettyDataBuffer`는 Netty ByteBuf 풀 기반, `DefaultDataBuffer`는 힙 ByteBuffer 기반)에 따라 메모리 관리 방식이 다릅니다. | [문서](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/io/buffer/DataBuffer.html) |
 
 ## 3. 라이브러리 및 SDK 비교 (WebFlux 호환성 및 기능)
 
-| 라이브러리 | 공식 기능 및 제약 | 작은 팀 기준 선택 및 평가 | 공식 문서 URL |
+| 라이브러리 | 공식 기능 및 제약 | 작은 팀 기준 선택 및 평가 (프로젝트 추론) | 공식 문서 URL |
 | --- | --- | --- | --- |
-| **AWS SDK Java v2 (Netty Async)** | Netty 기반 비동기 논블로킹 I/O를 기본 지원하며 Spring WebFlux의 이벤트 루프와 호환성이 높습니다. | **(최종 추천)** WebFlux 환경에서 별도 JNI 의존성 없이 안정적으로 동작하며 커뮤니티 레퍼런스가 많습니다. | [문서](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/asynchronous.html) |
-| **AWS SDK Java v2 (CRT)** | C 기반 AWS Common Runtime을 사용하여 시작 시간과 메모리를 최적화한 대안 HTTP 클라이언트입니다. | JNI 네이티브 라이브러리가 포함되어 알파/작은 팀 컨테이너 환경에서 셋업 비용(호환성)이 발생할 수 있습니다. | [문서](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/http-configuration-crt.html) |
-| **Spring Cloud AWS** | Spring Boot 환경을 위한 S3 연동 및 자동 설정 인프라 추상화를 제공합니다. | 설정이 편하나 지원되는 SDK 버전이 결합되고, 추상화 계층으로 인해 S3 특정 세밀한 제어가 어려울 수 있습니다. | [문서](https://docs.awspring.io/spring-cloud-aws/docs/3.1.1/reference/html/index.html) |
-| **MinIO Java SDK** | S3 API와 호환되는 객체 스토리지를 제어하기 위한 단순한 클라이언트입니다. | S3 전용 최적화나 Async 스트리밍(Netty) 통합이 상대적으로 부족하여 WebFlux 직접 결합 시 불리합니다. | [문서](https://github.com/minio/minio-java) |
+| **AWS SDK Java v2 (Netty Async)** | Netty 기반 비동기 논블로킹 HTTP 클라이언트를 기본 탑재하여 논블로킹 I/O를 지원합니다. | **(최종 추천)** [프로젝트 추론] WebFlux 이벤트 루프와 호환성이 높고 순수 JVM 환경에서 별도 JNI 의존성 없이 안정적으로 구동되어 작은 팀의 컨테이너 배포 및 셋업 복잡도가 가장 낮습니다. | [문서](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/asynchronous.html) |
+| **AWS SDK Java v2 (CRT)** | C 기반 AWS Common Runtime(CRT)을 사용하여 시작 시간 단축과 메모리 사용량 최적화를 제공합니다. | [프로젝트 추론] 높은 처리량에 유리하나 JNI 기반 네이티브 바이너리가 포함되어 경량 컨테이너(Alpine 등) 환경에서 플랫폼별 바이너리 호환성 검증 및 셋업 공수가 추가됩니다. | [문서](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/http-configuration-crt.html) |
+| **Spring Cloud AWS** | Spring Boot 환경을 위한 S3 클라이언트 빈 자동 구성 및 `S3Template` 등의 고수준 편의 추상화를 제공합니다. | [프로젝트 추론] 설정 편의성이 높으나 Spring Cloud 릴리스 주기에 종속되어 최신 AWS SDK 기능 반영이 지연될 수 있고, 미세한 비동기 백프레셔 제어가 제한적일 수 있습니다. | [문서](https://docs.awspring.io/spring-cloud-aws/docs/3.1.1/reference/html/index.html) |
+| **MinIO Java SDK** | MinIO 및 S3 호환 객체 스토리지를 제어하기 위한 독립적인 Java 클라이언트 라이브러리입니다. | [프로젝트 추론] 단순 동기 작업에는 직관적이나 WebFlux 논블로킹 리액티브 스트리밍(Netty)과의 결합 지원이 부족하여 본 프로젝트의 비동기 헥사고날 구조에는 부적합합니다. | [문서](https://github.com/minio/minio-java) |
 
 ## 4. 보안, 메타데이터 및 운영
 
@@ -45,10 +45,10 @@
 
 ## 5. 테스트 전략 비교
 
-| 후보 | 공식 사실 및 설명 | 작은 팀 기준 평가 | 공식 문서 URL |
+| 후보 | 공식 사실 (실행 모드 및 특성) | 작은 팀 기준 평가 (프로젝트 추론) | 공식 문서 URL |
 | --- | --- | --- | --- |
-| **MinIO Testcontainers** | Java 통합 테스트 환경에서 MinIO 도커 컨테이너 라이프사이클을 제어하는 모듈입니다. | 실제 인프라와 가장 유사한 네트워크 환경(Testcontainers)을 제공하여 엣지 케이스 재현에 좋습니다. | [문서](https://java.testcontainers.org/modules/minio/) |
-| **S3Mock** | S3 API를 모방하는 인메모리 기반 경량 웹 서버입니다. | 컨테이너 없이 빠르고 가볍게 띄울 수 있으나 고급 S3 기능 호환성 한계가 있을 수 있습니다. | [문서](https://github.com/adobe/S3Mock) |
+| **MinIO Testcontainers** | Docker 컨테이너 환경에서 실제 MinIO 서버 인스턴스를 프로그래밍 방식으로 기동하고 관리하는 Testcontainers 공식 모듈입니다. | [프로젝트 추론] 실제 네트워크 통신과 S3 호환 REST API를 충실하게 검증할 수 있으나 도커 데몬 실행 환경이 필수적이므로 일반 단위 테스트와 분리된 별도 통합 태스크(`liveS3Test`)로 격리해야 합니다. | [문서](https://java.testcontainers.org/modules/minio/) |
+| **S3Mock** | Docker 컨테이너, Testcontainers, JUnit 4 Rule, JUnit 5 Extension 및 standalone Spring Boot JAR 애플리케이션 등 다양한 실행 모드를 지원하는 Adobe의 S3 모킹 웹 서버입니다. | [프로젝트 추론] JVM 프로세스 내 임베디드(In-memory/임시 디렉터리) 모드로 구동 시 도커 없이 빠른 피드백을 얻을 수 있으나, S3 고급 기능(정밀한 서명 검증, 멀티파트 완성도 등)의 모킹 한계가 있어 완벽한 엣지 케이스 검증에는 한계가 있습니다. | [문서](https://github.com/adobe/S3Mock) |
 
 ## 6. 현재 코드 대비 갭 표 (Gap Analysis)
 
