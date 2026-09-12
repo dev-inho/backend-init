@@ -48,7 +48,6 @@ tasks.register('livePostgresTest', Test) {
     }
 }
 
-
 jpaDsl {
     entity('cc.midolog.sample.model.Sample') {
         table = 'sample'
