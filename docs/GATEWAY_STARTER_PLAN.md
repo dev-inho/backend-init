@@ -53,15 +53,13 @@ SCG 라이브러리 임베드 모드(모드 1)는 공식적으로 지원되나, 
   | `RequestVisibilityFilter` | 커스텀 `GlobalFilter` 로깅 로직 작성 필수 |
   | `HttpLoggingFilter` | SCG Netty 로깅 튜닝 혹은 커스텀 필터 작성 |
 
-- **SCG 채택 시 의존성 증가 비용**: SCG(`spring-cloud-starter-gateway`)의 Maven Central POM([URL](https://repo1.maven.org/maven2/org/springframework/cloud/spring-cloud-starter-gateway/4.0.7/spring-cloud-starter-gateway-4.0.7.pom))을 분석한 직접 의존성 목록입니다.
+- **SCG 채택 시 의존성 증가 비용**: Spring Boot 4.0.6 환경에 대응하는 SCG 5.0.x(`spring-cloud-starter-gateway-server-webflux`)의 Maven Central POM([URL](https://repo1.maven.org/maven2/org/springframework/cloud/spring-cloud-starter-gateway-server-webflux/5.0.3/spring-cloud-starter-gateway-server-webflux-5.0.3.pom))을 분석한 직접 의존성 목록입니다.
   | 기존 의존성과 겹침 (추가 비용 없음) | 새로 들어오는 직접 의존성 (추가 비용) |
   | --- | --- |
   | `spring-boot-starter-webflux` | `spring-cloud-starter` (Spring Cloud 공통 컨텍스트) |
-  | `reactor-netty` (webflux에 포함됨) | `spring-cloud-gateway-server` (SCG 코어) |
-  | | `spring-boot-starter-validation` |
-  | | `io.projectreactor.addons:reactor-extra` |
+  | | `spring-cloud-gateway-server-webflux` (SCG WebFlux 코어 서버) |
 
-  위와 같이 Spring Cloud 컨텍스트 등 새로운 의존성이 4개 추가됩니다. 자체 구현 필터를 SCG의 `GatewayFilter` 인터페이스로 다시 작성해야 하는 로직 전환 비용도 큽니다.
+  위와 같이 Spring Cloud 컨텍스트 및 SCG 서버 모듈 등 새로운 의존성이 추가됩니다. 자체 구현 필터를 SCG의 `GatewayFilter` 인터페이스로 다시 작성해야 하는 로직 전환 비용도 큽니다.
 
 - **결론**: 커스텀 로직(Visibility, JWT)이 강결합된 현재 "자체 구현을 유지"하면서 `gateway-starter` 체제로 모듈화하는 것이 초기 프로젝트에 훨씬 적합합니다.
 
