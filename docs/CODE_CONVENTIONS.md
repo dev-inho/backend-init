@@ -85,9 +85,26 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 
 ## 3. 패키지 및 아키텍처 규칙
 
-### 영속성 계층 (Storage)
-- 영속성 어댑터 패키지: `cc.midolog.storage.<기술>.<컨텍스트>` (예: `cc.midolog.storage.mybatis.sample`, `cc.midolog.storage.jpa.user`)
-- 어댑터 클래스 명명: 어댑터 클래스는 기술명을 명시적 접두어로 사용합니다 (`MyBatis*RepositoryAdapter`, `Jpa*RepositoryAdapter`).
+### 영속성 계층 (Storage) 및 영속성 경계
+- **영속성 경계 대원칙**: “JPA·MyBatis 관심사는 `storage/jpa`, `storage/mybatis` 밖으로 나오지 않는다.”
+- **영속성 어댑터 패키지**: `cc.midolog.storage.<기술>.<컨텍스트>` (예: `cc.midolog.storage.mybatis.sample`, `cc.midolog.storage.jpa.user`)
+- **어댑터 클래스 명명**: 어댑터 클래스는 기술명을 명시적 접두어로 사용합니다 (`MyBatis*RepositoryAdapter`, `Jpa*RepositoryAdapter`).
+- **가드 대상 및 금지 import**:
+  - `storage/**`, `build-logic/**`를 제외한 모든 모듈(`core/**`, `gateway/**`, `support/**`, `client/**`)의 실제 소스 트리(`src/main`, `src/test`, `src/testFixtures`) 내 `.kt`/`.java` 소스에서 아래 영속성 패키지 import를 전면 금지합니다 (`PersistenceBoundaryTest` 가드):
+    - `jakarta.persistence`
+    - `org.springframework.data.jpa`
+    - `org.hibernate`
+    - `org.mybatis`
+    - `org.apache.ibatis`
+    - `cc.midolog.storage.jpa`
+    - `cc.midolog.storage.mybatis`
+- **문자열 예외**: 주석, KDoc, 일반 문자열 리터럴은 import가 아니므로 허용됩니다. 예를 들어 `FileStorageIntegrationTest`의 `spring.autoconfigure.exclude`에 사용된 `org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration` 등의 property 설정 문자열은 import가 아니므로 명시적으로 허용됩니다.
+- **명시적 예외 두 가지**:
+  1. `core/application/build.gradle`의 조합 루트 의존성:
+     - 런타임 어댑터 탑재 (3개): `runtimeOnly project(':storage:mybatis')`, `runtimeOnly project(':storage:jpa')`, `runtimeOnly project(':storage:file-local')`
+     - 테스트 런타임 어댑터 탑재 (2개): `testRuntimeOnly project(':storage:mybatis')`, `testRuntimeOnly project(':storage:jpa')`
+     - 애플리케이션 실행 조합 루트(composition root)가 어댑터를 classpath에 싣는 유일한 자리로서 허용됩니다. 소스 코드 레벨에서는 컴파일 타임 의존(`implementation`, `testImplementation`)이 없으므로 import할 수 없습니다.
+  2. `build-logic`의 JPA DSL 생성기: 빌드 및 코드 생성 도구 경계로 소스 스캔 대상 밖입니다.
 
 ### 웹 계층 및 응답 DTO
 - 컨트롤러 응답 DTO 필수: `cc.midolog.web` 하위 컨트롤러는 도메인 모델(`Sample`, `User`)을 `ApiResponse`로 직접 반환하지 않고 전용 응답 DTO(`web/<ctx>/dto/*Response`)를 사용해야 합니다.
@@ -130,6 +147,8 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
    - 지키는 것: 호스트 패키지 스캔(`cc.midolog`)과 `FileStorageAutoConfiguration`이 함께 로드될 때 레거시 빈 `localFileStorageAdapter`와 신규 빈 `fileLocalStorageAdapter`가 이름 충돌 없이 공존하며 두 `FileStoragePort`가 정상 등록되도록 보장.
 5. **`ApplicationPackageStructureTest`** (`core/application/src/test/kotlin/cc/midolog/ApplicationPackageStructureTest.kt`)
    - 지키는 것: `core:application` 내 인프라·설정 코드를 `infra/`로 통일하고 `common/` 패키지 사용을 원천 차단.
+6. **`PersistenceBoundaryTest`** (`core/application/src/test/kotlin/cc/midolog/PersistenceBoundaryTest.kt`)
+   - 지키는 것: `storage/jpa`, `storage/mybatis` 외 모듈(`core`, `gateway`, `support`, `client`) 소스 트리 전체에서 JPA, MyBatis, Hibernate 등 영속성 관심사의 import 유출을 원천 차단.
 
 ---
 

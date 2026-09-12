@@ -151,6 +151,9 @@ cc.midolog
 - `runtimeOnly`: `client:storage-file`, `storage:mybatis`, `storage:jpa`, `storage:file-local`, `org.flywaydb:flyway-database-postgresql`
 - **Spring Boot**: `webflux`, `security`, `data-redis-reactive`, `actuator`, `validation`, `flyway`
 - **라이브러리**: `reactor-kotlin-extensions`, `kotlinx-coroutines-reactor`, `tools.jackson.module:jackson-module-kotlin`
+- **영속성 격리 및 설정 소유권**:
+  - `core:application`은 공용 `DataSource` 설정만 소유하며, 구체적인 JPA/MyBatis 영속성 구현체에 대한 컴파일 타임 의존성을 일절 갖지 않고 `core:domain`의 포트 인터페이스(`*RepositoryPort`)에만 의존합니다.
+  - concrete 저장소 어댑터(`storage:mybatis`, `storage:jpa`, `storage:file-local`)는 조합 루트로서 `runtimeOnly` 및 `testRuntimeOnly`로만 주입되며, JPA/MyBatis 전용 설정은 각 storage 모듈의 `application-{profile}.yml`이 자체 소유합니다.
 
 **build.gradle 예시**:
 ```groovy
@@ -181,12 +184,14 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test'
     testImplementation 'org.springframework.security:spring-security-test'
-    testImplementation project(':storage:mybatis')
-    testImplementation project(':storage:jpa')
+    testRuntimeOnly project(':storage:mybatis')
+    testRuntimeOnly project(':storage:jpa')
+    testRuntimeOnly 'com.h2database:h2'
 }
 ```
 
 - **이 모듈의 가드 및 테스트**:
+  - `cc.midolog.PersistenceBoundaryTest` (`storage/jpa`, `storage/mybatis` 외 모듈 소스 트리 전체에서 JPA, MyBatis, Hibernate 등 영속성 관심사의 import 유입을 소스 스캔으로 차단하는 경계 가드).
   - `cc.midolog.web.ControllerResponseTypeTest` (컨트롤러 반환 타입이 도메인 모델을 직접 노출하지 않고 `ApiResponse` 봉투 규약을 준수하는지 검증하는 구조 가드).
   - `cc.midolog.storage.FileStorageIntegrationTest` (호스트 scanBasePackages = ["cc.midolog"]와 `FileStorageAutoConfiguration`이 함께 로드될 때 레거시 빈 `localFileStorageAdapter`와 신규 자동 설정 빈 `fileLocalStorageAdapter`의 이름 충돌 없이 두 `FileStoragePort`가 공존함을 가드).
   - `cc.midolog.business.config.OrphanCleanupSchedulerContextTest` (스케줄러 조건부 빈 등록, enabled=false 시 서비스/Clock 빈 잔존, batch-size < 1 fail-fast, 사용자 정의 Clock 빈 우선 검증).
@@ -522,13 +527,23 @@ cc.midolog
 - **레거시 포트 호환**:
   - `cc.midolog.sample.port.file.FileStoragePort`: `@Deprecated` 처리되어 신규 포트(`cc.midolog.file.port.storage.FileStoragePort`)로 대체되었으나, 기존 어댑터와의 하위 호환성을 위해 심볼을 유지한다.
 
+- **도메인 testFixtures 포트 계약 키트**:
+  - `java-test-fixtures` 플러그인을 통해 `src/testFixtures`에 포트 계약 테스트 키트(`FileMetaRepositoryPortContract`, `SampleRepositoryPortContract`, `UserRepositoryPortContract`)를 제공합니다.
+  - 도메인 포트 인터페이스가 요구하는 계약(식별자 조회, upsert, 상태 전이, cutoff+limit 만료 조회 정렬 등)의 행위 검증 베이스 클래스를 제공하며, 각 storage 모듈(`storage:jpa`, `storage:mybatis`)이 이를 상속받아 인메모리 H2 환경에서 실제 어댑터를 검증합니다.
+
 **주요 의존성**:
-- 없음 (프레임워크 비의존 순수 Kotlin 모듈)
+- 없음 (프레임워크 비의존 순수 Kotlin 모듈, 테스트 픽스처용 JUnit BOM만 포함)
 
 **build.gradle**:
 ```groovy
+plugins {
+    id 'java-test-fixtures'
+}
+
 // 프레임워크 비의존 순수 Kotlin 모듈 (model + port 인터페이스)
 dependencies {
+    testFixturesImplementation(platform("org.junit:junit-bom:5.10.1"))
+    testFixturesImplementation("org.junit.jupiter:junit-jupiter-api")
 }
 ```
 
@@ -599,15 +614,18 @@ resources/mapper/
     └── UserMapper.xml
 ```
 
-**File 도메인 지원**:
+**File 도메인 지원 및 설정 소유권**:
 - `MyBatisFileMetaRepositoryAdapter`: `core:domain`의 `FileMetaRepositoryPort` 구현체. V2 Flyway 마이그레이션(`V2__create_file_meta.sql`)으로 생성된 `file_meta` 테이블을 대상으로 `upsert`, `selectById`, `updateStatus`를 처리합니다.
 - **cutoff+limit 계약 준수**: `findExpiredPending(cutoff, limit)` 메서드를 통해 PENDING 상태이면서 cutoff 시각 이전에 갱신된 만료 레코드를 `limit` 건수만큼 정렬 조회합니다.
+- **설정 소유권 (`application-mybatis.yml`)**: 매퍼 위치(`mybatis.mapper-locations`) 및 카멜케이스 변환(`map-underscore-to-camel-case`) 등 MyBatis 특화 설정은 모듈 내부 `resources/application-mybatis.yml`이 자체 소유합니다.
+- **H2 인메모리 실제 어댑터 계약 테스트**: `core:domain`의 testFixtures 계약(`FileMetaRepositoryPortContract`, `SampleRepositoryPortContract`, `UserRepositoryPortContract`)을 상속받아 `@MybatisTest` 환경에서 실제 H2 DB를 대상으로 어댑터 계약을 실증합니다.
 
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`
 - **MyBatis**: `mybatis-spring-boot-starter:4.0.1`
 - **Database**: `org.postgresql:postgresql` (runtimeOnly)
 - **라이브러리**: `kotlinx-coroutines-core`, `tools.jackson.module:jackson-module-kotlin`
+- **Test**: `testFixtures(project(':core:domain'))`, `mybatis-spring-boot-starter-test`, `spring-boot-starter-test`, `com.h2database:h2`
 
 **build.gradle 예시**:
 ```groovy
@@ -620,11 +638,18 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     implementation 'tools.jackson.module:jackson-module-kotlin'
 
+    testImplementation testFixtures(project(':core:domain'))
     testImplementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter-test:4.0.1'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'com.h2database:h2'
 }
 ```
 
-- **이 모듈의 가드**: `cc.midolog.storage.mybatis.config.MyBatisStorageConfigTest` (`@MapperScan`이 `sample`, `user`, `file` 패키지를 포함하는지 검증).
+- **이 모듈의 가드 및 계약 테스트**:
+  - `cc.midolog.storage.mybatis.config.MyBatisStorageConfigTest` (`@MapperScan`이 `sample`, `user`, `file` 패키지를 포함하는지 검증).
+  - `cc.midolog.storage.mybatis.sample.MyBatisSampleRepositoryPortContractTest` (Sample 포트 계약 H2 실증).
+  - `cc.midolog.storage.mybatis.user.MyBatisUserRepositoryPortContractTest` (User 포트 계약 H2 실증).
+  - `cc.midolog.storage.mybatis.file.MyBatisFileMetaRepositoryPortContractTest` (FileMeta 포트 계약 H2 실증).
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#12 `UserMapper.xml` SQL 별칭 중복).
 
 ---
@@ -649,9 +674,11 @@ cc.midolog.storage.jpa
 
 ※ `SampleJpaEntity`, `UserJpaEntity`, `FileMetaJpaEntity` 및 `FileMetaJpaRepository`, `FileMetaJpaMapper` 같은 entity/repository/mapper 타입은 `generateJpaDslSources` task가 build 디렉터리(`build/generated`)에 자동 생성한다.
 
-**File 도메인 지원 및 livePostgresTest 격리**:
+**File 도메인 지원, 설정 소유권 및 livePostgresTest 격리**:
 - `JpaFileMetaRepositoryAdapter`: `FileMetaRepositoryPort` 포트 구현체로, blocking JPA 호출을 `Dispatchers.IO` 및 `TransactionOperations` 경계 내에서 안전하게 실행합니다.
 - `FileMetaRepositoryPort`의 cutoff+limit 계약(`findExpiredPending(cutoff, limit)`)을 `entityManager` 쿼리 파라미터(`setMaxResults(limit)`)를 통해 구현합니다.
+- **설정 소유권 (`application-jpa.yml`)**: JPA repository 활성화 설정(`spring.data.jpa.repositories.enabled: true`) 등 JPA 특화 설정은 모듈 내부 `resources/application-jpa.yml`이 자체 소유합니다.
+- **H2 인메모리 실제 어댑터 계약 테스트**: `core:domain`의 testFixtures 계약(`FileMetaRepositoryPortContract`, `SampleRepositoryPortContract`, `UserRepositoryPortContract`)을 상속받아 `@DataJpaTest` 환경에서 실제 H2 DB를 대상으로 어댑터 계약을 실증합니다.
 - **테스트 분리 정책**: 기본 `./gradlew build` 및 `./gradlew test`에서는 H2 In-Memory DB로 어댑터를 검증하며, 실제 PostgreSQL DB 연결이 필요한 `livePostgresTest` 태스크는 기본 빌드 실행에서 제외되어 선택적으로만 수행됩니다.
 
 **주요 의존성**:
@@ -659,7 +686,7 @@ cc.midolog.storage.jpa
 - **JPA**: `spring-boot-starter-data-jpa`
 - **Database**: `org.postgresql:postgresql` (runtimeOnly)
 - **라이브러리**: `kotlinx-coroutines-core`
-- **Test**: `spring-boot-starter-data-jpa-test`, `spring-boot-starter-flyway`, `com.h2database:h2`(testRuntimeOnly), `flyway-database-postgresql`(testRuntimeOnly)
+- **Test**: `testFixtures(project(':core:domain'))`, `spring-boot-starter-data-jpa-test`, `spring-boot-starter-flyway`, `com.h2database:h2`(testRuntimeOnly), `flyway-database-postgresql`(testRuntimeOnly)
 
 **build.gradle 예시**:
 ```groovy
@@ -752,6 +779,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
     runtimeOnly 'org.postgresql:postgresql'
 
+    testImplementation testFixtures(project(':core:domain'))
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-flyway'
     testRuntimeOnly 'com.h2database:h2'
@@ -763,7 +791,11 @@ dependencies {
 
 JPA DSL은 `core:domain`의 어노테이션 없는 순수 data class를 읽어 JPA Entity, Spring Data Repository, Domain Mapper 소스코드를 build 디렉터리에 자동 생성합니다. 스칼라 매핑, ENUM 전략, 커스텀 컨버터, 부모-자식 관계(`manyToOne`, `oneToMany`)를 선언할 수 있으며, 지원하지 않는 DSL 선언은 컴파일 전에 검증 태스크에서 차단됩니다. 상세 명세와 PostgreSQL 실환경 스모크 테스트 가이드는 [storage/jpa/README.md](../storage/jpa/README.md)를 참고하십시오.
 
-- **이 모듈의 가드**: `cc.midolog.storage.jpa.sample.JpaDslGeneratedSourceTest` (JPA DSL 생성 소스코드 검증), `validateJpaDslGeneratorNegativeCases` 태스크.
+- **이 모듈의 가드 및 계약 테스트**:
+  - `cc.midolog.storage.jpa.sample.JpaDslGeneratedSourceTest` (JPA DSL 생성 소스코드 검증), `validateJpaDslGeneratorNegativeCases` 태스크.
+  - `cc.midolog.storage.jpa.sample.JpaSampleRepositoryPortContractTest` (Sample 포트 계약 H2 실증).
+  - `cc.midolog.storage.jpa.user.JpaUserRepositoryPortContractTest` (User 포트 계약 H2 실증).
+  - `cc.midolog.storage.jpa.file.JpaFileMetaRepositoryPortContractTest` (FileMeta 포트 계약 H2 실증).
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md).
 
 ---
@@ -1059,7 +1091,7 @@ dependencies {
 3. REST API가 필요하면 `web.<context>` controller와 DTO를 추가한다. controller는 request/response 변환만 담당하고 저장 구현을 직접 알지 않는다.
 4. MyBatis를 지원하려면 `storage:mybatis`에 mapper interface, XML mapper, `@Profile("mybatis")` repository adapter를 추가한다.
 5. JPA를 지원하려면 `storage:jpa/build.gradle`의 `jpaDsl { ... }`에 domain class/table/id/field/relation 매핑을 선언하고, `@Profile("jpa")` repository adapter를 추가한다.
-6. 같은 port contract를 MyBatis/JPA adapter 모두에 적용하는 테스트를 추가하고, profile wiring 테스트에서 profile별 port bean이 하나만 등록되는지 검증한다.
+6. `core:domain`의 `src/testFixtures`에 공통 포트 계약 테스트(`*RepositoryPortContract`)를 추가하고, `storage:mybatis`와 `storage:jpa`에서 이를 상속받아 H2 인메모리 DB를 대상으로 실제 어댑터 계약 테스트(`*RepositoryPortContractTest`)를 각각 구현한다. `core:application`에서는 profile wiring 테스트를 통해 활성화된 profile의 단일 port bean만 등록되는지 검증한다.
 7. `core:domain` purity test가 Spring/JPA/MyBatis annotation 유입을 막는지 확인한 뒤 `./gradlew test`를 실행한다.
 8. JPA DSL이 실패하면 generated Kotlin을 고치지 말고 `jpaDsl { ... }` 선언이나 domain data class를 수정한다. unsupported DSL은 plugin validation 단계에서 실패해야 한다.
 
@@ -1096,7 +1128,7 @@ storage:file-local ──────┘
 **핵심 규칙**:
 1. **상향식 의존**: 상위 계층(application, gateway:app, batch)은 하위 계층(domain, client, storage, support, gateway:core/autoconfigure/starter)에 의존.
 2. **역전 원칙**: domain은 client/storage에 의존하지 않음. 대신 client/storage가 domain의 포트(인터페이스)를 구현.
-3. **어댑터 주입**: application에서 client, storage는 `runtimeOnly`로 선언. Spring이 런타임에 자동 와이어링.
+3. **어댑터 주입 및 설정 소유권**: application에서 client, storage는 `runtimeOnly` / `testRuntimeOnly`로 선언하여 컴파일 의존을 차단하고 Spring이 런타임에 자동 와이어링. application은 공용 `DataSource` 설정만 소유하며, 세부 영속성 설정은 각 storage 모듈의 `application-{profile}.yml`이 자체 소유.
 4. **공유 모듈**: support:util, support:logging, support:web, support:jwt는 상위 모듈에서 필요에 따라 의존 가능 (단, domain은 프레임워크 비의존 순수 Kotlin 유지).
 5. **경계 존중**: 모듈 간 직접 import 금지. 공개된 인터페이스(포트)만 사용.
 
