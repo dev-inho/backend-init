@@ -591,7 +591,6 @@ cc.midolog.storage.jpa
 ├── config
 │   └── JpaStorageConfig.kt
 ├── file
-│   ├── FileMetaJpaRepository.kt
 │   └── JpaFileMetaRepositoryAdapter.kt
 ├── sample
 │   ├── JpaSampleRepositoryAdapter.kt
@@ -600,7 +599,7 @@ cc.midolog.storage.jpa
     └── JpaUserRepositoryAdapter.kt
 ```
 
-※ `SampleJpaEntity`, `UserJpaEntity`, `FileMetaJpaEntity` 같은 entity/repository/mapper 타입은 `generateJpaDslSources` task가 build directory에 생성한다.
+※ `SampleJpaEntity`, `UserJpaEntity`, `FileMetaJpaEntity` 및 `FileMetaJpaRepository`, `FileMetaJpaMapper` 같은 entity/repository/mapper 타입은 `generateJpaDslSources` task가 build 디렉터리(`build/generated`)에 자동 생성한다.
 
 **File 도메인 지원 및 livePostgresTest 격리**:
 - `JpaFileMetaRepositoryAdapter`: `FileMetaRepositoryPort` 포트 구현체로, blocking JPA 호출을 `Dispatchers.IO` 및 `TransactionOperations` 경계 내에서 안전하게 실행합니다.
@@ -817,34 +816,40 @@ dependencies {
 ---
 
 ### 13. support:logging
-**책임**: 로깅 설정 및 MDC 컨텍스트 전파 헬퍼. Logback XML 구성, 콘솔/JSON 인코더, Reactor 파이프라인 MDC 연동.
+**책임**: 로깅 공통 설정 및 컨텍스트 전파. logback-spring.xml, Reactor Context MDC 전파, 민감정보 마스킹 로깅.
 
 **패키지 구조**:
 ```
 cc.midolog.logging
-├── MaskingPatternLayout.kt
+├── LoggingMdc.kt
+├── MaskingMessageConverter.kt
+├── MaskingSupport.kt
 └── ReactorMdc.kt
+
+resources/
+└── logback-spring.xml
 ```
 
 **주요 의존성**:
 - `implementation`: `support:util`
-- **로깅**: `ch.qos.logback:logback-classic:1.5.18`, `net.logstash.logback:logstash-logback-encoder:8.0`
+- **Logback**: `ch.qos.logback:logback-classic`
 - **Reactor**: `io.projectreactor:reactor-core`
+- **Logstash**: `net.logstash.logback:logstash-logback-encoder:8.0`
 
 **build.gradle 예시**:
 ```groovy
 dependencies {
     implementation project(':support:util')
 
-    implementation 'ch.qos.logback:logback-classic:1.5.18'
-    implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
+    implementation 'ch.qos.logback:logback-classic'
     implementation 'io.projectreactor:reactor-core'
+    implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
 
     testImplementation 'io.projectreactor:reactor-test'
 }
 ```
 
-- **이 모듈의 가드**: `cc.midolog.logging.ReactorMdcTest`, `cc.midolog.logging.MaskingLoggingTest`.
+- **이 모듈의 가드**: `cc.midolog.logging.MaskingLoggingTest`, `cc.midolog.logging.ReactorMdcTest` (민감정보 마스킹 및 리액티브 MDC 전파 가드).
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md).
 
 ---
@@ -957,6 +962,10 @@ cc.midolog.jwt
 
 **build.gradle 예시**:
 ```groovy
+plugins {
+    id 'java-library'
+}
+
 dependencies {
     api project(':support:util')
     api 'io.jsonwebtoken:jjwt-api:0.12.6'

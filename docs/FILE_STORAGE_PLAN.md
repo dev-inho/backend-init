@@ -220,8 +220,8 @@ jpaDsl {
 **MyBatis 및 JPA 이중 어댑터 파일 경계**:
 - **도메인 포트**: `core/domain/src/main/kotlin/cc/midolog/file/port/repository/FileMetaRepositoryPort.kt`
 - **JPA 어댑터 계층**:
-  - `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaRepository.kt` (Spring Data JPA)
   - `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt` (포트 구현체)
+  - *(참고: `FileMetaJpaEntity`, `FileMetaJpaRepository`, `FileMetaJpaMapper`는 `build-logic`의 `JpaDslPlugin`에 의해 빌드 시 `build/generated`에 자동 생성)*
 - **MyBatis 어댑터 계층**:
   - `storage/mybatis/src/main/resources/mapper/file/FileMetaMapper.xml`
   - `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/file/FileMetaMapper.kt`
@@ -266,20 +266,20 @@ jpaDsl {
 이 로드맵은 점진적 검증과 통합을 목표로 총 5단계(Phase 0 ~ 4)로 구성되며, 각 Phase는 독립된 하나의 워커 브리프 단위입니다.
 
 ### Phase 0: 심볼 보존 및 헥사고날 뼈대 분리 (✅ 완료)
-- **내용**: 기존 데드 코드를 무작정 삭제하지 않고 호환 Shim으로 유지하여 빌드 무결성을 보호합니다. `core:domain`에 새 포트 인터페이스를 정의하고, `storage/file-autoconfigure` 및 `storage/file-starter-local` 모듈의 뼈대를 신규 생성합니다.
-- **파일 경계**: `settings.gradle`, `core/domain/build.gradle`, `ChunkReader.kt`, `StoredFile.kt`, `FileStoragePort.kt`, `FilePresignPort.kt`, 기존 `client/storage-file`의 `@Deprecated` 어댑터.
+- **내용**: 기존 데드 코드를 무작정 삭제하지 않고 호환 Shim으로 유지하여 빌드 무결성을 보호합니다. 5모듈 세분화 대신 `storage/file-local` 단일 모듈 구조를 채택하고, `core:domain`에 새 포트 인터페이스(`FileStoragePort.kt`, `FilePresignPort.kt`)와 청크 입출력 추상화(`ChunkReader.kt`, `ChunkWriter.kt`), 도메인 엔티티(`FileMeta.kt`, `StoredFile.kt`)를 정의합니다.
+- **파일 경계**: `settings.gradle`, `core/domain/build.gradle`, `ChunkReader.kt`, `ChunkWriter.kt`, `StoredFile.kt`, `FileMeta.kt`, `FileStoragePort.kt`, `FilePresignPort.kt`, 기존 `client/storage-file`의 `@Deprecated` 어댑터.
 - **선행 조건**: 없음.
 - **가드 테스트**: `DomainPurityTest`가 새 `cc.midolog.file.port` 패키지 내 클래스들의 외부 라이브러리 비의존성을 검증하여 100% 통과해야 합니다.
 
 ### Phase 1: Local-first 인프라 및 서버 경유 스트리밍 구현 (✅ 완료)
-- **내용**: (사용자 결정 1에 따라 S3를 배제하고) `storage/file-local` 모듈에 Local FS 전용 파일 I/O 구현체(`LocalFileStorageAdapter.kt`)를 작성합니다. 로컬 환경은 presign capability를 지원하지 않으므로, `core:application`에 서버 경유 WebFlux 논블로킹 스트리밍(업로드 `Multipart`/`DataBuffer` 소비, 다운로드 `DataBuffer` 응답) 컨트롤러를 구현합니다. 게이트웨이 `ProxyHandler` 버퍼링 제약이 존재함을 명시합니다. `file-autoconfigure`에 `AutoConfiguration.imports` 기반의 자동 구성을 배치하고, 기동 시 provider 설정 유효성을 검사하여 잘못된 값이면 즉각 실패(`fail-fast`)합니다.
-- **파일 경계**: `LocalFileStorageAdapter.kt`, `FileStoragePropertiesValidator.kt`, `FileStorageAutoConfiguration.kt`, `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`, `FileStreamingController.kt`.
+- **내용**: (사용자 결정에 따라 S3를 배제하고) `storage/file-local` 단일 모듈에 Local FS 전용 파일 I/O 어댑터(`LocalFileStorageAdapter.kt`)를 작성합니다. 로컬 환경은 presign capability를 지원하지 않으므로, `core:application`에 서버 경유 Spring WebFlux 논블로킹 스트리밍 컨트롤러(`FileController.kt`)와 `WebFluxChunkBridge.kt`를 구현합니다. `storage/file-local`의 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 기반으로 Spring Boot 자동 구성을 등록하고, 기동 시 provider 설정 유효성을 검사하여 미지원 값이면 즉각 실패(`fail-fast`)합니다.
+- **파일 경계**: `storage/file-local/build.gradle`, `LocalFileStorageAdapter.kt`, `FileStoragePropertiesValidator.kt`, `FileStorageProperties.kt`, `FileStorageAutoConfiguration.kt`, `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`, `FileController.kt`, `WebFluxChunkBridge.kt`, `FileResponse.kt`.
 - **선행 조건**: Phase 0 완료.
 - **가드 테스트**: 설정 누락/오타(`storage.file.provider=invalid`) 시 Fail-fast 기동 실패 검증. JUnit `@TempDir`을 활용한 대용량 파일 읽기/쓰기 모의 통합 테스트 통과.
 
 ### Phase 2: 메타데이터 영속성 트랜잭션 전이 (✅ 완료)
-- **내용**: 메타데이터 영속성 관리를 위해 `storage/jpa/build.gradle`의 `jpaDsl` 블록에 `FileMeta` 엔티티를 배선하고, MyBatis 매퍼 XML 및 리포지토리 어댑터를 작성합니다. Flyway 마이그레이션 스크립트를 생성합니다.
-- **파일 경계**: `V{next}__create_file_meta_table.sql`, `storage/jpa/build.gradle`, `FileMetaJpaRepository.kt`, `JpaFileMetaRepositoryAdapter.kt`, `FileMetaMapper.xml`, `FileMetaMapper.kt`, `MyBatisFileMetaRepositoryAdapter.kt`.
+- **내용**: 메타데이터 영속성 관리를 위해 `core/application`의 Flyway 마이그레이션 스크립트(`V2__create_file_meta.sql`)를 작성하고, `storage/jpa/build.gradle`의 `jpaDsl` 블록에 `FileMeta` 엔티티를 배선하여 JPA DSL 인터페이스(`FileMetaJpaRepository`)를 자동 생성합니다. JPA 어댑터(`JpaFileMetaRepositoryAdapter.kt`)와 MyBatis 매퍼 XML(`FileMetaMapper.xml`) 및 어댑터(`MyBatisFileMetaRepositoryAdapter.kt`)를 구현합니다.
+- **파일 경계**: `core/application/src/main/resources/db/migration/V2__create_file_meta.sql`, `storage/jpa/build.gradle`, JPA DSL 자동 생성물(`FileMetaJpaRepository`), `JpaFileMetaRepositoryAdapter.kt`, `FileMetaMapper.xml`, `FileMetaMapper.kt`, `MyBatisFileMetaRepositoryAdapter.kt`.
 - **선행 조건**: Phase 1 완료.
 - **가드 테스트**: 기본 `test` 태스크에서 H2 In-Memory DB로 자동 생성된 JPA DSL 매핑 스모크 테스트 수행. 분리된 `livePostgresTest` 태스크에서 PENDING -> READY 트랜잭션 상태 전이 및 롤백 검증.
 

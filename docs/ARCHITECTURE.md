@@ -300,7 +300,6 @@ storage/jpa/
 ├── config/
 │   └── JpaStorageConfig.kt
 ├── file/
-│   ├── FileMetaJpaRepository.kt
 │   └── JpaFileMetaRepositoryAdapter.kt
 ├── sample/
 │   ├── JpaSampleRepositoryAdapter.kt
