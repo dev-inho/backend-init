@@ -33,6 +33,7 @@ tasks.named('test') {
     useJUnitPlatform {
         excludeTags 'live-postgres'
     }
+    systemProperty "queryDsl.generatedSourceDir", layout.buildDirectory.dir("generated/source/kapt/main").get().asFile.absolutePath
 }
 
 tasks.register('livePostgresTest', Test) {
