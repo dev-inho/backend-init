@@ -100,12 +100,12 @@ Phase 1–4 코드 구현 완료. 위치: `build-logic/src/main/kotlin/cc/midolo
 
 생성 draft와 hand-written V1의 차이는 (a) 컬럼 순서, (b) FK 제약명 규칙 `fk_<table>_<column>`, (c) index/seed 미재생성(가산 수동 항목이므로 올바른 동작)뿐이다.
 
-검증 통과 확인. `JPA_DSL_RISK_REGISTER.md` #3 status를 `manual process accepted` → `draft automation (verify-only)`로 갱신하고 Evidence에 `verifyMigrationDraft`를 기록할 것(후속).
+검증 통과 확인. `JPA_DSL_RISK_REGISTER.md` #3 status를 `manual process accepted` → `draft automation (verify-only)`로 갱신하고 Evidence에 `verifyMigrationDraft`를 기록 완료함.
 
 ## Verification Baseline
 
 ```bash
-./gradlew :build-logic:test          # Phase 1~3 단위 테스트
+./gradlew -p build-logic test          # Phase 1~3 단위 테스트
 ./gradlew :storage:jpa:generateMigrationDraft   # draft 생성 확인
 ./gradlew :storage:jpa:verifyMigrationDraft     # drift=0 확인 (V1이 최신이면 PASS)
 ./gradlew test
@@ -123,4 +123,4 @@ git diff --check
 
 ## Escalation / 이후
 
-이 plan 완료 후 리스크 레지스터 #3 status를 `manual process accepted` → `draft automation (verify-only)`로 갱신하고 Evidence에 `verifyMigrationDraft` 태스크를 기록한다.
+리스크 레지스터 #3 status가 `manual process accepted` → `draft automation (verify-only)`로 갱신되었으며, Evidence에 `verifyMigrationDraft` 태스크가 반영 완료됨.

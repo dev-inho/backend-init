@@ -90,16 +90,26 @@ Blocking 리스크는 없다.
 - migration 누락으로 `livePostgresTest` 또는 runtime boot가 자주 실패한다.
 - generated JPA model과 Flyway migration 간 diff를 사전에 보고 싶어진다.
 
-**Recommended next action when triggered**:
+**Implemented action**:
 
-별도 `jpa-dsl-migration-draft-generator` plan을 만든다. 첫 단계는 자동 적용이 아니라 draft 생성과 검증에 한정한다.
+별도 plan([`docs/JPA_DSL_MIGRATION_DRAFT_GENERATOR_PLAN.md`](./JPA_DSL_MIGRATION_DRAFT_GENERATOR_PLAN.md))을 수립하고 구현 완료됨:
 
-권장 범위:
-
-- `jpaDsl` model에서 expected table/column/FK metadata 추출
-- 현재 Flyway latest schema와 expected metadata 비교
-- migration draft SQL 생성
-- destructive migration은 자동 생성하지 않고 manual review 요구
+- 구현 파일:
+  - `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/VerifyMigrationDraftTask.kt`
+  - `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/GenerateMigrationDraftTask.kt`
+  - `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/MigrationDraftEngine.kt`
+  - `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/FlywaySchemaParser.kt`
+  - `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/ExpectedSchemaBuilder.kt`
+  - `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/SchemaDiffer.kt`
+  - `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/MigrationDraftRenderer.kt`
+- 등록 태스크:
+  - `:storage:jpa:verifyMigrationDraft` (`jpaDsl` expected schema와 현재 Flyway schema 정적 비교, drift 발생 시 빌드 실패)
+  - `:storage:jpa:generateMigrationDraft` (`build/generated/migration-draft/` 디렉터리에 다음 버전 draft SQL 생성)
+- 충족 범위:
+  - `jpaDsl` model에서 expected table/column/FK metadata 추출
+  - 현재 Flyway latest schema와 expected metadata 비교
+  - migration draft SQL 생성
+  - destructive migration은 자동 생성하지 않고 manual review 요구 유지
 
 ## Operating Rules
 

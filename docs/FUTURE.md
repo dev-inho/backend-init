@@ -28,7 +28,7 @@
 
 ---
 
-## 2. Config 서버 (Spring Cloud Config)
+## 2. Config 서버 (중앙 집중식 설정 관리)
 
 ### 목적
 여러 모듈 및 인스턴스의 설정을 중앙에서 일괄 관리하여 배포/변경 효율성 향상
@@ -36,7 +36,7 @@
 ### 설계 개요
 - **별도 설정 서버**: config 전담 모듈 또는 독립 서버 운영
   - Git 저장소(또는 파일 기반)에서 설정 파일 관리
-  - 환경별 분리: `application-local.yml`, `application-dev.yml`, `application-prod.yml`
+  - 환경별 분리: 현재 프로젝트는 `application.yml` 및 `application-local.yml`만 존재하며 `application-dev.yml`, `application-prod.yml`은 아직 없음(`support:logging`의 `logback-spring.xml`에만 `prod` 프로파일 블록 존재). 향후 다중 환경 확장에 따라 dev/prod 프로파일 분리 검토.
 - **부팅 시 조회**: 각 서비스가 기동 시 설정 서버에서 환경별 설정 일괄 조회
 - **이미지 빌드 최소화**: 설정 변경 시 재빌드 불필요
 
@@ -59,19 +59,19 @@
 ### 설계 개요
 - **요청 로그 수집**: 게이트웨이 필터/미들웨어에서 요청 정보 기록
   - 메서드, URL, 응답 코드, 타임스탬프, 트랜잭션 ID 등
-- **저장소**: 현재 최소 구현은 bounded in-memory store
+- **저장소**: 현재 최소 구현은 bounded in-memory store (`RequestEventStore`)
 - **조회 UI**: 
   - `/internal/gateway/requests` JSON endpoint 제공
   - HTML 대시보드와 Redis-backed 분산 store는 후속 확장
 
 ### 고려사항
 - **저장소 선택**: 인메모리(간편, 서버 재시작 시 소실) vs. Redis(분산, 지속성)
-- **보안**: 모니터링 화면 접근 제어(Basic Auth, IP whitelist 등)
+- **보안**: 모니터링/가시성 엔드포인트 접근 제어는 Basic Auth/IP whitelist 대신 JWT Bearer 토큰 인증으로 결정 및 구현 완료(`core/gateway/src/main/kotlin/cc/midolog/gateway/filter/JwtAuthFilter.kt`의 `/internal/gateway/` 경로 분기)
 - **실시간성**: 요청 데이터 업데이트 주기 및 화면 갱신 방식
 - **성능**: 요청 로깅이 게이트웨이 성능에 미치는 영향 최소화
 
 ### 상태
-✅ **최소 구현 완료** — 기본 비활성화. `GATEWAY_REQUEST_VISIBILITY_ENABLED=true`일 때만 최근 요청 event를 조회한다. 상세 설정은 `./GATEWAY.md` 참조.
+✅ **최소 구현 완료** — 기본 비활성화. `GATEWAY_REQUEST_VISIBILITY_ENABLED=true`일 때만 최근 요청 event를 조회하며, `/internal/gateway/**` 엔드포인트는 `JwtAuthFilter`를 통한 JWT Bearer 토큰 인증으로 보호된다. 상세 설정은 `./GATEWAY.md` 참조.
 
 ---
 
@@ -93,7 +93,7 @@
 ### 고려사항
 - **비동기 작업**: ThreadLocal 기반 MDC는 비동기 작업에서 소실 위험 → 명시적 전달 필요
 - **성능**: MDC 바인딩/언바인딩 오버헤드 최소화
-- **외부 라이브러리**: Spring Cloud Sleuth 등 분산 추적 라이브러리 고려
+- **외부 라이브러리**: Micrometer Tracing / Sleuth 등 분산 추적 라이브러리 고려
 - **OpenTelemetry**: exporter/collector 운영 전제가 생기므로 현재는 보류하고 request id 기반 추적을 baseline으로 둔다.
 - **로그 저장/분석**: 중앙 집중식 로깅(ELK Stack 등)과 연동 시 트랜잭션 ID 기반 검색
 
@@ -107,18 +107,64 @@
 ### 목적
 템플릿 사용자가 새 프로젝트를 시작할 때 최소 품질 기준을 자동 검증한다.
 
-### 현재 기준
-- 필수: `./gradlew test`
-- 권장: Gateway proxy regression test, profile config regression test 유지
+### 구현 현황
+- **보안 스캔 워크플로우 (`.github/workflows/security.yml`)**: PR 및 main push 시 자동 실행
+  - OWASP Dependency-Check (의존성 보안 취약점 점검)
+  - Gitleaks (시크릿 유출 탐지)
 
 ### 향후 추가 후보
-- dependency vulnerability scan
-- secret scan
-- architecture rule test
-- Docker Compose 기반 PostgreSQL/Redis smoke test
+- **테스트 자동화 워크플로우 (미구현)**: GitHub Actions에 `./gradlew test` 및 `./gradlew -p build-logic test` 자동 검증 추가
+- architecture rule test (계층 규칙 검증)
+- Docker Compose 기반 PostgreSQL/Redis live smoke test
 
 ### 상태
-✅ **초기 CI workflow 추가** — 현재 템플릿은 `./gradlew test`를 필수 품질 게이트로 사용하고, GitHub Actions에서는 dependency/security scan을 별도 workflow로 실행한다. organization별 정책, threshold, SARIF 업로드, PR required check 지정은 후속 운영 정책으로 확정한다.
+📌 **보안 스캔 구축 완료 + 테스트 워크플로우 후보** — 보안 검사(`.github/workflows/security.yml`)는 구축되어 있으나, 빌드/테스트를 돌리는 CI 워크플로우는 아직 없으므로 품질 게이트 자동화를 위해 후속 추가가 필요하다.
+
+---
+
+## 6. ProxyHandler 응답 스트리밍 전환
+
+### 목적
+게이트웨이 프록시 중계 시 대용량 응답에 대한 메모리 점유 최적화 및 첫 바이트 전송 지연(TTFB) 개선
+
+### 현재 동작 및 트레이드오프
+현재 `core/gateway`의 `ProxyHandler.kt`는 클라이언트 요청 본문은 `DataBuffer` 스트림으로 다운스트림에 전달하지만, 다운스트림 응답은 `response.bodyToMono(ByteArray::class.java)`를 통해 메모리에 바이트 배열로 전체 버퍼링한 뒤 반환한다.
+- **장점**: 응답 헤더 정제, 상태 코드 조작, 다운스트림 장애 시 502(Bad Gateway) 및 504(Gateway Timeout) 폴백 처리가 단순하고 직관적이다.
+- **단점/트레이드오프**: 대용량 파일 다운로드나 거대 JSON 응답 수신 시 게이트웨이 JVM 힙 메모리 사용량이 급증하여 메모리 압박이 발생할 수 있는 트레이드오프가 있다.
+
+### 향후 방향
+다운스트림 응답 본문 또한 `DataBuffer` 기반 리액티브 스트리밍(`body(BodyInserters.fromDataBuffers(...))`)으로 전환하여 메모리 복사를 최소화하고 대용량 응답 중계 성능을 확보한다.
+
+---
+
+## 7. 게이트웨이 탑재식(Starter) 지원 로드맵
+
+### 목적
+현재의 독립 프로세스 게이트웨이 외에도, 단일 서버 환경에서 비즈니스 애플리케이션 JVM 내에 게이트웨이 라우팅/필터 체인을 임베디드로 탑재하여 운영 복잡도와 네트워크 홉을 최소화하는 구조 제공
+
+### 로드맵 개요
+자체 구현 필터 체인(가시성, JWT, Rate Limit 등)을 보존하면서 starter 형태로 모듈화하는 단계별 로드맵을 수립함:
+- **Phase 0**: 사전 준비 (패키지 재배치 및 JWT 공유 모듈화)
+- **Phase 1**: `gateway-core` 및 `gateway-autoconfigure` 분할
+- **Phase 2**: 단독 실행 애플리케이션 껍데기 `apps/gateway-app` 및 `gateway-starter` 신설
+- **Phase 3**: 동일 프로세스 내 In-process 디스패치 또는 루프백 라우팅 및 보안 체인 분리
+- **Phase 4**: 원격 모드 대상 헬스체크 및 `ProxyHandler` 재시도/서킷 브레이커 고도화
+
+상세 설계, 기능 매트릭스 갭 분석 및 사용자 결정 항목은 [`docs/GATEWAY_STARTER_PLAN.md`](./GATEWAY_STARTER_PLAN.md) 참조.
+
+---
+
+## 8. 코드 정리 및 중복 제거 후보
+
+### 목적
+소비자가 없거나 다른 모듈/표준 라이브러리와 중복되는 코드 및 샘플 컴포넌트를 식별하여 유지보수 부채를 줄임
+
+### 주요 정리 대상군
+- **미사용 샘플 컴포넌트**: `FileStoragePort`, `LocalFileStorageAdapter`, `SampleService.findPair`, `SampleController.echo`, `SampleStreamController`, `CreateSampleRequest` 등
+- **중복 유틸리티**: `CollectionExtensions.orEmpty` (Kotlin stdlib과 중복), null 검증 헬퍼 3중복(`requireField`, `Validation.requireNotNull`, `orThrow`), `NullSafety.ifNull` 등
+- **중복 로직 통합**: JWT 코덱 통합(`JwtCodec`) 및 모듈 이전으로 인한 중복 테스트 정리
+
+상세 실측 건수, 제안(삭제/유지/합치기) 및 영향도 가이드는 [`docs/DEAD_CODE_CANDIDATES.md`](./DEAD_CODE_CANDIDATES.md) 참조.
 
 ---
 
@@ -127,7 +173,10 @@
 - `./ARCHITECTURE.md` — 전체 아키텍처 및 모듈 구성
 - `./MODULE_GUIDE.md` — 각 모듈의 책임과 인터페이스
 - `./GATEWAY.md` — 게이트웨이 상세 설계 (라우팅, 필터 등)
+- `./GATEWAY_STARTER_PLAN.md` — 게이트웨이 탑재식(Starter) 지원 및 단계별 로드맵
+- `./DEAD_CODE_CANDIDATES.md` — 죽은 코드 및 중복 코드 후보 목록
+- `./JPA_DSL_RISK_REGISTER.md` — JPA DSL 잔여 리스크 레지스터
 
 ---
 
-**마지막 갱신**: 2026-07-17
+**마지막 갱신**: 2026-09-12

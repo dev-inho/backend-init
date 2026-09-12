@@ -47,45 +47,70 @@ Spring Boot 4 + Kotlin 기반의 헥사고날(Ports & Adapters) 멀티모듈 백
 - JPA, Mybatis, 외부 라이브러리 사용 불가
 - Port는 domain 내 interface로만 정의
 
-**예시 구조**
+**실제 구조**
 ```
 core/domain/
-├── model/
-│   ├── User.kt          (Entity)
-│   ├── Email.kt         (Value Object)
-│   └── Role.kt          (Enum)
-├── port/
-│   ├── UserRepository.kt    (Output Port)
-│   ├── EmailService.kt      (Output Port)
-│   └── EventPublisher.kt    (Output Port)
-└── service/
-    └── UserDomainService.kt (비즈니스 규칙)
+├── jpadsl/fixture/
+│   ├── RelationChild.kt
+│   ├── RelationParent.kt
+│   └── ScalarSample.kt
+├── sample/
+│   ├── model/
+│   │   └── Sample.kt
+│   └── port/
+│       ├── cache/
+│       │   └── SampleCachePort.kt
+│       ├── file/
+│       │   └── FileStoragePort.kt
+│       └── repository/
+│           └── SampleRepositoryPort.kt
+└── user/
+    ├── model/
+    │   └── User.kt
+    └── port/repository/
+        └── UserRepositoryPort.kt
 ```
 
 ### 2.2 Application (cc.midolog.core.application)
 
-**책적**
+**책임**
 - 유스케이스(Application Service) 구현
-- 도메인 서비스 조율
+- 비즈니스 흐름 조율
 - Adapter(구현체) 주입 및 의존성 해결
 - 트랜잭션 관리
 
 **특징**
-- Domain에만 의존 (도메인 로직 호출)
+- Domain 및 Support(util, logging, web, jwt)에 의존
 - Adapter(client, storage)는 **runtimeOnly**로 의존 (컴파일 의존성 제거)
 - Spring Application Context 진입점
 - WebFlux + Coroutine 사용
 
-**예시 구조**
+**실제 구조**
 ```
 core/application/
-├── config/
-│   ├── AdapterConfig.kt     (Adapter 빈 등록)
+├── ApplicationServer.kt
+├── business/service/
+│   ├── SampleService.kt
+│   └── UserService.kt
+├── common/security/
+│   ├── JwtProvider.kt
 │   └── SecurityConfig.kt
-├── service/
-│   ├── CreateUserUseCase.kt (Application Service)
-│   └── UpdateUserUseCase.kt
-└── ApplicationBootApplication.kt
+├── infra/cache/
+│   └── RedisSampleCacheAdapter.kt
+└── web/
+    ├── auth/
+    │   └── AuthController.kt
+    ├── sample/
+    │   ├── SampleController.kt
+    │   ├── SampleStreamController.kt
+    │   └── dto/
+    │       ├── CreateSampleRequest.kt
+    │       └── SampleResponse.kt
+    └── user/
+        ├── UserController.kt
+        └── dto/
+            ├── CreateUserRequest.kt
+            └── UserResponse.kt
 ```
 
 ### 2.3 Gateway (cc.midolog.core.gateway)
@@ -93,73 +118,82 @@ core/application/
 **책임**
 - 외부 HTTP 요청 수신
 - 요청 분기(라우팅)
-- 트랜잭션 ID 생성 및 Header 전파
-- 요청 모니터링/관측성
+- 요청 ID 전파 및 Rate Limiting
+- 요청 관측성/가시성(Visibility) 제공
 
 **특징**
-- Spring Cloud Gateway 기반
+- Spring WebFlux / Reactor Netty 기반 자체 프록시 (별도 외부 게이트웨이 의존성 없는 순수 WebFlux 라우팅)
 - 단일 진입점(Single Entry Point)
-- 모든 요청에 고유 Transaction ID 부여
-- 요청 확인 대시보드 제공
+- 모든 요청에 고유 Request ID(`X-Request-Id`) 전파 (`support:web`의 RequestIdFilter 활용)
+- 요청 가시성(Visibility) 이벤트 저장소 및 엔드포인트 제공 (`/internal/gateway/requests`, JWT Bearer 인증)
+- Redis 기반 Rate Limiting 지원
 
-**예시 구조**
+**실제 구조**
 ```
 core/gateway/
+├── GatewayApplication.kt
 ├── config/
-│   ├── GatewayConfig.kt     (라우팅 규칙)
-│   └── TransactionIdFilter.kt (Transaction ID 부여)
-├── controller/
-│   └── RequestMonitorController.kt (대시보드)
-└── GatewayBootApplication.kt
+│   ├── GatewayClockConfig.kt
+│   ├── GatewayRouteProperties.kt
+│   ├── RouteConfig.kt
+│   └── WebClientConfig.kt
+├── filter/
+│   ├── AuthTokenRateLimitFilter.kt
+│   └── JwtAuthFilter.kt
+├── proxy/
+│   ├── HeaderSanitizer.kt
+│   └── ProxyHandler.kt
+├── ratelimit/
+│   ├── RateLimiter.kt
+│   └── RedisRateLimiter.kt
+├── route/
+│   └── GatewayRouteSelector.kt
+└── visibility/
+    ├── RequestEventStore.kt
+    ├── RequestVisibilityController.kt
+    ├── RequestVisibilityEvent.kt
+    ├── RequestVisibilityFilter.kt
+    └── RequestVisibilityProperties.kt
 ```
 
 ### 2.4 Batch (cc.midolog.core.batch)
 
 **책임**
-- 배치 작업(정기 데이터 처리)
-- 스케줄 작업(Quartz, Spring Scheduler)
-- 대용량 데이터 처리
+- 정기 배치 작업 및 데이터 처리
+- 스케줄 작업(Spring Batch, Spring Scheduler)
+- 대용량 데이터 일괄 처리
 
 **특징**
-- 동기 또는 비동기 실행
-- Domain, Storage, Support에 의존
-- Application과 독립적으로 구동 가능
+- Spring Batch 기반 Job/Step 실행
+- `support:logging`만 의존 (Domain, Storage에 직접 의존하지 않음)
+- Application 및 Gateway와 독립적으로 구동 가능한 단독 부트 애플리케이션
 
-**예시 구조**
+**실제 구조**
 ```
 core/batch/
-├── config/
-│   └── BatchConfig.kt
-├── job/
-│   ├── DailyReportJob.kt
-│   └── DataCleanupJob.kt
-└── BatchBootApplication.kt
+├── BatchApplication.kt
+└── batch/job/
+    └── SampleJobConfig.kt
 ```
 
 ### 2.5 Client (cc.midolog.client.*)
 
 **책임**
-- 외부 시스템 API 호출
-- HTTP, gRPC, 메시지 큐 등을 통한 통신
+- 외부 시스템 API 호출 및 스토리지 연동
 - Domain Port 구현(Adapter)
 
 **모듈**
-- **client:storage-file** — 파일 스토리지 클라이언트 (S3, GCS 등)
+- **client:storage-file** — 파일 스토리지 클라이언트 (현재 로컬 파일 스토리지 어댑터 제공, 원격 오브젝트 스토리지 연동은 FUTURE 참조)
 
 **특징**
-- Domain Port를 구현하는 Adapter
+- Domain Port(`FileStoragePort`)를 구현하는 Adapter
 - Application에서 runtimeOnly로 의존
-- 외부 인증/설정 관리(API Key, Endpoint)
 
-**예시 구조**
+**실제 구조**
 ```
 client/storage-file/
-├── config/
-│   └── S3ClientConfig.kt
-├── adapter/
-│   └── S3FileStorageAdapter.kt  (Domain Port 구현)
-└── dto/
-    └── S3UploadResult.kt
+└── cc/midolog/client/storage/
+    └── LocalFileStorageAdapter.kt
 ```
 
 ### 2.6 Storage (cc.midolog.storage.*)
@@ -178,69 +212,94 @@ client/storage-file/
 - MyBatis SQL query 또는 JPA repository 관리
 - Persistence 구현은 profile로 하나만 선택
 
-**예시 구조**
+**실제 구조**
 ```
 storage/mybatis/
 ├── config/
-│   └── MybatisConfig.kt
-├── mapper/
-│   ├── UserMapper.xml
-│   └── UserMapper.kt
-├── adapter/
-│   └── MybatisUserRepositoryAdapter.kt  (Domain Port 구현)
-└── entity/
-    └── UserEntity.kt  (DB Mapping)
+│   └── MyBatisStorageConfig.kt
+├── sample/
+│   ├── MyBatisSampleRepositoryAdapter.kt
+│   └── SampleMapper.kt
+└── user/
+    ├── MyBatisUserRepositoryAdapter.kt
+    └── UserMapper.kt
 
 storage/jpa/
 ├── config/
 │   └── JpaStorageConfig.kt
 ├── sample/
-│   ├── SampleJpaEntity.kt
-│   ├── SampleJpaRepository.kt
-│   ├── SampleJpaMapper.kt
-│   └── JpaSampleRepositoryAdapter.kt  (Domain Port 구현)
-└── README.md
+│   ├── JpaSampleRepositoryAdapter.kt
+│   └── ScalarSampleCodeJpaConverter.kt
+└── user/
+    └── JpaUserRepositoryAdapter.kt
 ```
+*(참고: JPA Entity, Repository, Mapper는 `build-logic`의 `JpaDslPlugin`에 의해 빌드 시 `build/generated`에 자동 생성됩니다)*
 
 **Domain/entity 분리 원칙**
-- `core:domain`에는 Plain Kotlin/Java model과 port만 둔다.
+- `core:domain`에는 Plain Kotlin model과 port만 둔다.
 - JPA `@Entity`, `@Table`, Spring Data repository는 `storage:jpa` 내부에만 둔다.
 - MyBatis mapper interface와 XML mapper는 `storage:mybatis` 내부에만 둔다.
-- `core:application`은 `SampleRepositoryPort` 같은 domain port만 사용하고 구체 storage 구현을 main source에서 import하지 않는다.
+- `core:application`은 `SampleRepositoryPort`, `UserRepositoryPort` 같은 domain port만 사용하고 구체 storage 구현을 main source에서 import하지 않는다.
 - 운영 실행에서는 `mybatis`와 `jpa` profile을 동시에 켜지 않는다.
 
 ### 2.7 Support (cc.midolog.support.*)
 
 **책임**
 - 횡단 관심사(Cross-Cutting Concerns)
-- 모든 모듈에서 공유하는 유틸리티
+- 여러 모듈에서 공유하는 유틸리티, 로깅, 웹 공통 처리 및 인증 토큰 코덱
 
 **모듈**
-- **support:util** — 공통 유틸리티 (String, Date, Collection 등)
-- **support:logging** — 통일된 로깅 설정
+- **support:util** — 공통 유틸리티 (String, Date/Time, Collection 확장, 널 안전성, 마스킹, 페이징, 재시도, 유효성 검증 등)
+- **support:logging** — 통일된 로깅 설정 (Logback, MDC 바인딩, 개인정보/민감정보 마스킹, Reactor 연동)
+- **support:web** — 웹 공통 계층 (RequestIdFilter, HttpLoggingFilter, ErrorCode, GlobalExceptionHandler, ApiResponse)
+- **support:jwt** — JWT 공통 유틸리티 (JwtCodec 기반 발급, 파싱, 서명 검증)
 
 **특징**
-- 프레임워크, 도메인 로직 불포함
-- 모든 모듈에서 의존 가능
-- 역의존 금지(어떤 상위 모듈도 support를 의존하지 않음)
+- 도메인 비즈니스 로직 불포함
+- 상위 모듈에서 의존 가능 (단, support 내부에서는 util ← logging, jwt / logging, util ← web 의존)
+- 상위 실행/비즈니스 모듈로의 역의존 금지
 
-**예시 구조**
+**실제 구조**
 ```
 support/util/
-├── extension/
-│   └── StringExt.kt
-├── helper/
-│   └── DateTimeHelper.kt
-└── validator/
-    └── EmailValidator.kt
+├── IdGenerator.kt
+├── JwtSecretValidator.kt
+├── TimeProvider.kt
+├── UtilDefaults.kt
+├── Validation.kt
+├── ext/
+│   ├── CollectionExtensions.kt
+│   ├── NullSafety.kt
+│   └── StringExtensions.kt
+├── mask/
+│   └── Masking.kt
+├── paging/
+│   └── Page.kt
+├── result/
+│   └── Outcome.kt
+└── retry/
+    └── Retry.kt
 
 support/logging/
-├── config/
-│   └── LoggingConfig.kt
+├── LoggingMdc.kt
+├── MaskingMessageConverter.kt
+├── MaskingSupport.kt
+└── ReactorMdc.kt
+
+support/web/
+├── exception/
+│   ├── ApiException.kt
+│   └── ErrorCode.kt
 ├── filter/
-│   └── RequestLoggingFilter.kt
-└── util/
-    └── MdcHelper.kt
+│   ├── HttpLoggingFilter.kt
+│   └── RequestIdFilter.kt
+├── handler/
+│   └── GlobalExceptionHandler.kt
+└── response/
+    └── ApiResponse.kt
+
+support/jwt/
+└── JwtCodec.kt
 ```
 
 ---
@@ -253,15 +312,20 @@ support/logging/
 상위(실행계층) → 하위(도메인/인프라) 단방향
 ```
 
-| 계층 | 의존 가능 대상 | 설명 |
-|------|-------------|------|
-| Gateway | domain, support:logging | 요청 수신 및 분기 |
-| Application | domain, (runtimeOnly) client/*, storage/*, support | 비즈니스 로직 조율 |
-| Batch | domain, (runtimeOnly) client/*, storage/*, support | 배치 작업 실행 |
-| Client/* | domain, support | Domain Port 구현 |
-| Storage/* | domain, support | Domain Port 구현 |
-| Domain | support:util | 순수 로직, Port 정의 |
-| Support | (없음) | 역의존 금지 |
+| 모듈 / 계층 | 의존 대상 (프로젝트) | 설명 |
+|------------|-------------------|------|
+| `core:gateway` | `support:logging`, `support:util`, `support:web`, `support:jwt` | 요청 수신, 라우팅, Rate Limit, 인증, 관측성 (domain 미의존) |
+| `core:application` | `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`, (runtimeOnly) `client:storage-file`, `storage:mybatis`, `storage:jpa` | 비즈니스 유스케이스 조율, REST API 제공, 어댑터 런타임 주입 |
+| `core:batch` | `support:logging` | 정기 배치 작업 실행 (Spring Batch 기반, domain/storage 직접 의존 없음) |
+| `client:storage-file` | `core:domain` | Domain FileStoragePort 구현 (로컬 파일 스토리지) |
+| `storage:mybatis` | `core:domain`, `support:util` | Domain RepositoryPort 구현 (MyBatis SQL 매핑) |
+| `storage:jpa` | `core:domain`, `support:util` | Domain RepositoryPort 구현 (Spring Data JPA 및 JPA DSL 생성 코드) |
+| `core:domain` | (없음) | 순수 Kotlin 도메인 모델 및 포트 인터페이스 (프로젝트 의존 0) |
+| `support:util` | (없음) | 프로젝트 공통 유틸리티 (문자열, 컬렉션, 마스킹 등) |
+| `support:logging` | `support:util` | 통합 로깅 및 MDC 유틸리티 |
+| `support:web` | `support:logging`, `support:util` | 웹 공통 필터, 응답 래퍼, 전역 예외 처리 |
+| `support:jwt` | `support:util` (api) | JWT 인코딩/디코딩 유틸리티 |
+| `build-logic` | (Gradle composite build) | JPA DSL 코드 생성 및 Flyway 마이그레이션 검증/생성 플러그인 (`includeBuild`) |
 
 ### 3.2 runtimeOnly 의존성
 
@@ -272,7 +336,7 @@ Application, Batch는 Adapter(Client, Storage)를 **runtimeOnly**로 의존합�
 - Runtime 시점에만 Spring Context를 통해 Adapter 빈 주입
 
 **장점**
-- Application이 구현 세부(S3, Mysql 등)를 알지 못함
+- Application이 구현 세부(파일 저장소, DB 등)를 알지 못함
 - 동일한 Domain Port에 여러 구현 가능
 - 테스트 시 Mock Adapter로 쉽게 교체
 
@@ -306,52 +370,72 @@ class CreateUserUseCase(
 
 ```mermaid
 graph TD
-    A["Gateway<br/>(core:gateway)"]
-    B["Application<br/>(core:application)"]
-    C["Batch<br/>(core:batch)"]
-    D["Domain<br/>(core:domain)"]
-    F["Client:Storage<br/>(client:storage-file)"]
-    G["Storage:Mybatis<br/>(storage:mybatis)"]
-    J["Storage:JPA<br/>(storage:jpa)"]
-    H["Support:Logging<br/>(support:logging)"]
-    I["Support:Util<br/>(support:util)"]
-    
-    A -->|depends| D
-    A -->|depends| H
-    B -->|depends| D
-    B -->|runtimeOnly| F
-    B -->|runtimeOnly| G
-    B -->|runtimeOnly| J
-    B -->|depends| H
-    B -->|depends| I
-    C -->|depends| D
-    C -->|runtimeOnly| G
-    C -->|depends| H
-    C -->|depends| I
-    F -->|depends| D
-    F -->|depends| I
-    G -->|depends| D
-    G -->|depends| I
-    J -->|depends| D
-    J -->|depends| I
-    D -->|depends| I
-    
-    style D fill:#e1f5ff
-    style I fill:#f3e5f5
-    style H fill:#f3e5f5
-    style A fill:#fff3e0
-    style B fill:#fff3e0
-    style C fill:#fff3e0
-    style F fill:#f1f8e9
-    style G fill:#f1f8e9
-    style J fill:#f1f8e9
+    GW["Gateway<br/>(core:gateway)"]
+    APP["Application<br/>(core:application)"]
+    BAT["Batch<br/>(core:batch)"]
+    DOM["Domain<br/>(core:domain)"]
+    CSF["Client:Storage<br/>(client:storage-file)"]
+    MYB["Storage:Mybatis<br/>(storage:mybatis)"]
+    JPA["Storage:JPA<br/>(storage:jpa)"]
+    LOG["Support:Logging<br/>(support:logging)"]
+    UTL["Support:Util<br/>(support:util)"]
+    WEB["Support:Web<br/>(support:web)"]
+    JWT["Support:Jwt<br/>(support:jwt)"]
+    BL["Build-Logic<br/>(build-logic, includeBuild)"]
+
+    GW -->|depends| LOG
+    GW -->|depends| UTL
+    GW -->|depends| WEB
+    GW -->|depends| JWT
+
+    APP -->|depends| DOM
+    APP -->|depends| UTL
+    APP -->|depends| LOG
+    APP -->|depends| WEB
+    APP -->|depends| JWT
+    APP -.->|runtimeOnly| CSF
+    APP -.->|runtimeOnly| MYB
+    APP -.->|runtimeOnly| JPA
+
+    BAT -->|depends| LOG
+
+    CSF -->|depends| DOM
+
+    MYB -->|depends| DOM
+    MYB -->|depends| UTL
+
+    JPA -->|depends| DOM
+    JPA -->|depends| UTL
+
+    WEB -->|depends| LOG
+    WEB -->|depends| UTL
+
+    JWT -->|depends| UTL
+
+    LOG -->|depends| UTL
+
+    BL -.->|plugin| JPA
+
+    style DOM fill:#e1f5ff
+    style UTL fill:#f3e5f5
+    style LOG fill:#f3e5f5
+    style WEB fill:#f3e5f5
+    style JWT fill:#f3e5f5
+    style GW fill:#fff3e0
+    style APP fill:#fff3e0
+    style BAT fill:#fff3e0
+    style CSF fill:#f1f8e9
+    style MYB fill:#f1f8e9
+    style JPA fill:#f1f8e9
+    style BL fill:#eceff1
 ```
 
 **범례**
 - 파란색(Domain): 도메인 계층 — 프레임워크 비의존, 순수 로직
-- 보라색(Support): 공통 모듈 — 모든 계층에서 사용 가능, 역의존 금지
+- 보라색(Support): 공통 모듈 — 여러 계층에서 공유, 역의존 금지
 - 주황색(실행계층): Gateway, Application, Batch — 요청/작업 실행 진입점
 - 초록색(Adapter): Client, Storage — Domain Port 구현
+- 회색(Build-Logic): Gradle Composite Build — JPA DSL 코드 생성 및 스키마 검증 플러그인
 
 ---
 
@@ -416,16 +500,12 @@ Client Request
 ### 5.3 배치 작업 흐름
 
 ```
-Quartz Scheduler / Spring Scheduler
+Spring Batch / Spring Scheduler
        ↓
     Batch (core:batch)
        ├─ Job 실행
-       ├─ Domain Service 호출
-       └─ Port 호출 (추상적)
-            ↓
-    Adapter (Client/Storage)
-       ├─ 대용량 데이터 처리
-       └─ 결과 저장
+       ├─ Step/Tasklet 실행
+       └─ 데이터 처리
             ↓
     Logging (support:logging)
        └─ 배치 완료 로그 기록
@@ -508,24 +588,29 @@ fun onUserCreated(event: UserCreatedEvent) {
 ## 9. 빌드 및 의존성 순서
 
 ```
-1단계: Support 모듈 빌드
+1단계: 빌드 로직 및 기반 모듈
+├─ build-logic (includeBuild)
 ├─ support:util
-└─ support:logging
+└─ core:domain
 
-2단계: 기초 계층 빌드
-├─ core:domain
-├─ client:storage-file
-├─ storage:mybatis
-└─ storage:jpa
+2단계: 지원(Support) 모듈 빌드
+├─ support:logging (util 의존)
+├─ support:jwt (util 의존)
+└─ support:web (logging, util 의존)
 
-3단계: 실행 계층 빌드
-├─ core:application
-├─ core:gateway
-└─ core:batch
+3단계: 어댑터(Adapter) 모듈 빌드
+├─ client:storage-file (domain 의존)
+├─ storage:mybatis (domain, util 의존)
+└─ storage:jpa (domain, util 의존)
+
+4단계: 실행 계층 빌드
+├─ core:gateway (logging, util, web, jwt 의존)
+├─ core:batch (logging 의존)
+└─ core:application (domain, logging, util, web, jwt 의존 및 client, storage runtimeOnly)
 ```
 
 Gradle에서 자동으로 의존성 순서대로 빌드합니다.
 
 ---
 
-마지막 업데이트: 2026-06-15
+마지막 업데이트: 2026-09-12
