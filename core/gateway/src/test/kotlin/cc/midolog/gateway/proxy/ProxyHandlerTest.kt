@@ -1,4 +1,4 @@
-package cc.midolog.gateway.handler
+package cc.midolog.gateway.proxy
 
 import cc.midolog.gateway.config.GatewayRouteProperties
 import cc.midolog.gateway.route.GatewayRouteSelector
@@ -58,7 +58,7 @@ class ProxyHandlerTest {
     }
 
     @Test
-    fun `streams downstream response body and sanitizes response headers`() {
+    fun `buffers downstream response body and sanitizes response headers`() {
         val handler = handlerWith {
             val body: Flux<DataBuffer> = Flux.just(
                 bufferFactory.wrap("chunk-1".toByteArray()),
