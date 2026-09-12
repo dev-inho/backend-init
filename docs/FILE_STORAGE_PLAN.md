@@ -172,8 +172,8 @@ storage/
 ### 3.2 Spring Boot 4 표준 자동 설정 및 Fail-Fast
 
 - **AutoConfiguration.imports 표준 채택**: Spring Boot 4.0.6 규격 및 L1 게이트웨이 starter 패턴과 통일하여 `META-INF/spring.factories`를 배제하고 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`에 자동 구성 FQCN(`cc.midolog.storage.file.autoconfigure.FileStorageAutoConfiguration`)을 1줄로 선언합니다.
-- **`@AutoConfiguration` 및 `@ConditionalOnClass`**: 자동 구성 진입점을 선언하고 클래스패스에 `LocalFileStorageAdapter` 또는 AWS SDK `S3AsyncClient`가 존재할 때만 해당 어댑터 빈을 조건부로 등록합니다.
-- **`@ConfigurationProperties` 유효성 검증 (Fail-Fast)**: `storage.file.provider` (`local` | `s3`) 값을 바인딩하고 기동 시점에 허용되지 않은 값이거나 필수 속성이 누락되었을 때 즉시 `IllegalStateException`을 발생시켜 애플리케이션 기동을 즉각 차단합니다.
+- **`@AutoConfiguration` 및 `@ConditionalOnProperty` 조건부 등록**: `storage:file-local` 자동 설정은 `storage.file.provider=local`에서만 조건부 등록하며 provider 누락·`s3` 포함 다른 값은 fail-fast로 검증합니다. S3용 조건/자동 설정은 S3 도입 때 추가합니다.
+- **`@ConfigurationProperties` 유효성 검증 (Fail-Fast)**: `storage.file.provider` 필수 및 `"local"` 일치 여부, `storage.file.local.root-dir` 절대 경로, `storage.file.max-size-bytes` 양수 검증을 기동 시점에 수행하여 위반 시 즉시 `IllegalStateException`을 발생시켜 애플리케이션 기동을 즉각 차단합니다.
 
 ---
 
