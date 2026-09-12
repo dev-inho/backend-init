@@ -20,20 +20,20 @@
    - 하는 일: 최외곽 요청 시작 시각 계측 및 응답 완료 시(doFinally) 메타데이터(method, path, status, duration, requestId) INFO 로깅
    - 거절 시: 거절 없음 (관측 전용 통과)
     ↓
-2. AuthTokenRateLimitFilter (core:gateway, @Order(-1))
-   - 하는 일: POST /api/auth/token 대상 클라이언트 IP별 요청 빈도 제한 (Lua 원자적 카운팅)
+2. AuthTokenRateLimitFilter (gateway:core, @Order(-1))
+   - 하는 일: POST /api/auth/token 대상 클라이언트 IP별 요청 빈도 제한 (10회/60초, Redis Lua fail-open)
    - 거절 시: 429 Too Many Requests 반환 (본문 없음) / Redis 오류 시 fail-open 통과
     ↓
 3. RequestIdFilter (support:web, @Order(0))
    - 하는 일: X-Request-Id 헤더 추출(형식 검증) 또는 UUID 생성, 요청/응답 헤더 전파 및 Reactor Context/MDC 바인딩
    - 거절 시: 거절 없음 (요청 식별자 부여 후 통과)
     ↓
-4. JwtAuthFilter (core:gateway, @Order(1))
-   - 하는 일: Authorization Bearer 토큰 서명 및 유효기간 검증 (JwtCodec 위임)
+4. JwtAuthFilter (gateway:core, @Order(1))
+   - 하는 일: Authorization Bearer 토큰 서명 및 유효기간 검증 (JwtCodec 위임, 검증 성공 시 SecurityContext 주입 없이 그대로 통과)
    - 경로 정책: /api/auth/, /actuator/, /batch/ 는 미검증 통과 / /api/, /internal/gateway/ 는 검증 필수
    - 거절 시: 401 Unauthorized 반환 (본문 없음) / 미매핑 경로는 체인에 넘겨 404 위임
     ↓
-5. RequestVisibilityFilter (core:gateway, @Order(100), 조건부 활성화)
+5. RequestVisibilityFilter (gateway:core, @Order(100), 조건부 활성화)
    - 하는 일: gateway.request-visibility.enabled=true 시 완료 시점(doFinally)에 요청 메타데이터를 인메모리 링 버퍼에 기록
    - 거절 시: 거절 없음 (관측 전용)
     ↓
@@ -102,34 +102,49 @@ class RequestIdFilter : WebFilter {
 ## 3. 라우팅 및 프록시
 
 ### 3.0 패키지 구조
-게이트웨이 모듈(`core/gateway`)의 소스 코드는 책임에 따라 다음과 같이 패키지가 분리되어 있습니다:
+게이트웨이 모듈(`gateway/*`)의 소스 코드는 책임에 따라 다음과 같이 분리되어 있습니다:
 
 ```
-core/gateway/src/main/kotlin/cc/midolog/
-├── GatewayApplication.kt
-└── gateway/
-    ├── config/
-    │   ├── GatewayClockConfig.kt
-    │   ├── GatewayRouteProperties.kt
-    │   ├── RouteConfig.kt
-    │   └── WebClientConfig.kt
-    ├── filter/
-    │   ├── AuthTokenRateLimitFilter.kt
-    │   └── JwtAuthFilter.kt
-    ├── proxy/
-    │   ├── HeaderSanitizer.kt
-    │   └── ProxyHandler.kt
-    ├── ratelimit/
-    │   ├── RateLimiter.kt
-    │   └── RedisRateLimiter.kt
-    ├── route/
-    │   └── GatewayRouteSelector.kt
-    └── visibility/
-        ├── RequestEventStore.kt
-        ├── RequestVisibilityController.kt
-        ├── RequestVisibilityEvent.kt
-        ├── RequestVisibilityFilter.kt
-        └── RequestVisibilityProperties.kt
+gateway/
+├── core/
+│   └── src/main/kotlin/cc/midolog/gateway/
+│       ├── config/
+│       │   ├── GatewayClockConfig.kt
+│       │   ├── GatewayRouteProperties.kt
+│       │   ├── RouteConfig.kt
+│       │   └── WebClientConfig.kt
+│       ├── filter/
+│       │   ├── AuthTokenRateLimitFilter.kt
+│       │   └── JwtAuthFilter.kt
+│       ├── proxy/
+│       │   ├── HeaderSanitizer.kt
+│       │   └── ProxyHandler.kt
+│       ├── ratelimit/
+│       │   ├── RateLimiter.kt
+│       │   └── RedisRateLimiter.kt
+│       ├── route/
+│       │   └── GatewayRouteSelector.kt
+│       └── visibility/
+│           ├── RequestEventStore.kt
+│           ├── RequestVisibilityController.kt
+│           ├── RequestVisibilityEvent.kt
+│           ├── RequestVisibilityFilter.kt
+│           └── RequestVisibilityProperties.kt
+├── autoconfigure/
+│   └── src/main/
+│       ├── kotlin/cc/midolog/gateway/autoconfigure/
+│       │   ├── GatewayAutoConfiguration.kt
+│       │   └── GatewayModeProperties.kt
+│       └── resources/META-INF/spring/
+│           └── org.springframework.boot.autoconfigure.AutoConfiguration.imports
+├── starter/
+│   └── build.gradle
+└── app/
+    ├── src/main/kotlin/cc/midolog/
+    │   └── GatewayApplication.kt
+    └── src/main/resources/
+        ├── application.yml
+        └── application-local.yml
 ```
 
 ### 3.1 RouteConfig 및 GatewayRouteSelector (라우팅 규칙)
@@ -229,10 +244,10 @@ RFC 7230 §6.1 및 RFC 9110 §7.6.1 규격에 따라 단일 전송 레벨 연결
 - 요청 중계 및 응답 반환 양방향으로 적용 (`ProxyHandlerTest`의 `forwards path query and sanitized headers to application route`로 검증).
 
 ### 3.3 설정 파일 (application.yml)
-게이트웨이 모듈의 실제 `application.yml` 및 `application-local.yml` 설정 파일 내용입니다:
+게이트웨이 애플리케이션(`gateway:app`)의 실제 `application.yml` 및 `application-local.yml` 설정 파일 내용입니다:
 
 ```yaml
-# core/gateway/src/main/resources/application.yml
+# gateway/app/src/main/resources/application.yml
 server:
   port: 8080
 
@@ -241,6 +256,7 @@ spring:
     name: backend-gateway
 
 gateway:
+  mode: standalone
   routes:
     application-url: ${GATEWAY_APPLICATION_URL}
     application-urls: ${GATEWAY_APPLICATION_URLS:}
@@ -257,7 +273,7 @@ jwt:
   secret: ${JWT_SECRET}
 
 ---
-# core/gateway/src/main/resources/application-local.yml
+# gateway/app/src/main/resources/application-local.yml
 spring:
   data:
     redis:
@@ -274,7 +290,7 @@ gateway:
     capacity: ${GATEWAY_REQUEST_VISIBILITY_CAPACITY:200}
 ```
 
-`application.yml`은 profile을 암묵 활성화하지 않습니다. 로컬 실행 시 `SPRING_PROFILES_ACTIVE=local`을 명시합니다 (`GatewayProfileConfigTest`로 검증).
+`application.yml`은 profile을 암묵 활성화하지 않습니다. 로컬 실행 시 `SPRING_PROFILES_ACTIVE=local JWT_SECRET=<32바이트 이상>`을 명시합니다 (`GatewayProfileConfigTest`로 검증).
 
 `gateway.routes.application-urls`를 쉼표 구분 목록으로 지정하면 `/api/**`와 `/actuator/**` 대상 application 서버를 라운드로빈으로 선택합니다. 값이 없으면 기존 `gateway.routes.application-url` 단일 대상 설정을 그대로 사용합니다. `/batch/**`는 항상 `gateway.routes.batch-url` 단일 대상으로 전달합니다.
 
@@ -282,7 +298,49 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 ---
 
-## 4. 포트 및 라우팅 분기 요약
+## 4. 게이트웨이 기동 모드 (gateway.mode) 정책
+
+게이트웨이는 단일 JVM 인프로세스 탑재부터 독립 실행 및 원격 분리까지 유연하게 대응하기 위해 `gateway.mode` 프로퍼티를 필수로 요구합니다.
+
+### 4.1 프로퍼티 및 Fail-fast 검증
+- **설정 키**: `gateway.mode`
+- **허용 값**: `embedded`, `standalone`, `remote` (기본값 없음)
+- **Fail-fast 정책**: 프로퍼티가 누락되었거나 허용된 세 값이 아닌 경우, 애플리케이션 기동 단계에서 즉시 예외를 발생시키고 종료합니다 (`GatewayModeProperties.kt`의 `@PostConstruct validate()`):
+  ```
+  gateway.mode must be exactly one of: embedded, standalone, remote. Found: '${mode ?: "null"}'
+  ```
+- **Spring Boot 4 자동 설정 엔트리포인트**:
+  `gateway/autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 리소스 파일에 `cc.midolog.gateway.autoconfigure.GatewayAutoConfiguration`이 선언되어 동작합니다 (`spring.factories` 레거시 방식 미사용).
+
+### 4.2 모드별 빈 구성 정책
+
+| 구성 요소 | embedded | standalone | remote | 비고 |
+|---|:---:|:---:|:---:|---|
+| `AuthTokenRateLimitFilter` + `RedisRateLimiter` | O | O | O | IP 기준 10회/60초, Redis Lua fail-open |
+| `GatewayClockConfig` (UTC Clock) | O | O | O | 공통 시간 빈 |
+| `RequestVisibility` (Filter/Store/Controller) | 조건부 | 조건부 | 조건부 | `gateway.request-visibility.enabled=true` 시 |
+| `RouteConfig` (`routes: RouterFunction`) | **X** | **O** | **O** | WebFlux functional routes |
+| `ProxyHandler` (`HeaderSanitizer` 사용) | **X** | **O** | **O** | HTTP 프록시 핸들러 |
+| `WebClientConfig` (`proxyWebClient`) | **X** | **O** | **O** | 프록시 전용 WebClient |
+| `GatewayRouteSelector` / `GatewayRouteProperties` | **X** | **O** | **O** | 라우트 타겟 결정 및 라운드로빈 |
+| `JwtAuthFilter` | **X** | **O** | **O** | `jwt.secret` 필수 검증, 프록시 진입 전 인증 |
+
+- **공통 세 모드 (embedded, standalone, remote)**:
+  `AuthTokenRateLimitFilter` 및 `RateLimiter`/`RedisRateLimiter`, `GatewayClockConfig`가 기본 등록되며, `gateway.request-visibility.enabled=true`인 경우 가시성 빈들(`RequestEventStore`, `RequestVisibilityFilter`, `RequestVisibilityController`)이 등록됩니다.
+- **standalone 및 remote 모드**:
+  공통 빈과 함께 프록시 빈 묶음(`RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `JwtAuthFilter`)이 활성화됩니다. 현재 코드베이스에서 standalone과 remote는 동일한 프록시 빈 묶음을 공유하며 환경 설정값(타겟 URL 및 인프라 구성)으로 역할을 구분합니다.
+- **embedded 모드 (In-process 직접 처리)**:
+  `RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `JwtAuthFilter`를 전혀 등록하지 않습니다.
+  - **설계 이유 및 실측 순서 근거**: WebFlux의 핸들러 매핑 우선순위는 `RouterFunctionMapping`이 `order = -1`이고, 컨트롤러 매핑인 `RequestMappingHandlerMapping`이 `order = 0`입니다. 만약 embedded 모드에서 프록시 라우트 빈(`RouteConfig`)이 등록되면, 동일 프로세스 내의 `@RestController`보다 Functional Router가 `/api/**` 요청을 먼저 가로채 다운스트림 호출을 시도하다가 장애(502/504)를 발생시킵니다. 따라서 routes와 프록시 빈을 등록하지 않아 동일 JVM의 컨트롤러가 직접 요청을 처리하도록 합니다 (`GatewayAutoConfigurationTest`의 `WebFlux 매핑 순서 실측 가드`로 보증).
+  - 인증은 게이트웨이 `JwtAuthFilter` 대신 호스트 애플리케이션의 `SecurityConfig`가 직접 담당합니다.
+
+### 4.3 알려진 제약 및 컴포넌트 스캔 방어
+- `gateway:core` 모듈의 `RequestVisibilityController`에 `@RestController`가 부여되어 있어, 호스트 애플리케이션(`core:application`)이나 게이트웨이 앱(`gateway:app`)이 `cc.midolog` 패키지 스캔을 수행할 때 `gateway.request-visibility.enabled=false` 설정임에도 불구하고 컨트롤러가 먼저 빈으로 등록되는 현상이 발생할 수 있습니다.
+- 현재 `gateway/app`은 `GatewayApplication`에서 `@ComponentScan(excludeFilters = [ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = [RequestVisibilityController::class])])`로 방어하고 있습니다. L2에서 `core:application`에 스타터를 탑재하기 전 core/autoconfigure 후속 정리가 필요합니다.
+
+---
+
+## 5. 포트 및 라우팅 분기 요약
 
 | 경로 | 대상 서버 | 포트 | 설명 |
 |------|----------|------|------|
@@ -294,15 +352,15 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 > [!WARNING] `/actuator/**` 프록시와 백엔드 보안 정책 (`SecurityConfig.kt`)
 > 게이트웨이는 `/actuator/**` 경로로 들어오는 모든 요청을 `application` 서버(8081)로 투명하게 프록시합니다.
-> 그러나 다운스트림 `application` 서버의 Spring Security 설정([`SecurityConfig.kt`](file:///Users/jinsungkim/orca/workspaces/backend-init/docs-gateway/core/application/src/main/kotlin/cc/midolog/common/security/SecurityConfig.kt#L70-L73))은 `/actuator/health` 엔드포인트만 익명 허용(`permitAll()`)하고, 그 외의 모든 액추에이터 엔드포인트(예: `/actuator/beans`, `/actuator/env`, `/actuator/metrics` 등)에 대해 `anyExchange().denyAll()` 규칙을 적용합니다.
+> 그러나 다운스트림 `application` 서버의 Spring Security 설정은 `/actuator/health` 엔드포인트만 익명 허용(`permitAll()`)하고, 그 외의 모든 액추에이터 엔드포인트(예: `/actuator/beans`, `/actuator/env`, `/actuator/metrics` 등)에 대해 `anyExchange().denyAll()` 규칙을 적용합니다.
 > 따라서 게이트웨이를 통해 `/actuator/health` 외의 엔드포인트로 접근할 경우 다운스트림 서버에서 401 Unauthorized 또는 403 Forbidden 응답이 반환되므로 주의가 필요합니다.
 
 ---
 
-## 5. 구현된 필터
+## 6. 구현된 필터
 
-### 5.1 JwtAuthFilter
-**패키지**: `cc.midolog.gateway.filter.JwtAuthFilter` (`core:gateway`)
+### 6.1 JwtAuthFilter
+**패키지**: `cc.midolog.gateway.filter.JwtAuthFilter` (`gateway:core`)
 **순서**: `@Order(1)`
 **설정 키**: `jwt.secret: ${JWT_SECRET}`
 
@@ -310,6 +368,7 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 #### 실제 동작 및 설계 특징
 - **토큰 검증 위임**: 토큰 파싱 및 서명 검증은 공통 모듈인 `support:jwt`의 `JwtCodec`에 위임합니다. 게이트웨이와 백엔드 애플리케이션(`core/application`)이 동일한 시크릿과 파싱 규칙을 공유하며, `jjwt` 라이브러리 의존성을 `support:jwt` 모듈로 격리합니다.
+- **SecurityContext 미주입 통과**: 토큰 검증 성공 시 SecurityContext에 인증 정보를 주입하지 않고 체인으로 그대로 통과(`chain.filter(exchange)`)시킵니다.
 - **초기화 fail-fast**: 생성자 시점에 `JwtSecretValidator.validate(secret)`를 거쳐 시크릿 강도를 검증하며, 유효하지 않은 시크릿(길이 부족 등)이 주어지면 애플리케이션 기동 시 즉시 예외(`IllegalStateException`)를 던져 fail-fast합니다.
 - **경로 정책**:
   - **통과 경로** (`/api/auth/`, `/actuator/`, `/batch/`): 로그인 및 토큰 발급 엔드포인트(`/api/auth/`), 인프라 헬스체크(`/actuator/`), 사내 배치 작업(`/batch/`)은 인증 없이 통과시킵니다.
@@ -318,7 +377,7 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 - **401 응답 정책**:
   - Authorization 헤더 누락, Bearer 접두사 불일치, 서명 만료/위조 등 검증 실패 시 응답 본문 없이 `401 Unauthorized` 상태 코드만 반환하고 종료합니다 (`exchange.response.statusCode = HttpStatus.UNAUTHORIZED`, `setComplete()`). 공격자에게 내부 스택트레이스나 구체적인 실패 원인을 노출하지 않기 위함입니다.
 
-#### 보장 테스트 (`core/gateway/src/test/kotlin/cc/midolog/gateway/filter/JwtAuthFilterTest.kt`)
+#### 보장 테스트 (`gateway/core/src/test/kotlin/cc/midolog/gateway/filter/JwtAuthFilterTest.kt`)
 - `passes request with a valid Bearer token`
 - `returns 401 when Authorization header is missing`
 - `returns 401 when Bearer token is tampered`
@@ -326,8 +385,8 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 ---
 
-### 5.2 AuthTokenRateLimitFilter
-**패키지**: `cc.midolog.gateway.filter.AuthTokenRateLimitFilter` (`core:gateway`)
+### 6.2 AuthTokenRateLimitFilter
+**패키지**: `cc.midolog.gateway.filter.AuthTokenRateLimitFilter` (`gateway:core`)
 **순서**: `@Order(-1)`
 **설정 키**: `gateway.rate-limit.auth-token.limit` (기본값: 10), `gateway.rate-limit.auth-token.window-seconds` (기본값: 60)
 
@@ -340,14 +399,14 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 #### 실제 동작 및 정책
 - **대상 엔드포인트**: `POST /api/auth/token` 단 하나만 대상이며, `GET /api/auth/token`이나 다른 모든 API 경로는 제한 없이 즉시 체인을 통과합니다.
-- **Rate Limit 식별 키**: `rate-limit:auth-token:<client-ip>` (클라이언트의 `remoteAddress` 호스트 주소 기준).
+- **Rate Limit 식별 키**: `rate-limit:auth-token:<client-ip>` (**클라이언트 IP(`remoteAddress` 호스트 주소) 기준**이며, 토큰 기준이 아님).
 - **인터페이스 및 Lua 원자적 스크립트**:
   - `RateLimiter` 인터페이스(`cc.midolog.gateway.ratelimit.RateLimiter`)와 `RedisRateLimiter`(`cc.midolog.gateway.ratelimit.RedisRateLimiter`) 구현체로 분리되어 있습니다.
   - `ReactiveStringRedisTemplate`을 사용하며, `INCR`와 첫 증가 시 `EXPIRE` 설정을 하나의 Lua 스크립트로 묶어 원자적으로 실행합니다. INCR와 EXPIRE 사이에서 장애가 발생해도 TTL 없는 영구 키가 남지 않습니다.
 - **한도 초과 응답**: 허용 한도(기본 60초 내 10회) 초과 시 본문 없는 `429 Too Many Requests` 상태 코드로 종료하여 내부 상태나 카운터를 노출하지 않습니다.
 - **장애 격리 (fail-open)**: Redis 명령 실패, 네트워크 단절, 타임아웃 등 저장소 예외 발생 시 경고 로그를 남기고 요청을 통과시킵니다(fail-open). 토큰 발급 자체는 백엔드 인증 로직이 별도로 검증하므로, rate limiter의 장애가 전체 서비스 불능으로 이어지지 않도록 가용성을 우선합니다.
 
-#### 보장 테스트 (`core/gateway/src/test/kotlin/cc/midolog/gateway/filter/AuthTokenRateLimitFilterTest.kt`)
+#### 보장 테스트 (`gateway/core/src/test/kotlin/cc/midolog/gateway/filter/AuthTokenRateLimitFilterTest.kt`)
 - `passes request when under the limit`
 - `returns 429 when the limit is exceeded`
 - `does not limit GET requests to the token endpoint`
@@ -358,22 +417,22 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 ---
 
-## 6. Request Visibility
+## 7. Request Visibility
 
-### 6.1 목표
+### 7.1 목표
 게이트웨이로 들어온 요청 목록을 최소 메타데이터로 확인합니다. 기본값은 비활성화이며, 명시적으로 활성화했을 때만 내부 조회 엔드포인트와 저장소가 등록됩니다.
 
-### 6.2 현재 기능
-- **컴포넌트 구성** (`cc.midolog.gateway.visibility.*`):
+### 7.2 현재 기능
+- **컴포넌트 구성** (`cc.midolog.gateway.visibility.*`, `gateway:core`):
   - `RequestEventStore`: `ArrayDeque` 기반의 bounded in-memory 링 버퍼 저장소. 설정된 용량(`capacity`, 기본값 200)을 유지하며 동기화(`@Synchronized`)로 스레드 안전성 보장.
   - `RequestVisibilityFilter`: `@Order(100)` 필터. 체인 최하단에서 응답 완료 시점(`doFinally`)에 요청 메타데이터를 이벤트 저장소에 기록. `GatewayClockConfig`의 `Clock` 빈을 주입받아 정확한 시각 계측.
   - `RequestVisibilityController`: `GET /internal/gateway/requests` 내부 조회 REST 컨트롤러.
   - `RequestVisibilityProperties`: `gateway.request-visibility.enabled`(기본 false), `gateway.request-visibility.capacity`(기본 200).
 - **조건부 빈 등록**: `gateway.request-visibility.enabled=true`일 때만 저장소, 필터, 컨트롤러 빈이 활성화됩니다 (`RequestVisibilityTest`로 검증).
-- **보안**: `/internal/gateway/**` 경로는 `JwtAuthFilter`의 검증 대상에 포함되므로 유효한 JWT Bearer 토큰이 필수입니다.
+- **보안**: `/internal/gateway/**` 경로는 standalone/remote에서는 `JwtAuthFilter`의 검증 대상에 포함되며, embedded에서는 호스트 `SecurityConfig`가 담당합니다.
 - **민감정보 보호**: 요청/응답 본문, 쿼리스트링, Authorization 헤더 등 PII 및 민감 자격증명은 일절 저장하지 않으며 method, path, status, requestId, timestamp, durationMs 메타데이터만 보관합니다.
 
-#### 보장 테스트 (`core/gateway/src/test/kotlin/cc/midolog/gateway/visibility/RequestVisibilityTest.kt`)
+#### 보장 테스트 (`gateway/core/src/test/kotlin/cc/midolog/gateway/visibility/RequestVisibilityTest.kt`)
 - `visibility beans are disabled by default`
 - `visibility beans are enabled only when property is true`
 - `store keeps bounded recent events`
@@ -381,7 +440,7 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 - `controller returns recent events without raw body or headers`
 - `internal gateway requests require a valid jwt`
 
-### 6.3 후속 후보
+### 7.3 후속 후보
 - Redis-backed 분산 request event store
 - HTML dashboard 또는 별도 운영 UI
 - request id 기반 로그 조회 연동
@@ -391,7 +450,7 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 ---
 
-## 7. 수평 확장 (Architecture Note)
+## 8. 수평 확장 (Architecture Note)
 
 게이트웨이가 단일 진입점이므로, 비즈니스 서버(application, batch)는 무상태로 설계되어 다중 인스턴스 배포가 가능합니다.
 

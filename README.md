@@ -8,10 +8,10 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 
 **backend-init**은 Spring Boot 4 + Kotlin 기반 멀티모듈 백엔드 템플릿입니다. 현재는 설계 문서와 실행 가능한 초기 골격을 함께 정리하는 단계입니다:
 
-- **게이트웨이 분기**: 클라이언트 요청을 게이트웨이(`core:gateway`)에서 받아 비즈니스 서버(`core:application`)로 라우팅
+- **게이트웨이 분기**: 클라이언트 요청을 게이트웨이(`gateway:app`)에서 받아 비즈니스 서버(`core:application`)로 라우팅
 - **헥사고날 아키텍처**: Ports & Adapters 패턴으로 비즈니스 로직과 인프라를 분리
 - **트랜잭션 ID 관리**: 모든 요청에 `X-Request-Id`를 부여하여 분산 환경에서 추적 가능
-- **멀티모듈 구조**: 11개 모듈로 기능을 명확히 분리
+- **멀티모듈 구조**: 14개 모듈로 기능을 명확히 분리
 - **반응형 스택**: WebFlux + Kotlin 코루틴으로 고성능 비동기 처리
 
 ---
@@ -32,16 +32,19 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 
 ## 모듈 구조
 
-프로젝트는 4개 범주(core, client, storage, support)의 11개 모듈로 구성됩니다.
+프로젝트는 5개 범주(core, gateway, client, storage, support)의 14개 모듈로 구성됩니다.
 
 ### 모듈 개요
 
 | 모듈 | 책임 |
 |------|------|
 | **core:application** | 비즈니스 로직 및 도메인 서비스 구현 (포트 8081) |
-| **core:gateway** | API 게이트웨이, 요청 라우팅, 트랜잭션 ID 관리 (포트 8080) |
-| **core:domain** | 프레임워크 비의존 도메인 모델 및 포트 |
 | **core:batch** | 배치 작업 및 스케줄링 (포트 8082) |
+| **core:domain** | 프레임워크 비의존 도메인 모델 및 포트 |
+| **gateway:core** | 게이트웨이 핵심 필터, 라우팅, 프록시, 관측성 컴포넌트 |
+| **gateway:autoconfigure** | `gateway.mode` 기반 Spring Boot 자동 설정 및 조건부 빈 등록 |
+| **gateway:starter** | 게이트웨이 탑재용 스타터 라이브러리 (core + autoconfigure) |
+| **gateway:app** | 독립 실행형 Spring Boot 게이트웨이 서비스 (포트 8080) |
 | **client:storage-file** | 파일 저장소 클라이언트 (Ports 적응자) |
 | **storage:mybatis** | MyBatis 데이터 접근 계층 (Adapters) |
 | **storage:jpa** | Spring Data JPA 데이터 접근 계층 (Adapters) |
@@ -91,9 +94,13 @@ backend-init/
 │       └── GATEWAY_FEATURE_MATRIX.md
 ├── core/
 │   ├── application/
-│   ├── gateway/
-│   ├── domain/
-│   └── batch/
+│   ├── batch/
+│   └── domain/
+├── gateway/
+│   ├── app/
+│   ├── autoconfigure/
+│   ├── core/
+│   └── starter/
 ├── client/
 │   └── storage-file/
 ├── storage/
@@ -125,11 +132,11 @@ backend-init/
 ### 개별 서비스 실행
 
 ```bash
-# API 게이트웨이 (포트 8080)
-SPRING_PROFILES_ACTIVE=local ./gradlew :core:gateway:bootRun
+# 독립 실행형 API 게이트웨이 (포트 8080, standalone 모드)
+SPRING_PROFILES_ACTIVE=local JWT_SECRET=this_is_a_secret_key_with_at_least_32_bytes ./gradlew :gateway:app:bootRun
 
-# API 게이트웨이 + request visibility optional 기능
-GATEWAY_REQUEST_VISIBILITY_ENABLED=true SPRING_PROFILES_ACTIVE=local ./gradlew :core:gateway:bootRun
+# API 게이트웨이 + request visibility 활성화
+GATEWAY_REQUEST_VISIBILITY_ENABLED=true SPRING_PROFILES_ACTIVE=local JWT_SECRET=this_is_a_secret_key_with_at_least_32_bytes ./gradlew :gateway:app:bootRun
 
 # 비즈니스 서버 (포트 8081)
 SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:bootRun
@@ -142,6 +149,15 @@ SPRING_PROFILES_ACTIVE=local ./gradlew :core:batch:bootRun
 ```
 
 `application.yml`은 profile을 암묵 활성화하지 않습니다. 로컬 기본값(DB/Redis endpoint, gateway target URL)은 각 모듈의 `application-local.yml`에만 둡니다.
+
+#### 게이트웨이 기동 모드 (`gateway.mode`)
+- `embedded`: 동일 JVM 내 애플리케이션(`core:application`) 탑재 모드. 프록시 라우터와 `JwtAuthFilter`를 등록하지 않고 in-process `@RestController`가 직접 요청을 처리합니다.
+- `standalone`: 단독 프로세스로 실행되는 게이트웨이 서비스 (`gateway:app` 기본값).
+- `remote`: 원격 전용 게이트웨이. 현재 구현은 standalone과 동일한 프록시 빈 묶음을 사용하며 설정값으로 구분합니다.
+
+#### 라우팅 및 인증 동작 확인
+- 무인증 상태로 보호 API(예: `GET /api/sample/ping`)를 호출하면 `JwtAuthFilter`에 의해 즉시 `401 Unauthorized`가 반환됩니다.
+- 라우팅 정상 동작 확인은 유효한 JWT Bearer 토큰을 포함하여 요청할 때 확인할 수 있습니다. 다운스트림 비즈니스 서버(8081)가 미기동 상태인 경우 연결 실패로 `502 Bad Gateway`(또는 타임아웃 시 `504 Gateway Timeout`)가 반환되어 프록시 중계 동작을 검증할 수 있습니다 (무인증 요청이 502를 반환하는 것이 아닙니다).
 
 ### 로컬 인프라 Smoke Test
 
@@ -185,7 +201,7 @@ CI는 의존성·시크릿 스캔만 돌린다(`.github/workflows/security.yml`)
 
 ### 포트 정보
 
-- **Gateway**: 8080 — 클라이언트 요청 수신, 라우팅
+- **Gateway**: 8080 (`gateway:app`) — 클라이언트 요청 수신, 라우팅
 - **Application**: 8081 — 비즈니스 로직 처리
 - **Batch**: 8082 — 배치 작업 실행
 
@@ -196,7 +212,7 @@ CI는 의존성·시크릿 스캔만 돌린다(`.github/workflows/security.yml`)
 설계 및 운영 관련 상세 문서는 `docs/` 디렉토리를 참조하세요:
 
 - **[아키텍처](docs/ARCHITECTURE.md)** — 헥사고날 패턴, 의존성 방향, 모듈 간 상호작용 다이어그램
-- **[모듈 가이드](docs/MODULE_GUIDE.md)** — 11개 모듈의 상세 가이드, 책임, 사용 방법
+- **[모듈 가이드](docs/MODULE_GUIDE.md)** — 14개 모듈의 상세 가이드, 책임, 사용 방법
 - **[코드 컨벤션](docs/CODE_CONVENTIONS.md)** — KDoc 문체 원칙, 도메인 금지 토큰, 패키지 규칙, 구조 가드 및 품질 검사 정책
 - **[게이트웨이](docs/GATEWAY.md)** — 게이트웨이 아키텍처, 트랜잭션 ID(X-Request-Id) 관리, 라우팅 규칙
 - **[향후 설계](docs/FUTURE.md)** — 다중 인스턴스 지원, Config 서버, 요청 확인 화면 등 향후 계획
@@ -220,8 +236,11 @@ CI는 의존성·시크릿 스캔만 돌린다(`.github/workflows/security.yml`)
 ## 현재 상태
 
 **검증된 범위**
-- 11개 Gradle 멀티모듈 설정 및 모듈 간 의존성 연결
-- `core:gateway`: 요청 ID 필터, JWT 인증 필터, 토큰 발급 엔드포인트(`POST /api/auth/token`)에 대한 IP 기준 rate limit(10회/60초, Redis, fail-open), 프록시(`cc.midolog.gateway.proxy.*`) 및 라우팅, optional 다중 application 라운드로빈, 기본 비활성화 request visibility
+- 14개 Gradle 멀티모듈 설정 및 모듈 간 의존성 연결
+- `gateway:core`: 요청 ID 필터, JWT 인증 필터, 토큰 발급 엔드포인트(`POST /api/auth/token`)에 대한 IP 기준 rate limit(10회/60초, Redis, fail-open), 프록시(`cc.midolog.gateway.proxy.*`) 및 라우팅, optional 다중 application 라운드로빈, 기본 비활성화 request visibility
+- `gateway:autoconfigure`: `gateway.mode` 프로퍼티 기반 조건부 자동 설정 및 Boot 4 imports 등록
+- `gateway:starter`: `gateway:core` 및 `gateway:autoconfigure`를 통합한 탑재용 스타터 라이브러리
+- `gateway:app`: 독립 실행형 Spring Boot 4 게이트웨이 애플리케이션 (8080 포트)
 - `core:application`: sample API, user 생성/조회 API, 전용 응답 DTO(`*Response`), Redis 캐시 인프라(`cc.midolog.infra.cache.RedisSampleCacheAdapter`), 인증 토큰 발급, SecurityConfig, 예외 응답 처리
 - `core:domain`: Spring/JPA/MyBatis annotation 없는 Plain Kotlin domain model/port (`DomainPurityTest` 가드)
 - `storage:mybatis`: `mybatis` profile adapter(`cc.midolog.storage.mybatis.*`), `MyBatis*RepositoryAdapter`, mapper upsert, sample/user profile wiring 테스트

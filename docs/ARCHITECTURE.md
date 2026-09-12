@@ -113,47 +113,65 @@ core/application/
             └── UserResponse.kt
 ```
 
-### 2.3 Gateway (cc.midolog.core.gateway)
+### 2.3 Gateway (cc.midolog.gateway.*)
 
 **책임**
-- 외부 HTTP 요청 수신
-- 요청 분기(라우팅)
+- 외부 HTTP 요청 수신 및 단일 진입점 역할
+- 요청 분기(라우팅) 및 프록시 중계
 - 요청 ID 전파 및 Rate Limiting
 - 요청 관측성/가시성(Visibility) 제공
+- Spring Boot 자동 설정 및 모드(`gateway.mode`) 지원
 
-**특징**
-- Spring WebFlux / Reactor Netty 기반 자체 프록시 (별도 외부 게이트웨이 의존성 없는 순수 WebFlux 라우팅)
-- 단일 진입점(Single Entry Point)
-- 모든 요청에 고유 Request ID(`X-Request-Id`) 전파 (`support:web`의 RequestIdFilter 활용)
-- 요청 가시성(Visibility) 이벤트 저장소 및 엔드포인트 제공 (`/internal/gateway/requests`, JWT Bearer 인증)
-- Redis 기반 Rate Limiting 지원
+**모듈 구성 및 특징**
+- **gateway:core**: 핵심 필터(`AuthTokenRateLimitFilter`, `JwtAuthFilter`), 라우팅(`RouteConfig`), 프록시(`ProxyHandler`), 라우트 선택(`GatewayRouteSelector`), 요청 가시성(`RequestVisibility*`)
+- **gateway:autoconfigure**: `gateway.mode` 프로퍼티 검증 및 모드별 빈 자동 등록(`GatewayAutoConfiguration`), Spring Boot 4 `AutoConfiguration.imports`
+- **gateway:starter**: `gateway:core`와 `gateway:autoconfigure` 의존성을 번들링하여 제공하는 스타터 라이브러리
+- **gateway:app**: 독립 실행형 게이트웨이 부트 애플리케이션 (`GatewayApplication`, 포트 8080)
+- **WebFlux 자체 구현**: 별도 외부 프레임워크(Spring Cloud Gateway 등) 의존성 없는 순수 WebFlux `router {}` 기반 라우팅
+- **모드 지원 (`gateway.mode=embedded|standalone|remote`)**: 필수 설정값(기본값 없음, fail-fast). `embedded` 모드에서는 프록시 라우터/`JwtAuthFilter`를 등록하지 않고 동일 JVM의 `@RestController`가 직접 처리합니다.
+- **X-Request-Id 전파**: `support:web`의 `RequestIdFilter`(@Order(0)) 및 `HttpLoggingFilter`(@Order(-2)) 연계
+- **IP 기준 Rate Limiting**: `POST /api/auth/token` 대상 클라이언트 IP 기준 10회/60초 Redis Lua fail-open 방어
 
 **실제 구조**
 ```
-core/gateway/
-├── GatewayApplication.kt
-├── config/
-│   ├── GatewayClockConfig.kt
-│   ├── GatewayRouteProperties.kt
-│   ├── RouteConfig.kt
-│   └── WebClientConfig.kt
-├── filter/
-│   ├── AuthTokenRateLimitFilter.kt
-│   └── JwtAuthFilter.kt
-├── proxy/
-│   ├── HeaderSanitizer.kt
-│   └── ProxyHandler.kt
-├── ratelimit/
-│   ├── RateLimiter.kt
-│   └── RedisRateLimiter.kt
-├── route/
-│   └── GatewayRouteSelector.kt
-└── visibility/
-    ├── RequestEventStore.kt
-    ├── RequestVisibilityController.kt
-    ├── RequestVisibilityEvent.kt
-    ├── RequestVisibilityFilter.kt
-    └── RequestVisibilityProperties.kt
+gateway/
+├── core/
+│   ├── config/
+│   │   ├── GatewayClockConfig.kt
+│   │   ├── GatewayRouteProperties.kt
+│   │   ├── RouteConfig.kt
+│   │   └── WebClientConfig.kt
+│   ├── filter/
+│   │   ├── AuthTokenRateLimitFilter.kt
+│   │   └── JwtAuthFilter.kt
+│   ├── proxy/
+│   │   ├── HeaderSanitizer.kt
+│   │   └── ProxyHandler.kt
+│   ├── ratelimit/
+│   │   ├── RateLimiter.kt
+│   │   └── RedisRateLimiter.kt
+│   ├── route/
+│   │   └── GatewayRouteSelector.kt
+│   └── visibility/
+│       ├── RequestEventStore.kt
+│       ├── RequestVisibilityController.kt
+│       ├── RequestVisibilityEvent.kt
+│       ├── RequestVisibilityFilter.kt
+│       └── RequestVisibilityProperties.kt
+├── autoconfigure/
+│   ├── src/main/kotlin/cc/midolog/gateway/autoconfigure/
+│   │   ├── GatewayAutoConfiguration.kt
+│   │   └── GatewayModeProperties.kt
+│   └── src/main/resources/META-INF/spring/
+│       └── org.springframework.boot.autoconfigure.AutoConfiguration.imports
+├── starter/
+│   └── build.gradle
+└── app/
+    ├── src/main/kotlin/cc/midolog/
+    │   └── GatewayApplication.kt
+    └── src/main/resources/
+        ├── application.yml
+        └── application-local.yml
 ```
 
 ### 2.4 Batch (cc.midolog.core.batch)
@@ -314,7 +332,10 @@ support/jwt/
 
 | 모듈 / 계층 | 의존 대상 (프로젝트) | 설명 |
 |------------|-------------------|------|
-| `core:gateway` | `support:logging`, `support:util`, `support:web`, `support:jwt` | 요청 수신, 라우팅, Rate Limit, 인증, 관측성 (domain 미의존) |
+| `gateway:app` | `gateway:starter`, `support:logging` (test: `support:web`) | 독립 실행형 API 게이트웨이 서비스 부트스트랩 |
+| `gateway:starter` | `gateway:core` (api), `gateway:autoconfigure` (api) | 게이트웨이 의존성 묶음 스타터 라이브러리 |
+| `gateway:autoconfigure` | `gateway:core` | `gateway.mode` 기반 자동 설정 및 조건부 빈 등록 |
+| `gateway:core` | `support:logging`, `support:util`, `support:web`, `support:jwt` | 요청 수신, 라우팅, Rate Limit, 인증, 관측성 핵심 로직 |
 | `core:application` | `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`, (runtimeOnly) `client:storage-file`, `storage:mybatis`, `storage:jpa` | 비즈니스 유스케이스 조율, REST API 제공, 어댑터 런타임 주입 |
 | `core:batch` | `support:logging` | 정기 배치 작업 실행 (Spring Batch 기반, domain/storage 직접 의존 없음) |
 | `client:storage-file` | `core:domain` | Domain FileStoragePort 구현 (로컬 파일 스토리지) |
@@ -370,7 +391,10 @@ class CreateUserUseCase(
 
 ```mermaid
 graph TD
-    GW["Gateway<br/>(core:gateway)"]
+    GW_APP["Gateway App<br/>(gateway:app)"]
+    GW_STARTER["Gateway Starter<br/>(gateway:starter)"]
+    GW_AUTO["Gateway Autoconfigure<br/>(gateway:autoconfigure)"]
+    GW_CORE["Gateway Core<br/>(gateway:core)"]
     APP["Application<br/>(core:application)"]
     BAT["Batch<br/>(core:batch)"]
     DOM["Domain<br/>(core:domain)"]
@@ -383,10 +407,18 @@ graph TD
     JWT["Support:Jwt<br/>(support:jwt)"]
     BL["Build-Logic<br/>(build-logic, includeBuild)"]
 
-    GW -->|depends| LOG
-    GW -->|depends| UTL
-    GW -->|depends| WEB
-    GW -->|depends| JWT
+    GW_APP -->|depends| GW_STARTER
+    GW_APP -->|depends| LOG
+
+    GW_STARTER -->|api| GW_CORE
+    GW_STARTER -->|api| GW_AUTO
+
+    GW_AUTO -->|depends| GW_CORE
+
+    GW_CORE -->|depends| LOG
+    GW_CORE -->|depends| UTL
+    GW_CORE -->|depends| WEB
+    GW_CORE -->|depends| JWT
 
     APP -->|depends| DOM
     APP -->|depends| UTL
@@ -421,7 +453,10 @@ graph TD
     style LOG fill:#f3e5f5
     style WEB fill:#f3e5f5
     style JWT fill:#f3e5f5
-    style GW fill:#fff3e0
+    style GW_APP fill:#fff3e0
+    style GW_STARTER fill:#fff3e0
+    style GW_AUTO fill:#fff3e0
+    style GW_CORE fill:#fff3e0
     style APP fill:#fff3e0
     style BAT fill:#fff3e0
     style CSF fill:#f1f8e9
@@ -433,7 +468,7 @@ graph TD
 **범례**
 - 파란색(Domain): 도메인 계층 — 프레임워크 비의존, 순수 로직
 - 보라색(Support): 공통 모듈 — 여러 계층에서 공유, 역의존 금지
-- 주황색(실행계층): Gateway, Application, Batch — 요청/작업 실행 진입점
+- 주황색(실행/게이트웨이 계층): Gateway(app, starter, autoconfigure, core), Application, Batch — 요청/작업 실행 진입점 및 게이트웨이 라이브러리
 - 초록색(Adapter): Client, Storage — Domain Port 구현
 - 회색(Build-Logic): Gradle Composite Build — JPA DSL 코드 생성 및 스키마 검증 플러그인
 
@@ -446,7 +481,7 @@ graph TD
 ```
 Client HTTP Request
        ↓
-    Gateway (core:gateway)
+    Gateway (gateway:app)
        ├─ Transaction ID 생성
        ├─ 요청 추적(MDC)
        └─ Application으로 라우팅
@@ -598,14 +633,21 @@ fun onUserCreated(event: UserCreatedEvent) {
 ├─ support:jwt (util 의존)
 └─ support:web (logging, util 의존)
 
-3단계: 어댑터(Adapter) 모듈 빌드
+3단계: 어댑터(Adapter) 및 코어 모듈 빌드
 ├─ client:storage-file (domain 의존)
 ├─ storage:mybatis (domain, util 의존)
-└─ storage:jpa (domain, util 의존)
+├─ storage:jpa (domain, util 의존)
+└─ gateway:core (logging, util, web, jwt 의존)
 
-4단계: 실행 계층 빌드
-├─ core:gateway (logging, util, web, jwt 의존)
+4단계: 게이트웨이 자동 설정 빌드
+└─ gateway:autoconfigure (gateway:core 의존)
+
+5단계: 게이트웨이 스타터 라이브러리 빌드
+└─ gateway:starter (gateway:core, gateway:autoconfigure 의존)
+
+6단계: 실행 계층 빌드
 ├─ core:batch (logging 의존)
+├─ gateway:app (gateway:starter, logging 의존)
 └─ core:application (domain, logging, util, web, jwt 의존 및 client, storage runtimeOnly)
 ```
 
