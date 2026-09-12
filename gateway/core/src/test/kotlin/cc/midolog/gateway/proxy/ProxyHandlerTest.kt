@@ -225,10 +225,14 @@ class ProxyHandlerTest {
     @Test
     fun `Actual unavailable localhost upstream retries GET and not POST`() {
         var reqCount = 0
-        val client = WebClient.builder().baseUrl("http://localhost:23456").filter { request, next -> reqCount++; next.exchange(request) }.build()
+        val exchangeFunction = ExchangeFunction { _ ->
+            reqCount++
+            Mono.error(java.net.ConnectException("Connection refused"))
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
         val handler = ProxyHandler(
             client,
-            GatewayRouteSelector(cc.midolog.gateway.config.GatewayRouteProperties("http://localhost:23456", batchUrl = "http://localhost:23456"), client, java.time.Clock.systemUTC(), null),
+            GatewayRouteSelector(cc.midolog.gateway.config.GatewayRouteProperties("http://application-a.internal", batchUrl = "http://batch.internal"), client, java.time.Clock.systemUTC(), null),
             GatewayRetryProperties(maxAttempts = 3, backoff = java.time.Duration.ofMillis(1))
         )
 
@@ -374,36 +378,96 @@ class ProxyHandlerTest {
 
     @Test
     fun `Connection exception marks target as unhealthy immediately`() {
-        var reqCount = 0
-        val client = WebClient.builder().baseUrl("http://localhost:23456").filter { request, next ->
-            reqCount++
-            next.exchange(request)
-        }.build()
+        val exchangeFunction = ExchangeFunction { _ ->
+            Mono.error(java.net.ConnectException("Connection refused"))
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
 
-        val selector = GatewayRouteSelector(
-            cc.midolog.gateway.config.GatewayRouteProperties(
-                applicationUrls = listOf("http://localhost:23456", "http://localhost:23457"),
-                batchUrl = "http://localhost:23456"
-            ),
-            client,
-            java.time.Clock.systemUTC(),
-            null
+        val properties = GatewayRouteProperties(
+            applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
+            batchUrl = "http://batch.internal"
         )
+        val selector = GatewayRouteSelector(properties, client, java.time.Clock.systemUTC(), null)
 
         val handler = ProxyHandler(
             client,
             selector,
-            GatewayRetryProperties(maxAttempts = 3, backoff = java.time.Duration.ofMillis(1))
+            GatewayRetryProperties(maxAttempts = 1, backoff = java.time.Duration.ofMillis(1))
         )
 
-        // It will route to 23456 first
         val getExchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
         val getResponse = handler.proxy(serverRequest(getExchange.request)).block()
         getResponse!!.writeTo(getExchange, responseContext()).block()
 
-        // 23456 should be marked unhealthy. Next request should route to 23457.
-        // We can just verify the next selected target.
-        assertEquals("http://localhost:23457", selector.selectTarget("/api/retry"))
-        assertEquals("http://localhost:23457", selector.selectTarget("/api/retry"))
+        assertEquals(HttpStatus.BAD_GATEWAY, getExchange.response.statusCode)
+
+        // application-a should be marked unhealthy. Next request should route to application-b.
+        assertEquals("http://application-b.internal", selector.selectTarget("/api/retry"))
+        assertEquals("http://application-b.internal", selector.selectTarget("/api/retry"))
+    }
+
+    @Test
+    fun `Timeout and 503 do not mark target as unhealthy`() {
+        var status = HttpStatus.SERVICE_UNAVAILABLE
+        var isTimeout = false
+        val exchangeFunction = ExchangeFunction { _ ->
+            if (isTimeout) Mono.error(java.util.concurrent.TimeoutException("Timeout"))
+            else Mono.just(ClientResponse.create(status).build())
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+
+        val properties = GatewayRouteProperties(
+            applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
+            batchUrl = "http://batch.internal"
+        )
+        val selector = GatewayRouteSelector(properties, client, java.time.Clock.systemUTC(), null)
+
+        val handler = ProxyHandler(
+            client,
+            selector,
+            GatewayRetryProperties(maxAttempts = 1, backoff = java.time.Duration.ofMillis(1))
+        )
+
+        // 503 test
+        val exchange503 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        handler.proxy(serverRequest(exchange503.request)).block()!!.writeTo(exchange503, responseContext()).block()
+
+        // Timeout test
+        isTimeout = true
+        val exchangeTimeout = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        handler.proxy(serverRequest(exchangeTimeout.request)).block()!!.writeTo(exchangeTimeout, responseContext()).block()
+
+        // Both targets should still be round-robining because they are not unhealthy
+        val t1 = selector.selectTarget("/api/retry")
+        val t2 = selector.selectTarget("/api/retry")
+        assertEquals(setOf("http://application-a.internal", "http://application-b.internal"), setOf(t1, t2))
+    }
+
+    @Test
+    fun `Batch target connection failure does not change application target states`() {
+        val exchangeFunction = ExchangeFunction { _ ->
+            Mono.error(java.net.ConnectException("Connection refused"))
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+
+        val properties = GatewayRouteProperties(
+            applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
+            batchUrl = "http://batch.internal"
+        )
+        val selector = GatewayRouteSelector(properties, client, java.time.Clock.systemUTC(), null)
+
+        val handler = ProxyHandler(
+            client,
+            selector,
+            GatewayRetryProperties(maxAttempts = 1, backoff = java.time.Duration.ofMillis(1))
+        )
+
+        val batchExchange = MockServerWebExchange.from(MockServerHttpRequest.get("/batch/jobs"))
+        handler.proxy(serverRequest(batchExchange.request)).block()!!.writeTo(batchExchange, responseContext()).block()
+
+        // Batch target is stateless in GatewayRouteSelector, application targets remain healthy
+        val t1 = selector.selectTarget("/api/retry")
+        val t2 = selector.selectTarget("/api/retry")
+        assertEquals(setOf("http://application-a.internal", "http://application-b.internal"), setOf(t1, t2))
     }
 }

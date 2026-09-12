@@ -1,7 +1,6 @@
 package cc.midolog.gateway.route
 
 import cc.midolog.gateway.config.GatewayRouteProperties
-import cc.midolog.gateway.config.GatewayHealthCheckProperties
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -29,6 +28,7 @@ class GatewayRouteSelectorTest {
     private var isAHealthy = true
     private var isBHealthy = true
     private var callCount = 0
+    private val selectors = mutableListOf<GatewayRouteSelector>()
 
     @BeforeEach
     fun setUp() {
@@ -51,20 +51,28 @@ class GatewayRouteSelectorTest {
         isAHealthy = true
         isBHealthy = true
         callCount = 0
+        selectors.clear()
     }
 
     @AfterEach
     fun tearDown() {
+        selectors.forEach { it.destroy() }
         VirtualTimeScheduler.reset()
+    }
+
+    private fun createSelector(properties: GatewayRouteProperties, meterReg: SimpleMeterRegistry? = meterRegistry): GatewayRouteSelector {
+        val selector = GatewayRouteSelector(properties, webClient, clock, meterReg)
+        selectors.add(selector)
+        return selector
     }
 
     @Test
     fun `single application url remains the default target`() {
-        val selector = GatewayRouteSelector(
+        val selector = createSelector(
             GatewayRouteProperties(
                 applicationUrl = "http://application.internal",
                 batchUrl = "http://batch.internal",
-            ), webClient, clock, meterRegistry
+            )
         )
 
         assertEquals("http://application.internal", selector.selectTarget("/api/users"))
@@ -74,7 +82,7 @@ class GatewayRouteSelectorTest {
 
     @Test
     fun `multiple application urls are selected round robin`() {
-        val selector = GatewayRouteSelector(
+        val selector = createSelector(
             GatewayRouteProperties(
                 applicationUrl = "http://fallback.internal",
                 applicationUrls = listOf(
@@ -82,7 +90,7 @@ class GatewayRouteSelectorTest {
                     "http://application-b.internal",
                 ),
                 batchUrl = "http://batch.internal",
-            ), webClient, clock, meterRegistry
+            )
         )
 
         assertEquals("http://application-a.internal", selector.selectTarget("/api/users"))
@@ -117,9 +125,8 @@ class GatewayRouteSelectorTest {
         properties.healthCheck.enabled = true
         properties.healthCheck.interval = Duration.ofSeconds(10)
         properties.healthCheck.unhealthyThreshold = 3
-        properties.healthCheck.healthyThreshold = 3
 
-        val selector = GatewayRouteSelector(properties, webClient, clock, meterRegistry)
+        val selector = createSelector(properties)
 
         isAHealthy = false
         vts.advanceTimeBy(Duration.ofSeconds(30))
@@ -137,10 +144,8 @@ class GatewayRouteSelectorTest {
         properties.healthCheck.enabled = true
         properties.healthCheck.interval = Duration.ofSeconds(10)
         properties.healthCheck.unhealthyThreshold = 3
-        properties.healthCheck.healthyThreshold = 3
-        properties.healthCheck.healthyThreshold = 1
 
-        val selector = GatewayRouteSelector(properties, webClient, clock, meterRegistry)
+        val selector = createSelector(properties)
 
         isAHealthy = false
         vts.advanceTimeBy(Duration.ofSeconds(30))
@@ -163,9 +168,8 @@ class GatewayRouteSelectorTest {
         properties.healthCheck.enabled = true
         properties.healthCheck.interval = Duration.ofSeconds(10)
         properties.healthCheck.unhealthyThreshold = 3
-        properties.healthCheck.healthyThreshold = 3
 
-        val selector = GatewayRouteSelector(properties, webClient, clock, meterRegistry)
+        val selector = createSelector(properties)
 
         isAHealthy = false
         vts.advanceTimeBy(Duration.ofSeconds(20))
@@ -191,7 +195,7 @@ class GatewayRouteSelectorTest {
         properties.healthCheck.interval = Duration.ofSeconds(10)
         properties.healthCheck.unhealthyThreshold = 1
 
-        val selector = GatewayRouteSelector(properties, webClient, clock, meterRegistry)
+        val selector = createSelector(properties)
         isAHealthy = false
         isBHealthy = false
         vts.advanceTimeBy(Duration.ofSeconds(10))
@@ -205,28 +209,13 @@ class GatewayRouteSelectorTest {
     }
 
     @Test
-    fun `proxy 연결 실패를 한 번 기록하면 해당 target이 즉시 unhealthy가 되고 다음 요청 선택에서 제외된다`() {
-        val properties = GatewayRouteProperties(
-            applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
-            batchUrl = "http://batch.internal",
-        )
-        properties.healthCheck.enabled = true
-        val selector = GatewayRouteSelector(properties, webClient, clock, meterRegistry)
-
-        selector.markUnhealthy("http://application-a.internal")
-
-        assertEquals("http://application-b.internal", selector.selectTarget("/api/test"))
-        assertEquals("http://application-b.internal", selector.selectTarget("/api/test"))
-    }
-
-    @Test
     fun `enabled=false이면 virtual time이 지나도 health WebClient 호출 0회이고 기존 라우팅 그대로다`() {
         val properties = GatewayRouteProperties(
             applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
             batchUrl = "http://batch.internal",
         )
         properties.healthCheck.enabled = false
-        val selector = GatewayRouteSelector(properties, webClient, clock, meterRegistry)
+        val selector = createSelector(properties)
 
         vts.advanceTimeBy(Duration.ofSeconds(30))
         assertEquals(0, callCount)
@@ -234,23 +223,6 @@ class GatewayRouteSelectorTest {
         val t1 = selector.selectTarget("/api/test")
         val t2 = selector.selectTarget("/api/test")
         assertEquals(setOf("http://application-a.internal", "http://application-b.internal"), setOf(t1, t2))
-    }
-
-    @Test
-    fun `MeterRegistry에 target별 gauge가 1과 0으로 기록된다`() {
-        val properties = GatewayRouteProperties(
-            applicationUrls = listOf("http://application-a.internal"),
-            batchUrl = "http://batch.internal",
-        )
-        properties.healthCheck.enabled = true
-
-        val selector = GatewayRouteSelector(properties, webClient, clock, meterRegistry)
-
-        assertEquals(1.0, meterRegistry.get("gateway.routes.healthy").tag("target", "http://application-a.internal").gauge().value())
-
-        selector.markUnhealthy("http://application-a.internal")
-
-        assertEquals(0.0, meterRegistry.get("gateway.routes.healthy").tag("target", "http://application-a.internal").gauge().value())
     }
 
     @Test
@@ -262,24 +234,95 @@ class GatewayRouteSelectorTest {
         properties.healthCheck.enabled = true
         properties.healthCheck.unhealthyThreshold = 1
         properties.healthCheck.healthyThreshold = 3
-        
-        val selector = GatewayRouteSelector(properties, webClient, clock, meterRegistry)
-        
+
+        val selector = createSelector(properties)
+
         isAHealthy = false
         vts.advanceTimeBy(Duration.ofSeconds(10))
         assertEquals("http://application-b.internal", selector.selectTarget("/api/test"))
-        
+
         isAHealthy = true
         vts.advanceTimeBy(Duration.ofSeconds(20)) // 2 successes, threshold is 3
-        
+
         val t3 = selector.selectTarget("/api/test")
         val t4 = selector.selectTarget("/api/test")
         assertEquals(setOf("http://application-b.internal"), setOf(t3, t4)) // Still unhealthy
-        
+
         vts.advanceTimeBy(Duration.ofSeconds(10)) // 3 successes
-        
+
         val t5 = selector.selectTarget("/api/test")
         val t6 = selector.selectTarget("/api/test")
         assertEquals(setOf("http://application-a.internal", "http://application-b.internal"), setOf(t5, t6)) // Recovered
+    }
+
+    @Test
+    fun `MeterRegistry에 target별 gauge가 상태 전이에 따라 기록되며 fail-open 중에도 0을 유지한다`() {
+        val properties = GatewayRouteProperties(
+            applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
+            batchUrl = "http://batch.internal",
+        )
+        properties.healthCheck.enabled = true
+        properties.healthCheck.interval = Duration.ofSeconds(10)
+        properties.healthCheck.unhealthyThreshold = 1
+
+        val selector = createSelector(properties)
+
+        // Initial state is 1
+        assertEquals(1.0, meterRegistry.get("gateway.routes.healthy").tag("target", "http://application-a.internal").gauge().value())
+
+        // Mark unhealthy by advancing time with false
+        isAHealthy = false
+        vts.advanceTimeBy(Duration.ofSeconds(10))
+        assertEquals(0.0, meterRegistry.get("gateway.routes.healthy").tag("target", "http://application-a.internal").gauge().value())
+
+        // Recover to 1
+        isAHealthy = true
+        vts.advanceTimeBy(Duration.ofSeconds(10))
+        assertEquals(1.0, meterRegistry.get("gateway.routes.healthy").tag("target", "http://application-a.internal").gauge().value())
+
+        // Both unhealthy -> fail-open mode, gauge should still be 0
+        isAHealthy = false
+        isBHealthy = false
+        vts.advanceTimeBy(Duration.ofSeconds(10))
+        assertEquals(0.0, meterRegistry.get("gateway.routes.healthy").tag("target", "http://application-a.internal").gauge().value())
+        assertEquals(0.0, meterRegistry.get("gateway.routes.healthy").tag("target", "http://application-b.internal").gauge().value())
+    }
+
+    @Test
+    fun `MeterRegistry가 null일 때도 상태 전이나 선택에 예외가 발생하지 않는다`() {
+        val properties = GatewayRouteProperties(
+            applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
+            batchUrl = "http://batch.internal",
+        )
+        properties.healthCheck.enabled = true
+        properties.healthCheck.interval = Duration.ofSeconds(10)
+        properties.healthCheck.unhealthyThreshold = 1
+
+        val selector = createSelector(properties, null)
+
+        isAHealthy = false
+        vts.advanceTimeBy(Duration.ofSeconds(10))
+
+        assertEquals("http://application-b.internal", selector.selectTarget("/api/test"))
+    }
+
+    @Test
+    fun `destroy 호출 시 subscription이 해제되어 WebClient 호출이 더 이상 발생하지 않는다`() {
+        val properties = GatewayRouteProperties(
+            applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
+            batchUrl = "http://batch.internal",
+        )
+        properties.healthCheck.enabled = true
+        properties.healthCheck.interval = Duration.ofSeconds(10)
+
+        val selector = createSelector(properties)
+
+        vts.advanceTimeBy(Duration.ofSeconds(10))
+        assertEquals(2, callCount)
+
+        selector.destroy()
+
+        vts.advanceTimeBy(Duration.ofSeconds(50))
+        assertEquals(2, callCount) // Not increased
     }
 }
