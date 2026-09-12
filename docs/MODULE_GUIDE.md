@@ -54,17 +54,23 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 15개 �
 ## 모듈별 상세 가이드
 
 ### 1. core:application
-**책임**: 웹 계층(REST 컨트롤러) + 비즈니스 계층(서비스) + 인프라 캐시 + 보안 및 앱 설정. 비즈니스 API 서버.
+**책임**: 웹 계층(REST 컨트롤러) + 비즈니스 계층(서비스) + 고아 파일 정리 스케줄러 + 인프라 캐시 + 보안 및 앱 설정. 비즈니스 API 서버.
 
 **패키지 구조**:
 ```
 cc.midolog
 ├── ApplicationServer.kt
 ├── business
-│   └── service
-│       ├── FileService.kt
-│       ├── SampleService.kt
-│       └── UserService.kt
+│   ├── config
+│   │   ├── ClockConfig.kt
+│   │   └── OrphanCleanupScheduler.kt
+│   ├── service
+│   │   ├── FileOrphanCleanupService.kt
+│   │   ├── FileService.kt
+│   │   ├── SampleService.kt
+│   │   └── UserService.kt
+│   └── util
+│       └── IdGenerator.kt
 ├── common
 │   └── security
 │       ├── JwtProvider.kt
@@ -104,6 +110,42 @@ cc.midolog
   - `GET /api/files/{id}`: 파일 메타데이터 조회 (`ApiResponse<FileResponse>`).
   - `GET /api/files/{id}/content`: 파일 스트리밍 다운로드 (`ResponseEntity<Flux<DataBuffer>>`, 청크 버퍼 기반 논블로킹 스트리밍).
   - `DELETE /api/files/{id}`: 파일 및 메타데이터 삭제 (`ApiResponse<Unit>`).
+
+**파일 비즈니스 로직 및 삭제 정합성 계약 (`FileService`)**:
+- **업로드 생명주기 (`uploadFile`)**: 고유 ULID 및 무작위 UUID `storageKey`를 생성하고 DB에 `PENDING` 메타데이터를 선행 저장합니다. 이후 `FileStoragePort.store`를 통해 청크 스트림을 스토리지에 영속화하며, 저장이 성공하면 확정된 크기/MIME타입/체크섬과 함께 `READY` 상태로 전이합니다. 스토리지 저장 중 예외가 발생하면 DB 메타데이터를 즉시 `FAILED` 상태로 전이하고 예외를 전파합니다.
+- **조회 및 다운로드 (`getFile`, `loadContent`)**: 요청자(`ownerId`)와 파일 소유자의 일치 여부를 검증(불일치 시 404 Not Found)하고, 파일 상태가 `READY`인지 확인한 후 메타데이터 반환 또는 청크 리더(`ChunkReader`)를 로드합니다.
+- **파일 삭제 정합성 보장 (`deleteFile`)**:
+  - **스토리지 물리 삭제 선행**: `fileStoragePort.delete(file.storageKey)`를 먼저 호출하여 스토리지의 물리 파일을 삭제합니다.
+  - **성공 시 상태 전이**: 스토리지 삭제가 성공(true 반환)한 경우에만 DB 메타데이터를 `DELETED` 상태(`fileMetaRepositoryPort.updateStatus(id, FileStatus.DELETED)`)로 전이합니다.
+  - **실패 시 메타 불변**: 스토리지 삭제가 실패(false 반환 또는 예외 발생)한 경우 `IllegalStateException`을 발생시키며 DB 상태를 전이하지 않고 불변(`READY` 유지)으로 보존하여 메타데이터와 물리 스토리지 간의 정합성 불일치를 방지합니다.
+
+**고아 파일 정리 서비스 및 스케줄러 (`FileOrphanCleanupService`, `OrphanCleanupScheduler`, `ClockConfig`)**:
+- **배경 및 목적**: 클라이언트 네트워크 단절, 프로세스 강제 종료(kill), OOM(OutOfMemoryError) 등 비정상 중단으로 인해 `PENDING` 상태로 남겨져 스토리지와 DB 공간만 차지하는 고아(orphan) 파일을 주기적으로 감지하여 회수하고 `FAILED` 상태로 정리합니다.
+- **`FileOrphanCleanupService` (정리 비즈니스 로직)**:
+  - `cleanup(pendingTtl: Duration, batchSize: Int)` 메서드를 통해 동작합니다.
+  - `batchSize`는 1 이상이어야 하며, 1 미만일 경우 `require(batchSize >= 1)`로 즉시 fail-fast합니다.
+  - 기준 시각 계산: `clock.instant().minus(pendingTtl)` 시각을 `cutoff`으로 설정하여, 이 시각 이전에 생성/갱신된 `PENDING` 상태 레코드만을 정리 대상으로 선별합니다.
+  - **반복 조회 및 기아 회피 (Starvation Prevention)**:
+    - 영구 실패(스토리지 삭제 실패 또는 DB 상태 전이 실패)가 발생한 파일 ID는 `failedIds` 집합에 추가됩니다.
+    - 다음 페이징 조회 시 `limit = batchSize + failedIds.size`로 조회 건수를 확장하여 `fileMetaRepositoryPort.findExpiredPending(cutoff, limit)`을 호출합니다. 이를 통해 이미 실패한 건들을 건너뛰면서 새로운 미처리 만료 건들을 계속 회수할 수 있어, 특정 실패 건으로 인해 후속 행 처리가 영구히 차단되는 기아 현상을 방지합니다.
+  - **삭제 및 전이 순서**: 스토리지 멱등 물리 삭제(`fileStoragePort.delete(orphan.storageKey)`)가 성공(true)한 경우에만 DB 상태를 `FAILED`로 전이합니다. 스토리지 삭제 실패 또는 DB 갱신 실패 시 경고 로그를 남기고 `failedIds`에 기록합니다.
+- **`OrphanCleanupScheduler` (스케줄링 및 동시성 제어)**:
+  - `@ConfigurationProperties(prefix = "storage.file.orphan-cleanup")` 기반 프로퍼티 바인딩.
+  - `@ConditionalOnProperty(prefix = "storage.file.orphan-cleanup", name = ["enabled"], havingValue = "true")` 조건에 의해, `enabled=true`로 명시된 환경에서만 스케줄러 빈이 등록됩니다.
+  - `@Scheduled(fixedDelayString = "\${storage.file.orphan-cleanup.interval:10m}")` 주기로 정리를 실행합니다.
+  - **동시성 및 생명주기 관리**:
+    - 스케줄러 실행 시 전용 `CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineName("OrphanCleanupScope"))`에 작업을 `launch`합니다.
+    - 이전 주기의 작업이 아직 진행 중일 경우 중복 실행을 방지하기 위해 `AtomicBoolean`(`isRunning.compareAndSet(false, true)`) 락을 사용하여 해당 틱의 실행을 건너뜁니다(skip).
+    - 작업 정상 완료 또는 예외 발생 시 `finally` 블록에서 `isRunning.set(false)`로 원자적 복구하여 후속 주기가 정상 동작할 수 있도록 보장합니다.
+    - 애플리케이션 컨텍스트 종료 시점(`@PreDestroy destroy()`)에 코루틴 스코프를 취소(`scope.cancel()`)하여 작업 유실이나 스레드 누수를 차단합니다.
+- **운영 설정 프로퍼티 (`FileOrphanCleanupProperties`)**:
+  - `storage.file.orphan-cleanup.enabled`: 고아 정리 스케줄러 활성화 여부 (기본값: `false`).
+  - `storage.file.orphan-cleanup.interval`: 스케줄러 실행 주기 (기본값: `10m`, 즉 10분).
+  - `storage.file.orphan-cleanup.pending-ttl`: 고아로 간주할 PENDING 상태 유지 만료 시간 (기본값: `1h`, 즉 1시간).
+  - `storage.file.orphan-cleanup.batch-size`: 1회 반복 조회 시 처리할 일괄 건수 (기본값: `100`, `@field:Min(1)` 유효성 검증으로 1 미만 값 설정 시 애플리케이션 기동 fail-fast).
+- **빈 등록 및 `ClockConfig` 조건부 동작 원칙**:
+  - `storage.file.orphan-cleanup.enabled`가 `false`이거나 누락된 경우: `OrphanCleanupScheduler` 빈만 등록되지 않으며, `FileOrphanCleanupService`(@Service)와 UTC `Clock` 기본 빈은 정상 등록되어 컨텍스트 내에 존재합니다.
+  - `ClockConfig`: `@Bean @ConditionalOnMissingBean(Clock::class)`를 통해 기본값으로 `Clock.systemUTC()`를 제공합니다. 테스트나 특수 환경에서 사용자가 정의한 `Clock` 빈(예: 고정 시계 `Clock.fixed(...)`)을 컨텍스트에 등록하면 기본 Clock 빈이 자동으로 물러나 시간 제어의 결정성을 보장합니다.
 
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`, `support:logging`, `support:web`, `support:jwt`
@@ -145,9 +187,16 @@ dependencies {
 }
 ```
 
-- **이 모듈의 가드**:
-  - `cc.midolog.web.ControllerResponseTypeTest` (컨트롤러 반환 타입이 도메인 모델을 직접 노출하지 않고 `ApiResponse` 봉투 규약을 준수하는지 검증).
+- **이 모듈의 가드 및 테스트**:
+  - `cc.midolog.web.ControllerResponseTypeTest` (컨트롤러 반환 타입이 도메인 모델을 직접 노출하지 않고 `ApiResponse` 봉투 규약을 준수하는지 검증하는 구조 가드).
   - `cc.midolog.storage.FileStorageIntegrationTest` (호스트 scanBasePackages = ["cc.midolog"]와 `FileStorageAutoConfiguration`이 함께 로드될 때 레거시 빈 `localFileStorageAdapter`와 신규 자동 설정 빈 `fileLocalStorageAdapter`의 이름 충돌 없이 두 `FileStoragePort`가 공존함을 가드).
+  - `cc.midolog.business.config.OrphanCleanupSchedulerContextTest` (스케줄러 조건부 빈 등록, enabled=false 시 서비스/Clock 빈 잔존, batch-size < 1 fail-fast, 사용자 정의 Clock 빈 우선 검증).
+  - `cc.midolog.business.config.OrphanCleanupSchedulerBehaviorTest` (AtomicBoolean 틱 중복 무시, 작업 완료 및 예외 발생 후 정상 재개, destroy 시 scope.cancel 검증).
+  - `cc.midolog.business.service.FileOrphanCleanupServiceTest` (TTL cutoff 만료 건 선별 정리, batchSize 분할 처리, 스토리지 실패 시 메타 불변 및 다음 건 계속 처리, 선두 실패 시 후속 행 기아 회피, 동일 실패 행 무한루프 방지, updateStatus 실패 안전 처리 검증).
+  - `cc.midolog.business.service.FileUploadInterruptionTest` (업로드 스트림 처리 도중 OOM 등 비정상 중단으로 방치된 PENDING 객체가 TTL 만료 후 고아 정리에 의해 FAILED로 회수되는 가드 검증).
+  - `cc.midolog.business.service.FileServiceTest` (uploadFile 정상 흐름 및 실패 시 FAILED 전이, deleteFile 시 스토리지 물리 삭제 성공 후 DELETED 전이 및 실패/예외 시 메타 불변 보존 가드, 타 소유자 파일 접근 차단 검증).
+  - `cc.midolog.web.file.FileControllerTest` (파일 업로드/조회/스트리밍 다운로드/삭제 WebFlux API 통합 테스트).
+  - `cc.midolog.web.file.WebFluxChunkBridgeTest` (청크 브릿지 버퍼 해제 및 스트리밍 변환 단위 테스트).
 - **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#3 `SampleService.findPair`, #4 `SampleController.echo`, #5 `SampleStreamController.stream`, #20 `CreateSampleRequest`).
 
 ---
