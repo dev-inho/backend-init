@@ -8,6 +8,9 @@ import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Duration
 
+/**
+ * 고아(PENDING 상태로 방치된) 파일 메타데이터 및 스토리지를 주기적으로 정리하는 서비스.
+ */
 @Service
 class FileOrphanCleanupService(
     private val clock: Clock,
@@ -18,30 +21,34 @@ class FileOrphanCleanupService(
 
     suspend fun cleanup(pendingTtl: Duration, batchSize: Int) {
         require(batchSize >= 1) { "batch-size must be at least 1" }
-        
+
         val cutoff = clock.instant().minus(pendingTtl)
-        
         val failedIds = mutableSetOf<String>()
-        while (true) {
-            val orphans = fileMetaRepositoryPort.findExpiredPending(cutoff, batchSize)
+        var totalProcessedCount = 0
+        val maxItemsToProcess = 1000
+
+        while (totalProcessedCount < maxItemsToProcess) {
+            val limit = batchSize + failedIds.size
+            val orphans = fileMetaRepositoryPort.findExpiredPending(cutoff, limit)
             if (orphans.isEmpty()) {
                 break
             }
 
-            var hasNewItems = false
+            var newItemsProcessed = 0
             for (orphan in orphans) {
                 if (failedIds.contains(orphan.id)) {
                     continue
                 }
-                hasNewItems = true
-                
+                newItemsProcessed++
+                totalProcessedCount++
+
                 try {
                     val deleted = fileStoragePort.delete(orphan.storageKey)
                     if (deleted) {
                         fileMetaRepositoryPort.updateStatus(orphan.id, FileStatus.FAILED)
                         log.info("Cleaned up orphan file, id: ${orphan.id}, storageKey: ${orphan.storageKey}")
                     } else {
-                        log.warn("Failed to delete orphan storage, id: ${orphan.id}, storageKey: ${orphan.storageKey}")
+                        log.warn("Failed to delete orphan storage (returned false), id: ${orphan.id}, storageKey: ${orphan.storageKey}")
                         failedIds.add(orphan.id)
                     }
                 } catch (e: Exception) {
@@ -50,12 +57,13 @@ class FileOrphanCleanupService(
                 }
             }
 
-            if (!hasNewItems) {
-                log.warn("Only previously failed items were returned. Stopping to prevent infinite loop.")
+            if (newItemsProcessed == 0) {
+                // 더 이상 처리할 새로운 고아 건이 없음
                 break
             }
 
-            if (orphans.size < batchSize) {
+            // 조회된 항목 수가 limit보다 작으면 더 이상 남은 고아 건이 없음
+            if (orphans.size < limit) {
                 break
             }
         }

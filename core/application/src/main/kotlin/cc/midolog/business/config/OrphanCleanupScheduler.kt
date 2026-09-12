@@ -18,6 +18,12 @@ import org.springframework.validation.annotation.Validated
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineName
+
+/**
+ * 고아 파일 정리 스케줄러의 동작 방식을 정의하는 설정 속성 클래스.
+ */
 @ConfigurationProperties(prefix = "storage.file.orphan-cleanup")
 @Validated
 data class FileOrphanCleanupProperties(
@@ -28,6 +34,10 @@ data class FileOrphanCleanupProperties(
     val batchSize: Int = 100
 )
 
+/**
+ * 주기적으로 고아 파일을 정리하는 스프링 스케줄러.
+ * `storage.file.orphan-cleanup.enabled=true`일 때만 빈으로 등록된다.
+ */
 @Configuration
 @EnableScheduling
 @EnableConfigurationProperties(FileOrphanCleanupProperties::class)
@@ -37,7 +47,7 @@ class OrphanCleanupScheduler(
     private val fileOrphanCleanupService: FileOrphanCleanupService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineName("OrphanCleanupScope"))
     private val isRunning = AtomicBoolean(false)
 
     @Scheduled(fixedDelayString = "\${storage.file.orphan-cleanup.interval:10m}")

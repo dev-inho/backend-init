@@ -230,7 +230,11 @@ class FileServiceTest {
         assertEquals(FileStatus.READY, db["file1"]?.status, "Status should not change on exception")
         
         // 2. False return case
-        fileService.deleteFile("file2", "owner1")
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                fileService.deleteFile("file2", "owner1")
+            }
+        }
         assertEquals(FileStatus.READY, db["file2"]?.status, "Status should not change when delete returns false")
         
         assertEquals(2, storageDeleteCalledCount)

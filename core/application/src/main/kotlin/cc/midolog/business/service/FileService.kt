@@ -77,9 +77,11 @@ class FileService(
 
     suspend fun deleteFile(id: String, ownerId: String) {
         val file = getFile(id, ownerId)
-        if (fileStoragePort.delete(file.storageKey)) {
-            fileMetaRepositoryPort.updateStatus(id, FileStatus.DELETED)
+        val deleted = fileStoragePort.delete(file.storageKey)
+        if (!deleted) {
+            throw IllegalStateException("Failed to delete file from storage")
         }
+        fileMetaRepositoryPort.updateStatus(id, FileStatus.DELETED)
     }
 
     suspend fun loadContent(id: String, ownerId: String): ChunkReader {
