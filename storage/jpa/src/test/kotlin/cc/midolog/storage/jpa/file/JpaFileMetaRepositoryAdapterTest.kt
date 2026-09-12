@@ -94,5 +94,8 @@ class JpaFileMetaRepositoryAdapterTest {
         fun jpaTransactionOperations(
             transactionManager: PlatformTransactionManager,
         ): TransactionOperations = TransactionTemplate(transactionManager)
+        
+        @Bean
+        fun jpaQueryFactory(em: jakarta.persistence.EntityManager) = com.querydsl.jpa.impl.JPAQueryFactory(em)
     }
 }
