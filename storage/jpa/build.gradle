@@ -59,7 +59,7 @@ jpaDsl {
         }
     }
 
-    if(false) {
+    entity('cc.midolog.jpadsl.fixture.ScalarSample') {
         table = 'scalar_sample'
         id = 'id'
 
