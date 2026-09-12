@@ -10,8 +10,7 @@ class ControllerResponseTypeTest {
     fun `컨트롤러는 도메인 모델을 직접 응답하지 않아야 한다`() {
         val webDir = File("src/main/kotlin/cc/midolog/web")
         if (!webDir.exists()) {
-            println("webDir not found at ${webDir.absolutePath}, skipping or running from different root")
-            return
+            org.junit.jupiter.api.fail("webDir not found at ${webDir.absolutePath}, skipping or running from different root")
         }
         
         val controllers = webDir.walkTopDown().filter { it.isFile && it.name.endsWith("Controller.kt") }.toList()
