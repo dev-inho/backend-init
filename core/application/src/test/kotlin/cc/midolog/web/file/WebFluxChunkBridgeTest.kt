@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.springframework.core.io.buffer.DataBuffer
+import org.springframework.core.io.buffer.PooledDataBuffer
 
 class WebFluxChunkBridgeTest {
 
@@ -27,8 +28,8 @@ class WebFluxChunkBridgeTest {
     @Test
     fun `cancel should close the channel and release remaining buffers`() = runBlocking {
         val channel = Channel<DataBuffer>(2)
-        val db1 = mock(DataBuffer::class.java)
-        val db2 = mock(DataBuffer::class.java)
+        val db1 = mock(PooledDataBuffer::class.java)
+        val db2 = mock(PooledDataBuffer::class.java)
 
         channel.send(db1)
         channel.send(db2)
@@ -44,7 +45,7 @@ class WebFluxChunkBridgeTest {
     @Test
     fun `sendAndReleaseOnFailure should release buffer when send fails`() = runBlocking {
         val channel = Channel<DataBuffer>(0) // rendezvous channel
-        val buffer = mock(DataBuffer::class.java)
+        val buffer = mock(PooledDataBuffer::class.java)
 
         channel.close() // Close the channel to force send failure
 
@@ -57,3 +58,4 @@ class WebFluxChunkBridgeTest {
         verify(buffer, times(1)).release()
     }
 }
+

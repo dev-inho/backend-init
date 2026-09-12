@@ -19,7 +19,7 @@ class FileServiceTest {
         
         val storagePort = object : FileStoragePort {
             override suspend fun store(key: String, reader: ChunkReader, knownSize: Long?, contentType: String, expectedChecksum: String?): StoredFile {
-                return StoredFile(sizeBytes = 1234L, contentType = "text/plain", checksum = "abcde")
+                return StoredFile(id = "1", ownerId = "owner1", storageKey = key, sizeBytes = 1234L, contentType = "text/plain", checksum = "abcde", status = FileStatus.READY)
             }
             override suspend fun load(key: String): ChunkReader? = null
             override suspend fun delete(key: String): Boolean = true
