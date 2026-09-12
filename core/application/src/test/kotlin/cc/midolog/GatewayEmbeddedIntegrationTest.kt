@@ -99,6 +99,7 @@ class GatewayEmbeddedIntegrationTest {
         // Assert absence of standalone beans by type
         assertTrue(applicationContext.getBeanNamesForType(cc.midolog.gateway.proxy.ProxyHandler::class.java).isEmpty(), "ProxyHandler should not be present")
         assertTrue(applicationContext.getBeanNamesForType(cc.midolog.gateway.filter.JwtAuthFilter::class.java).isEmpty(), "JwtAuthFilter should not be present")
+        org.junit.jupiter.api.Assertions.assertFalse(applicationContext.containsBean("routes"), "routes RouterFunction should not be present")
 
         // Assert presence of embedded beans by type
         assertTrue(applicationContext.getBeanNamesForType(cc.midolog.gateway.filter.AuthTokenRateLimitFilter::class.java).isNotEmpty(), "AuthTokenRateLimitFilter must be present")
