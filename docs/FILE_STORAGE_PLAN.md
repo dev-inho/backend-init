@@ -257,6 +257,7 @@ jpaDsl {
 | **Provider 지원 범위 (1차)** | **Local 단독 우선 구축 확정**<br>외부 인프라 비용/공수 없이 로컬 환경 및 개발 사이클을 우선 확보하며, S3는 추후 Phase로 연기. | **확정 (구현 완료)** |
 | **모듈 경계 및 의존 구조** | **기존 `core:domain/application` 유지 + `storage/file-local` 단일 모듈 확정**<br>도메인 분리로 인한 보일러플레이트를 줄이고 헥사고날 경계를 유지. 5모듈 세분화는 S3 도입 시점에 진행. | **확정 (구현 완료)** |
 | **업로드 접근 방식** | **하이브리드 접근 방식 확정**<br>1차 Local 환경은 서버 경유 논블로킹 스트리밍으로 구현 완료되었으며, 2차 S3 확장 시 Presigned 업로드로 전환. | **확정 (1차 완료)** |
+| **고아 정리 및 Finalize 분리 (Phase 3)** | **Local 고아 PENDING 정리 완료 및 Finalize S3 연기 확정**<br>Local provider는 서버 경유 동기 완료 방식이라 별도의 Finalize 콜백 API가 불필요하므로 고아 PENDING 스케줄러/정리 서비스 및 파일 삭제 정합성을 우선 구현 완료함. Finalize 사후 검증 API는 S3 Presigned 업로드가 도입되는 Phase 4로 이동. | **확정 (Phase 3 완료)** |
 | **S3 업로드 방식 (Phase 4)** | **Presigned PUT (Finalize 사후 검증) 확정**<br>향후 S3 도입 시 단순 URL 발급 및 클라이언트 호환이 용이한 Presigned PUT 방식 채택 예정. | **확정 (S3 도입 시 적용)** |
 
 ---
@@ -283,14 +284,19 @@ jpaDsl {
 - **선행 조건**: Phase 1 완료.
 - **가드 테스트**: 기본 `test` 태스크에서 H2 In-Memory DB로 자동 생성된 JPA DSL 매핑 스모크 테스트 수행. 분리된 `livePostgresTest` 태스크에서 PENDING -> READY 트랜잭션 상태 전이 및 롤백 검증.
 
-### Phase 3: Finalize 검증 컨트롤러 및 고아 정리 훅 (난이도: pro)
-- **내용**: `core:application` 모듈에 Finalize 콜백 API를 열어 스토리지 계층을 조회하고 크기/무결성을 이중 검증합니다. 스케줄러를 통해 만료된 PENDING 객체를 페이징 기반 체크포인트 방식으로 스캔하여 일괄 정리합니다.
-- **파일 경계**: `FileFinalizeController.kt`, `FileFinalizeService.kt`, `OrphanCleanupScheduler.kt`.
+### Phase 3: 고아 PENDING 정리 및 파일 삭제 정합성 보장 (✅ 완료)
+- **내용**: Local provider는 서버 경유 WebFlux 논블로킹 스트리밍을 통해 동기 완료 방식으로 동작하므로 별도의 Finalize 콜백 API가 존재하지 않으며, Finalize 사후 검증 API는 S3 Presigned 업로드가 도입되는 Phase 4로 이동합니다. 이에 따라 Phase 3에서는 업로드 도중 비정상 중단(JVM 크래시, OOM 등)으로 스토리지 쓰기 전 중단되어 DB에만 `PENDING` 레코드가 남거나 불완전한 부분 객체가 남겨진 고아 파일을 정리하는 `FileOrphanCleanupService`(스토리지 파일이 없더라도 Local delete의 absent=true 멱등 계약으로 안전 회수)와 조건부 백그라운드 스케줄러 `OrphanCleanupScheduler`를 구현했습니다. `ClockConfig`를 통해 UTC 시각 기반의 기본 `Clock` 빈을 제공하며(`@ConditionalOnMissingBean`), 테스트 시 고정 시계(Fixed Clock)를 주입할 수 있도록 구성했습니다. 정리 작업은 TTL cutoff(`clock.instant().minus(pendingTtl)`)와 `limit = batchSize + failedIds.size` 기반으로 만료 건을 반복 조회합니다. 스토리지 물리 멱등 삭제(`fileStoragePort.delete(storageKey)`)가 성공한 뒤에만 DB 상태를 `FAILED`로 안전하게 전이하며, 건별 실패 시 경고/에러 로그를 남기고 실패 ID를 추적하여 다음 조회 시 limit을 확장함으로써 후속 행의 기아 현상(starvation)을 원천 회피합니다. 스케줄러는 `AtomicBoolean` 락으로 중복 실행을 차단하고, IO `CoroutineScope` 내에서 작업을 수행하며 컨텍스트 종료 시 스코프를 취소합니다. 아울러 `FileService.deleteFile`은 스토리지 물리 삭제 선행 후 성공(true) 시에만 `DELETED`로 전이하며, storage delete가 false를 반환하면 `IllegalStateException`을 발생시키고 storage port 예외 발생 시 원 예외를 그대로 전파하여 메타 상태를 삭제 전 기존 상태로 불변 보존함으로써 삭제 정합성을 강제합니다.
+- **파일 경계**: `core/application/src/main/kotlin/cc/midolog/business/service/FileOrphanCleanupService.kt`, `core/application/src/main/kotlin/cc/midolog/business/config/OrphanCleanupScheduler.kt`, `core/application/src/main/kotlin/cc/midolog/business/config/ClockConfig.kt`, `core/application/src/main/kotlin/cc/midolog/business/service/FileService.kt`.
 - **선행 조건**: Phase 2 완료.
-- **가드 테스트**: Web 어댑터에서 스트림 처리 완료/취소 시 `DataBufferUtils.release()` 호출을 단위 테스트로 검증. 스케줄러 페이징 쿼리 격리 테스트.
+- **가드 테스트**:
+  - `OrphanCleanupSchedulerContextTest`: `storage.file.orphan-cleanup.enabled=false` 또는 누락 시 스케줄러 빈 미등록 및 `FileOrphanCleanupService`·UTC `Clock` 기본 빈 등록 검증, `batch-size < 1` 시 기동 실패(fail-fast) 검증, 사용자 정의 `Clock` 빈 우선 검증.
+  - `OrphanCleanupSchedulerBehaviorTest`: tick 중복 실행 무시(`AtomicBoolean`), 완료 및 예외 발생 후 정상 재개, 컨텍스트 종료(`destroy`) 시 코루틴 스코프 취소 및 신규 작업 차단 검증.
+  - `FileOrphanCleanupServiceTest`: TTL cutoff 지난 만료 건 선별 정리, batchSize 분할 처리, 스토리지 삭제 실패 시 메타 불변 및 다음 항목 계속 처리, 선두 건 실패 시 후속 행 기아 없는 회수, 동일 실패 행 재시도 시 무한 루프 방지, `updateStatus` 실패 안전 처리 검증.
+  - `FileUploadInterruptionTest`: in-memory fake 포트(`FileMetaRepositoryPort`, `FileStoragePort`)로 PENDING 저장 직후 `OutOfMemoryError` 중단 경계를 시뮬레이션하여, 스트림 도중 비정상 중단으로 남은 PENDING 레코드가 TTL 만료 후 고아 정리에 의해 `FAILED`로 회수되는 서비스 수준 통합 가드 검증.
+  - `FileServiceTest`: 업로드 실패 시 `FAILED` 전이, `deleteFile` 시 스토리지 물리 삭제 성공 후 `DELETED` 전이 및 false 반환(IllegalStateException)/예외 전파 시 메타 상태(삭제 전 기존 상태) 불변 보존 가드, 타 소유자 파일 접근 차단 검증.
 
-### Phase 4: S3 프로바이더 통합 및 Testcontainers 연동 (난이도: pro)
-- **내용**: `storage/file-s3` 모듈 및 `file-starter-s3`를 신설하고, AWS SDK Java v2 (Netty Async) 기반의 S3 어댑터 및 `S3FilePresignAdapter.kt`를 구현합니다. Presigned 직접 업로드/다운로드를 전면 활성화하여 게이트웨이 OOM을 근본적으로 해소합니다.
-- **파일 경계**: `storage/file-s3/build.gradle`, `S3FileStorageAdapter.kt`, `S3FilePresignAdapter.kt`, `MinIOTestcontainersConfig.kt`.
-- **선행 조건**: Phase 3 안정화 완료.
-- **가드 테스트**: **MinIO Testcontainers**를 도입하여 별도의 `liveS3Test` 환경에서 Presigned URL 발급, 파일 업로드, Finalize 통합 시나리오 100% 검증.
+### Phase 4: S3 프로바이더 통합, Finalize 사후 검증 및 Testcontainers 연동 (난이도: pro)
+- **내용**: `storage/file-s3` 모듈 및 `file-starter-s3`를 신설하고, AWS SDK Java v2 (Netty Async) 기반의 S3 어댑터 및 `S3FilePresignAdapter.kt`를 구현합니다. Presigned 직접 업로드/다운로드를 전면 활성화하여 게이트웨이 OOM을 근본적으로 해소합니다. Local provider와 달리 브라우저 직접 Presigned 업로드가 도입됨에 따라, 클라이언트의 업로드 완료를 수신하는 Finalize 콜백 API(`FileFinalizeController`, `FileFinalizeService`)가 이 단계에서 구현됩니다. 서버는 클라이언트가 전달한 메타데이터를 맹신하지 않고 S3 HEAD 조회를 통해 실제 파일 크기와 체크섬 무결성을 사후 검증한 후 일치 시 `READY`, 불일치 시 `FAILED`로 전이합니다. (주의: S3 모듈과 Finalize 기능은 현재 구현되지 않았으며 Phase 4 계획입니다.)
+- **파일 경계**: `storage/file-s3/build.gradle`, `S3FileStorageAdapter.kt`, `S3FilePresignAdapter.kt`, `FileFinalizeController.kt`, `FileFinalizeService.kt`, `MinIOTestcontainersConfig.kt`.
+- **선행 조건**: Phase 3 완료.
+- **가드 테스트**: **MinIO Testcontainers**를 도입하여 별도의 `liveS3Test` 환경에서 Presigned URL 발급, 파일 직접 업로드, Finalize 사후 검증(HEAD 크기·체크섬 일치 시 READY, 불일치 시 FAILED) 통합 시나리오 100% 검증.
