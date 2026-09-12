@@ -1,11 +1,18 @@
-L5 단계인 file-local-adapter-web 저장소에 대한 구현을 성공적으로 완료하고 PR #23을 생성했습니다.
+L5 단계인 file-local-adapter-web 저장소에 대한 구현(경계 교정 포함)을 완료하고 PR #23 본문을 갱신했습니다.
 
-[주요 구현 내용]
-- `storage:file-local` 모듈: 경로 순회 방지, UUID storageKey 적용, 부분 실패 처리, SHA-256 해시 검증이 포함된 로컬 스토리지 어댑터(`LocalFileStorageAdapter`) 및 AutoConfiguration 구현
-- `core:application`: `FileService`, `FileController`, `WebFluxChunkBridge` 구현 (Memory-safe 스트리밍 변환을 위해 Channel을 이용한 suspend stream 처리 반영)
-- 요구사항에 명시된 4가지 주요 예외(201, 413, 415, 401, 404)에 대한 Mock MVC가 아닌 `WebFluxTest` 기반의 정상 컨트롤러 응답 테스트 작성 (Fake `FileService` 활용)
-- `application.yml`의 `local` 프로파일에 스토리지 provider와 root-dir 경로 분리 및 fail-fast 적용 (전역 기본값 없음)
-- `.env.example`에 `STORAGE_FILE_ROOT_DIR` 항목 추가
+[경계 교정 사항]
+- 초기에 실수로 포함된 `support/web` 모듈의 `ApiException.kt`, `ErrorCode.kt` 파일 변경사항을 롤백(경계 교정)했습니다.
+- 대신 `core:application` 내 `FileController`와 `WebFluxChunkBridge`에서 Spring의 표준 `ResponseStatusException` (413, 415)을 던지도록 변경하여, 기존 `GlobalExceptionHandler`가 이를 포착해 `ApiResponse` 규격에 맞는 에러 응답을 만들도록 우회 처리했습니다.
+- `FileService` 내부의 `ApiException.badRequest` 참조 오류를 `ApiException.invalidInput`으로 올바르게 수정했습니다.
 
 [테스트/검증]
-`~/.claude/skills/orca-worker/preflight.sh` 스크립트로 `./gradlew build`, `./gradlew -p build-logic test`, `git diff --check` 모두 녹색(🟢) 통과를 확인했습니다.
+`~/.claude/skills/orca-worker/preflight.sh` 스크립트로 `./gradlew build`, `./gradlew -p build-logic test`, `git diff --check` 모두 녹색(🟢) 통과를 다시 확인했습니다.
+
+해당 PR: https://github.com/dev-inho/backend-init/pull/23
+
+[조기 리뷰 반영 사항]
+- FileController: 업로드 시 multipart 네트워크/디코딩 에러 발생 시 channel.close(e)를 호출하여 버려진 DataBuffer와 남은 임시 파일이 정리되도록 보완했습니다.
+- WebFluxChunkBridge: channel.close() 및 cancel() 상황에서 channel 내부에 대기중인 모든 DataBuffer를 명시적으로 해제하도록 로직을 강화했습니다.
+- FileControllerTest: WebTestClient로 엔드포인트 4개(upload, download, info, delete) 모두 검증, Content-Type, Content-Length, 다운로드 에러 시 cancelCount 및 closeCount, 타인 소유의 파일 404 접근 테스트를 추가했습니다. FileResponse에서 외부 노출 불필요한 storageKey를 제거했습니다.
+- LocalFileStorageAdapter: storageKey UUID 강제 정규식을 추가하고, temp/target 경로의 symlink 파일 여부 확인 및 충돌 없는 임시파일 생성 기능을 구현했습니다. 
+- AutoConfigurationTest: 올바른 절대경로를 적용한 유효한 설정에서 빈이 띄워지는지, maxSizeBytes 10MiB 기본값 및 imports 경로 FQCN 일치 여부를 모두 값으로 단언했습니다. application.yml에서는 ${user.dir}/build/files 로 절대 경로 fallback을 제공하도록 수정했습니다.
