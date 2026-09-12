@@ -1,8 +1,11 @@
 package cc.midolog.gateway.proxy
 
 import cc.midolog.gateway.config.GatewayRouteProperties
+import cc.midolog.gateway.config.GatewayRetryProperties
 import cc.midolog.gateway.route.GatewayRouteSelector
 import cc.midolog.logging.LoggingMdc
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -25,7 +28,9 @@ import org.springframework.web.reactive.function.server.ServerResponse
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.net.URI
+import java.time.Duration
 import java.util.concurrent.TimeoutException
+import java.net.ConnectException
 
 class ProxyHandlerTest {
 
@@ -111,7 +116,140 @@ class ProxyHandlerTest {
         assertEquals("http://batch.internal/batch/jobs/run?dryRun=true", requireNotNull(captured).url().toString())
     }
 
-    private fun handlerWith(exchange: ExchangeFunction): ProxyHandler =
+    @Test
+    fun `GET retrieves 200 after 503 retry`() {
+        var callCount = 0
+        val handler = handlerWith(maxAttempts = 3) {
+            callCount++
+            if (callCount == 1) {
+                Mono.just(ClientResponse.create(HttpStatus.SERVICE_UNAVAILABLE).build())
+            } else {
+                Mono.just(ClientResponse.create(HttpStatus.OK).build())
+            }
+        }
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        val response = handler.proxy(serverRequest(exchange.request)).block()
+        response!!.writeTo(exchange, responseContext()).block()
+
+        assertEquals(2, callCount)
+        assertEquals(HttpStatus.OK, exchange.response.statusCode)
+    }
+
+    @Test
+    fun `POST does not retry on 503 and returns 502 according to policy`() {
+        var callCount = 0
+        val handler = handlerWith(maxAttempts = 3) {
+            callCount++
+            Mono.just(ClientResponse.create(HttpStatus.SERVICE_UNAVAILABLE).build())
+        }
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/retry"))
+        val response = handler.proxy(serverRequest(exchange.request)).block()
+        response!!.writeTo(exchange, responseContext()).block()
+
+        assertEquals(1, callCount)
+        assertEquals(HttpStatus.BAD_GATEWAY, exchange.response.statusCode)
+    }
+
+    @Test
+    fun `Returns gateway policy status when max-attempts exhausted`() {
+        var callCount = 0
+        val handler = handlerWith(maxAttempts = 3) {
+            callCount++
+            Mono.just(ClientResponse.create(HttpStatus.SERVICE_UNAVAILABLE).build())
+        }
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        val response = handler.proxy(serverRequest(exchange.request)).block()
+        response!!.writeTo(exchange, responseContext()).block()
+
+        assertEquals(3, callCount)
+        assertEquals(HttpStatus.BAD_GATEWAY, exchange.response.statusCode)
+    }
+
+    @Test
+    fun `Retries on connection failure and TimeoutException only for idempotent requests`() {
+        var callCount = 0
+        val handler = handlerWith(maxAttempts = 2) {
+            callCount++
+            Mono.error(ConnectException("Connection refused"))
+        }
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        val response = handler.proxy(serverRequest(exchange.request)).block()
+        response!!.writeTo(exchange, responseContext()).block()
+
+        assertEquals(2, callCount)
+        assertEquals(HttpStatus.BAD_GATEWAY, exchange.response.statusCode)
+
+        var postCallCount = 0
+        val postHandler = handlerWith(maxAttempts = 2) {
+            postCallCount++
+            Mono.error(TimeoutException("Timeout"))
+        }
+        val postExchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/retry"))
+        val postResponse = postHandler.proxy(serverRequest(postExchange.request)).block()
+        postResponse!!.writeTo(postExchange, responseContext()).block()
+
+        assertEquals(1, postCallCount)
+        assertEquals(HttpStatus.GATEWAY_TIMEOUT, postExchange.response.statusCode)
+    }
+
+    @Test
+    fun `Does not retry on 500 or 501`() {
+        var callCount = 0
+        val handler = handlerWith(maxAttempts = 3) {
+            callCount++
+            Mono.just(ClientResponse.create(HttpStatus.INTERNAL_SERVER_ERROR).build())
+        }
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        val response = handler.proxy(serverRequest(exchange.request)).block()
+        response!!.writeTo(exchange, responseContext()).block()
+
+        assertEquals(1, callCount)
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, exchange.response.statusCode)
+    }
+
+    @Test
+    fun `Records metrics with SimpleMeterRegistry`() {
+        val registry = SimpleMeterRegistry()
+        var callCount = 0
+        val handler = handlerWith(maxAttempts = 3, meterRegistry = registry) {
+            callCount++
+            if (callCount == 1) {
+                Mono.error(TimeoutException("timeout"))
+            } else {
+                Mono.just(ClientResponse.create(HttpStatus.OK).build())
+            }
+        }
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        val response = handler.proxy(serverRequest(exchange.request)).block()
+        response!!.writeTo(exchange, responseContext()).block()
+
+        val requests = registry.get("gateway.proxy.requests").counter()
+        assertEquals(1.0, requests.count())
+        assertEquals("http://application.internal", requests.id.getTag("target"))
+        assertEquals("200", requests.id.getTag("status"))
+        assertEquals("true", requests.id.getTag("retried"))
+
+        val latency = registry.get("gateway.proxy.latency").timer()
+        assertEquals(1L, latency.count())
+    }
+
+    @Test
+    fun `Works without MeterRegistry without exceptions`() {
+        val handler = handlerWith(maxAttempts = 1, meterRegistry = null) {
+            Mono.just(ClientResponse.create(HttpStatus.OK).build())
+        }
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
+        val response = handler.proxy(serverRequest(exchange.request)).block()
+        response!!.writeTo(exchange, responseContext()).block()
+
+        assertEquals(HttpStatus.OK, exchange.response.statusCode)
+    }
+
+    private fun handlerWith(
+        maxAttempts: Int = 1,
+        meterRegistry: MeterRegistry? = null,
+        exchange: ExchangeFunction
+    ): ProxyHandler =
         ProxyHandler(
             WebClient.builder().exchangeFunction(exchange).build(),
             GatewayRouteSelector(
@@ -120,6 +258,8 @@ class ProxyHandlerTest {
                     batchUrl = "http://batch.internal",
                 ),
             ),
+            GatewayRetryProperties(maxAttempts = maxAttempts, backoff = Duration.ofMillis(10)),
+            meterRegistry
         )
 
     private fun serverRequest(request: MockServerHttpRequest): ServerRequest {

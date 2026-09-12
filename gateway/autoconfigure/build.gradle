@@ -10,6 +10,7 @@ dependencyManagement {
 
 dependencies {
     implementation project(':gateway:core')
+    implementation 'io.micrometer:micrometer-core'
     implementation 'org.springframework.boot:spring-boot-autoconfigure'
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'

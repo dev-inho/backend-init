@@ -13,8 +13,11 @@ dependencyManagement {
 dependencies {
     implementation project(':gateway:starter')
     implementation project(':support:logging')
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
     testImplementation 'io.projectreactor:reactor-test'
     testImplementation project(':support:web')
 }
