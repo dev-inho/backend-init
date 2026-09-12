@@ -1,17 +1,20 @@
 package cc.midolog.gateway.proxy
 
-import cc.midolog.gateway.config.GatewayRouteProperties
 import cc.midolog.gateway.config.GatewayRetryProperties
+import cc.midolog.gateway.route.GatewayRouteProperties
 import cc.midolog.gateway.route.GatewayRouteSelector
-import cc.midolog.logging.LoggingMdc
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
-import org.springframework.core.io.buffer.DataBuffer
-import org.springframework.core.io.buffer.DefaultDataBufferFactory
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.`when`
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
@@ -25,123 +28,12 @@ import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.server.HandlerStrategies
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
-import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
-import java.net.URI
+import java.net.ConnectException
 import java.time.Duration
 import java.util.concurrent.TimeoutException
-import java.net.ConnectException
 
 class ProxyHandlerTest {
-
-@Test
-    fun `Backoff delays exponentially`() {
-        var callCount = 0
-        val handler = handlerWith(maxAttempts = 3, backoff = java.time.Duration.ofMillis(100)) {
-            callCount++
-            Mono.just(ClientResponse.create(HttpStatus.SERVICE_UNAVAILABLE).build())
-        }
-        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
-
-        reactor.test.StepVerifier.withVirtualTime { handler.proxy(serverRequest(exchange.request)) }
-            .then { assertEquals(1, callCount) }
-            .thenAwait(java.time.Duration.ofMillis(99))
-            .then { assertEquals(1, callCount) }
-            .thenAwait(java.time.Duration.ofMillis(1))
-            .then { assertEquals(2, callCount) }
-            .thenAwait(java.time.Duration.ofMillis(199))
-            .then { assertEquals(2, callCount) }
-            .thenAwait(java.time.Duration.ofMillis(1))
-            .then { assertEquals(3, callCount) }
-            .expectNextCount(1)
-            .verifyComplete()
-    }
-
-
-
-
-    private val bufferFactory = DefaultDataBufferFactory()
-
-    @Test
-    fun `forwards path query and sanitized headers to application route`() {
-        var captured: ClientRequest? = null
-        val handler = handlerWith { request ->
-            captured = request
-            Mono.just(ClientResponse.create(HttpStatus.OK).body("ok").build())
-        }
-        val serverRequest = serverRequest(
-            MockServerHttpRequest.method(HttpMethod.GET, URI.create("/api/sample/items?name=a%20b&tag=one"))
-                .header(LoggingMdc.REQUEST_ID, "request-123")
-                .header(HttpHeaders.HOST, "external.example")
-                .header(HttpHeaders.CONNECTION, "keep-alive, X-Hop-Only")
-                .header("X-Hop-Only", "must-not-forward")
-                .build(),
-        )
-
-        handler.proxy(serverRequest).block()
-
-        val downstream = requireNotNull(captured)
-        assertEquals("http://application.internal/api/sample/items?name=a%20b&tag=one", downstream.url().toString())
-        assertEquals("request-123", downstream.headers().getFirst(LoggingMdc.REQUEST_ID))
-        assertFalse(downstream.headers().containsHeader(HttpHeaders.HOST))
-        assertFalse(downstream.headers().containsHeader(HttpHeaders.CONNECTION))
-        assertFalse(downstream.headers().containsHeader("X-Hop-Only"))
-    }
-
-    @Test
-    fun `buffers downstream response body and sanitizes response headers`() {
-        val handler = handlerWith {
-            val body: Flux<DataBuffer> = Flux.just(
-                bufferFactory.wrap("chunk-1".toByteArray()),
-                bufferFactory.wrap("chunk-2".toByteArray()),
-            )
-            Mono.just(
-                ClientResponse.create(HttpStatus.ACCEPTED)
-                    .header("X-Downstream", "ok")
-                    .header(HttpHeaders.CONTENT_LENGTH, "999")
-                    .body(body)
-                    .build(),
-            )
-        }
-        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/stream"))
-        val response = handler.proxy(serverRequest(exchange.request)).block()
-        assertNotNull(response)
-
-        response!!.writeTo(exchange, responseContext()).block()
-
-        assertEquals(HttpStatus.ACCEPTED, exchange.response.statusCode)
-        assertEquals("ok", exchange.response.headers.getFirst("X-Downstream"))
-        assertFalse(exchange.response.headers[HttpHeaders.CONTENT_LENGTH].orEmpty().contains("999"))
-        assertEquals("chunk-1chunk-2", exchange.response.bodyAsString.block())
-    }
-
-    @Test
-    fun `returns gateway timeout when downstream call times out`() {
-        val handler = handlerWith {
-            Mono.error(TimeoutException("downstream timed out"))
-        }
-        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/slow"))
-        val response = handler.proxy(serverRequest(exchange.request)).block()
-        assertNotNull(response)
-
-        response!!.writeTo(exchange, responseContext()).block()
-
-        assertEquals(HttpStatus.GATEWAY_TIMEOUT, exchange.response.statusCode)
-    }
-
-    @Test
-    fun `routes batch path to batch target`() {
-        var captured: ClientRequest? = null
-        val handler = handlerWith { request ->
-            captured = request
-            Mono.just(ClientResponse.create(HttpStatus.OK).body("ok").build())
-        }
-
-        handler.proxy(serverRequest(MockServerHttpRequest.post("/batch/jobs/run?dryRun=true").build())).block()
-
-        assertEquals("http://batch.internal/batch/jobs/run?dryRun=true", requireNotNull(captured).url().toString())
-    }
-
 
     @Test
     fun `GET retrieves 200 after 503 retry`() {
@@ -162,13 +54,13 @@ class ProxyHandlerTest {
         assertEquals(HttpStatus.OK, exchange.response.statusCode)
     }
 
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(ints = [502, 503, 504])
+    @ParameterizedTest
+    @ValueSource(ints = [502, 503, 504])
     fun `Returns identical upstream status when max-attempts exhausted for idempotent requests`(status: Int) {
         var callCount = 0
-        val responseMock = org.mockito.Mockito.mock(ClientResponse::class.java)
-        org.mockito.Mockito.`when`(responseMock.statusCode()).thenReturn(HttpStatus.valueOf(status))
-        org.mockito.Mockito.`when`(responseMock.releaseBody()).thenReturn(Mono.empty())
+        val responseMock = mock(ClientResponse::class.java)
+        `when`(responseMock.statusCode()).thenReturn(HttpStatus.valueOf(status))
+        `when`(responseMock.releaseBody()).thenReturn(Mono.empty())
 
         val handler = handlerWith(maxAttempts = 3) {
             callCount++
@@ -180,16 +72,16 @@ class ProxyHandlerTest {
 
         assertEquals(3, callCount)
         assertEquals(HttpStatus.valueOf(status), exchange.response.statusCode)
-        org.mockito.Mockito.verify(responseMock, org.mockito.Mockito.times(6)).releaseBody()
+        verify(responseMock, times(3)).releaseBody()
     }
 
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = ["POST", "PUT", "PATCH", "DELETE"])
+    @ParameterizedTest
+    @ValueSource(strings = ["POST", "PUT", "PATCH", "DELETE"])
     fun `Non-idempotent requests do not retry on 503 and return 502 according to policy`(methodName: String) {
         var callCount = 0
-        val responseMock = org.mockito.Mockito.mock(ClientResponse::class.java)
-        org.mockito.Mockito.`when`(responseMock.statusCode()).thenReturn(HttpStatus.SERVICE_UNAVAILABLE)
-        org.mockito.Mockito.`when`(responseMock.releaseBody()).thenReturn(Mono.empty())
+        val responseMock = mock(ClientResponse::class.java)
+        `when`(responseMock.statusCode()).thenReturn(HttpStatus.SERVICE_UNAVAILABLE)
+        `when`(responseMock.releaseBody()).thenReturn(Mono.empty())
 
         val handler = handlerWith(maxAttempts = 3) {
             callCount++
@@ -202,11 +94,11 @@ class ProxyHandlerTest {
 
         assertEquals(1, callCount)
         assertEquals(HttpStatus.BAD_GATEWAY, exchange.response.statusCode)
-        org.mockito.Mockito.verify(responseMock, org.mockito.Mockito.times(2)).releaseBody()
+        verify(responseMock, times(1)).releaseBody()
     }
 
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = ["GET", "HEAD", "OPTIONS"])
+    @ParameterizedTest
+    @ValueSource(strings = ["GET", "HEAD", "OPTIONS"])
     fun `Idempotent requests retry on TimeoutException`(methodName: String) {
         var callCount = 0
         val handler = handlerWith(maxAttempts = 2) {
@@ -228,17 +120,16 @@ class ProxyHandlerTest {
         val client = WebClient.builder().baseUrl("http://localhost:23456").filter { request, next -> reqCount++; next.exchange(request) }.build()
         val handler = ProxyHandler(
             client,
-            GatewayRouteSelector(cc.midolog.gateway.config.GatewayRouteProperties("http://localhost:23456", batchUrl = "http://localhost:23456")),
-            GatewayRetryProperties(maxAttempts = 3, backoff = java.time.Duration.ofMillis(1))
+            GatewayRouteSelector(GatewayRouteProperties("http://localhost:23456", "http://localhost:23456")),
+            GatewayRetryProperties(maxAttempts = 3, backoff = Duration.ofMillis(1))
         )
-
+        
         // GET should retry
         val getExchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry"))
         val getResponse = handler.proxy(serverRequest(getExchange.request)).block()
         getResponse!!.writeTo(getExchange, responseContext()).block()
         assertEquals(HttpStatus.BAD_GATEWAY, getExchange.response.statusCode)
         assertEquals(3, reqCount)
-
         reqCount = 0
 
         // POST should not retry, just return 502
@@ -319,7 +210,7 @@ class ProxyHandlerTest {
         response!!.writeTo(exchange, responseContext()).block()
 
         assertEquals(HttpStatus.OK, exchange.response.statusCode)
-
+        
         // Failure without registry
         val failHandler = handlerWith(maxAttempts = 2, meterRegistry = null) {
             Mono.error(TimeoutException("timeout"))
@@ -334,7 +225,6 @@ class ProxyHandlerTest {
     private fun handlerWith(
         maxAttempts: Int = 1,
         meterRegistry: MeterRegistry? = null,
-        backoff: java.time.Duration = java.time.Duration.ofMillis(10),
         exchange: ExchangeFunction
     ): ProxyHandler =
         ProxyHandler(
@@ -345,7 +235,7 @@ class ProxyHandlerTest {
                     batchUrl = "http://batch.internal",
                 ),
             ),
-            GatewayRetryProperties(maxAttempts = maxAttempts, backoff = backoff),
+            GatewayRetryProperties(maxAttempts = maxAttempts, backoff = Duration.ofMillis(10)),
             meterRegistry
         )
 

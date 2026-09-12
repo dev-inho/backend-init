@@ -1,0 +1,35 @@
+## preflight (feat/gateway-retry-metrics @ c74784c, 2026-09-12 18:49)
+
+### 커밋·push 상태
+🔴 커밋 안 된 변경이 있다:
+ M gateway/core/src/main/kotlin/cc/midolog/gateway/proxy/ProxyHandler.kt
+ M gateway/core/src/test/kotlin/cc/midolog/gateway/proxy/ProxyHandlerTest.kt
+⚠️ 추적 안 되는 파일(커밋 대상이 아니면 무시): ?? gateway/core/src/test/kotlin/cc/midolog/gateway/proxy/ProxyHandlerTest.kt.bak ?? patch_handlerWith.py ?? patch_proxy.py ?? patch_report.py ?? patch_test.py 
+
+### 작업 파일 혼입 (main 대비 추가된 파일)
+없음
+
+### git diff origin/main...HEAD --stat
+ .../persistence/RuntimeProfileConfigTest.kt        |   7 +
+ gateway/app/build.gradle                           |   3 +
+ gateway/app/src/main/resources/application.yml     |   6 +
+ .../gateway/ActuatorEndpointIntegrationTest.kt     |  73 +++++++
+ gateway/autoconfigure/build.gradle                 |   1 +
+ .../autoconfigure/GatewayAutoConfiguration.kt      |   9 +-
+ gateway/core/build.gradle                          |   1 +
+ .../gateway/config/GatewayRetryProperties.kt       |  17 ++
+ .../cc/midolog/gateway/proxy/ProxyHandler.kt       |  91 +++++++--
+ .../gateway/config/GatewayRetryPropertiesTest.kt   |  59 ++++++
+ .../cc/midolog/gateway/proxy/ProxyHandlerTest.kt   | 222 ++++++++++++++++++++-
+ 11 files changed, 466 insertions(+), 23 deletions(-)
+
+### ./gradlew build
+exit=0
+
+### ./gradlew -p build-logic test
+exit=0
+
+### git diff --check
+🔴 exit=2 — 빨갛다. "통과" 라고 적지 마라.
+
+🔴 preflight 실패 — 위 항목을 고친 뒤 다시 돌려라. 보고하지 마라.

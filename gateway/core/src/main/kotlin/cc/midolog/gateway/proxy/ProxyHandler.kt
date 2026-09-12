@@ -74,7 +74,7 @@ class ProxyHandler(
             }
             .doOnSubscribe { attemptCount++ }
             .retryWhen(
-                Retry.backoff(maxOf(0, retryProperties.maxAttempts - 1).toLong(), retryProperties.backoff)
+                Retry.backoff(maxOf(0, retryProperties.maxAttempts - 1).toLong(), retryProperties.backoff).jitter(0.0)
                     .filter { e ->
                         if (method != "GET" && method != "HEAD" && method != "OPTIONS") return@filter false
                         isRetryableError(e)
@@ -86,11 +86,7 @@ class ProxyHandler(
             .doOnSuccess { response ->
                 recordMetrics(targetUrl, response?.statusCode()?.value()?.toString() ?: "500", attemptCount > 1, timerSample)
             }
-            .doOnError { e ->
-                val unwrapped = Exceptions.unwrap(if (e.javaClass.simpleName == "RetryExhaustedException") e.cause ?: e else e)
-                val status = if (unwrapped is TimeoutException) "504" else if (unwrapped is RetryableStatusCodeException) unwrapped.statusCode.toString() else "502"
-                recordMetrics(targetUrl, status, attemptCount > 1, timerSample)
-            }
+
     }
 
     private fun isRetryableError(e: Throwable): Boolean {
@@ -115,7 +111,7 @@ class ProxyHandler(
         })
 
     private fun gatewayError(error: Throwable, method: String): Mono<ServerResponse> {
-        val unwrapped = Exceptions.unwrap(if (error.javaClass.simpleName == "RetryExhaustedException") error.cause ?: error else error)
+        val unwrapped = Exceptions.unwrap(if (Exceptions.isRetryExhausted(error)) error.cause ?: error else error)
 
         val status = if (unwrapped is TimeoutException) {
             HttpStatus.GATEWAY_TIMEOUT
