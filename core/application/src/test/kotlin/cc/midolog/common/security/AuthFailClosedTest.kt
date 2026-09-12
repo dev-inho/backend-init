@@ -6,7 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
-import org.springframework.test.context.TestPropertySource
+import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.web.reactive.server.WebTestClient
 
 /**
@@ -17,12 +18,20 @@ import org.springframework.test.web.reactive.server.WebTestClient
  */
 @WebFluxTest(controllers = [AuthController::class])
 @Import(SecurityConfig::class, JwtProvider::class)
-@TestPropertySource(
-    properties = [
-        "jwt.secret=0123456789abcdef0123456789abcdef-strong-random-secret",
-    ],
-)
+
 class AuthFailClosedTest {
+
+    companion object {
+        @JvmStatic
+        @DynamicPropertySource
+        fun properties(registry: DynamicPropertyRegistry) {
+            val process = ProcessBuilder("openssl", "rand", "-base64", "48").start()
+            val secret = process.inputStream.bufferedReader().use { it.readText().trim() }
+            val exitCode = process.waitFor()
+            check(exitCode == 0 && secret.isNotBlank()) { "openssl command failed" }
+            registry.add("jwt.secret") { secret }
+        }
+    }
 
     @Autowired
     lateinit var webTestClient: WebTestClient
@@ -43,5 +52,23 @@ class AuthFailClosedTest {
             .bodyValue(mapOf("username" to "", "password" to ""))
             .exchange()
             .expectStatus().isUnauthorized
+    }
+
+    @Autowired
+    lateinit var jwtProvider: JwtProvider
+
+    @Test
+    fun `internal gateway requests require authentication`() {
+        // Without JWT -> 401
+        webTestClient.get().uri("/internal/gateway/requests")
+            .exchange()
+            .expectStatus().isUnauthorized
+
+        // With valid JWT -> proceeds to handler (returns 404 since handler is absent in this slice test)
+        val token = jwtProvider.issue("test-user")
+        webTestClient.get().uri("/internal/gateway/requests")
+            .header(org.springframework.http.HttpHeaders.AUTHORIZATION, "Bearer $token")
+            .exchange()
+            .expectStatus().isNotFound
     }
 }

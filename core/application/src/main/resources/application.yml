@@ -26,6 +26,15 @@ management:
 jwt:
   secret: ${JWT_SECRET}
 
+gateway:
+  mode: embedded
+  rate-limit:
+    auth-token:
+      limit: 10
+      window-seconds: 60
+  request-visibility:
+    enabled: false
+
 ---
 spring:
   config:
@@ -46,3 +55,6 @@ storage:
     provider: local
     local:
       root-dir: ${STORAGE_FILE_ROOT_DIR:${user.dir}/build/files}
+gateway:
+  request-visibility:
+    enabled: true

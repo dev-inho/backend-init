@@ -1,7 +1,6 @@
 package cc.midolog.gateway.visibility
 
 import org.springframework.boot.context.properties.ConfigurationProperties
-import org.springframework.stereotype.Component
 
 /**
  * 게이트웨이 요청 가시성(최근 요청 버퍼링 및 조회) 기능 설정 프로퍼티.

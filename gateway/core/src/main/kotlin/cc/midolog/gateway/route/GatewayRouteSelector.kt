@@ -3,7 +3,6 @@ package cc.midolog.gateway.route
 import cc.midolog.gateway.config.GatewayRouteProperties
 import java.net.URI
 import java.util.concurrent.atomic.AtomicInteger
-import org.springframework.stereotype.Component
 
 /**
  * 인입 요청 경로에 따라 프록시 대상 업스트림 URL을 결정하고 분산하는 라우트 선택기.
