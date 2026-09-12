@@ -100,7 +100,10 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
     - `cc.midolog.storage.mybatis`
 - **문자열 예외**: 주석, KDoc, 일반 문자열 리터럴은 import가 아니므로 허용됩니다. 예를 들어 `FileStorageIntegrationTest`의 `spring.autoconfigure.exclude`에 사용된 `org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration` 등의 property 설정 문자열은 import가 아니므로 명시적으로 허용됩니다.
 - **명시적 예외 두 가지**:
-  1. `core/application/build.gradle`의 `runtimeOnly project(':storage:mybatis')`, `runtimeOnly project(':storage:jpa')`, `runtimeOnly project(':storage:file-local')` (및 테스트용 `testRuntimeOnly`): 애플리케이션 실행 조합 루트(composition root)가 어댑터를 classpath에 싣는 유일한 자리로서 허용됩니다. 소스 코드 레벨에서는 컴파일 타임 의존이 없으므로 import할 수 없습니다.
+  1. `core/application/build.gradle`의 조합 루트 의존성:
+     - 런타임 어댑터 탑재 (3개): `runtimeOnly project(':storage:mybatis')`, `runtimeOnly project(':storage:jpa')`, `runtimeOnly project(':storage:file-local')`
+     - 테스트 런타임 어댑터 탑재 (2개): `testRuntimeOnly project(':storage:mybatis')`, `testRuntimeOnly project(':storage:jpa')`
+     - 애플리케이션 실행 조합 루트(composition root)가 어댑터를 classpath에 싣는 유일한 자리로서 허용됩니다. 소스 코드 레벨에서는 컴파일 타임 의존(`implementation`, `testImplementation`)이 없으므로 import할 수 없습니다.
   2. `build-logic`의 JPA DSL 생성기: 빌드 및 코드 생성 도구 경계로 소스 스캔 대상 밖입니다.
 
 ### 웹 계층 및 응답 DTO

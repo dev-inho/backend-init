@@ -9,7 +9,7 @@
 * **원문:** `        val repository = Proxy.newProxyInstance(`
 * **과거 감사 시점 파일:행 (현재 삭제됨):** `core/application/src/test/kotlin/cc/midolog/persistence/FileMetaRepositoryPortContractTest.kt:146`
 * **원문:** `        val repository = Proxy.newProxyInstance(`
-* **판정:** 결함 (과거 감사 시점) -> **[복원됨 (PR #39, PR #43)]**
+* **판정:** 결함 (과거 감사 시점) -> **[복원됨 (PR #43)]**
 * **근거:** (과거) 실제 H2 어댑터를 주입하여 쿼리를 검증하지 않고, `Map`과 `Proxy` 기반 Fake 구현체로 동작하여 영속성 계층의 동작을 실증하지 못했음.
 * **복원 근거 및 현재 경로:**
   - `core/application`의 레거시 Fake/Proxy 계약 테스트 파일은 전면 삭제되었습니다.
@@ -48,17 +48,19 @@
 * **근거:** MyBatis는 `resultType="map"`과 수동 `toDomain` 별칭(`AS "ownerId"` 등)에 의존하여 매핑이 깨지기 쉽습니다. `DEAD_CODE_CANDIDATES.md` #12에서 지적된 바와 같이, 설정 중복 및 Map 자동 변환 한계를 내포합니다.
 
 ## 3. Instant.now() 호출 일관성
-* **파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:43`
+* **과거 감사 시점 파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:43`
 * **원문:** `            query.setParameter("now", java.time.Instant.now())`
-* **파일:행:** `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/file/MyBatisFileMetaRepositoryAdapter.kt:41`
+* **과거 감사 시점 파일:행:** `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/file/MyBatisFileMetaRepositoryAdapter.kt:41`
 * **원문:** `        mapper.updateStatus(id, status.name, Instant.now()) > 0`
 * **파일:행:** `core/application/src/main/kotlin/cc/midolog/business/config/ClockConfig.kt:19`
 * **원문:** `        return Clock.systemUTC()`
-* **판정:** 결함 (과거 감사 시점) -> **[복원됨 / 진행 중]**
-* **근거:** 실제 `ClockConfig`에 의해 `clock.instant()` 주입이 가능함에도 `Instant.now()` 하드코딩을 사용하여 테스트 시간 의존성 문제가 있습니다.
-* **복원 근거 및 현재 상태:**
-  - `application`은 PR #42(`refactor/fileservice-clock`)에서 `FileService`에 `Clock`을 주입하여 해결되었으며, 고아 정리 서비스(`FileOrphanCleanupService`)도 주입된 `Clock`을 사용하여 제어됩니다.
-  - storage 어댑터는 PR #43 포트 계약 테스트(`JpaFileMetaRepositoryPortContractTest`, `MyBatisFileMetaRepositoryPortContractTest`)에서 `clock()` 검증을 거치도록 어댑터 생성 시 `Clock` 주입 구조가 정비되었습니다.
+* **판정:** 결함 (과거 감사 시점) -> **[복원됨 (PR #43)]**
+* **근거:** (과거) 실제 `ClockConfig`에 의해 `clock.instant()` 주입이 가능함에도 `Instant.now()` 하드코딩을 사용하여 테스트 시간 의존성 문제가 있었음.
+* **복원 근거 및 현재 경로:**
+  - 감사 대상이었던 두 storage 어댑터는 PR #43에서 주입받은 `clock.instant()`를 호출하도록 완전히 복원되었습니다:
+    - JPA: `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:44` (`query.setParameter("now", clock.instant())`)
+    - MyBatis: `storage/mybatis/src/main/kotlin/cc/midolog/storage/mybatis/file/MyBatisFileMetaRepositoryAdapter.kt:42` (`mapper.updateStatus(id, status.name, clock.instant()) > 0`)
+  - 각 storage 모듈의 포트 계약 테스트(`JpaFileMetaRepositoryPortContractTest`, `MyBatisFileMetaRepositoryPortContractTest`)에서 고정 `Clock`을 주입하여 어댑터의 시간 제어 일관성을 실증 검증합니다.
 
 ## 4. JPA DSL 생성기 품질 확인
 * **파일:행:** `storage/jpa/build/generated/sources/jpaDsl/main/kotlin/cc/midolog/storage/jpa/file/FileMetaJpaRepository.kt:5`
@@ -84,14 +86,19 @@ PR #24 기준, 포트 1건 추가 시 20개 파일이 변경되며 이는 스토
 **상위 원칙:** “JPA·MyBatis 관심사는 `storage/jpa`, `storage/mybatis` 밖으로 나오지 않는다.”
 
 ### 6.1 테스트/설정 코드 유출 전수 목록 (과거 감사 시점 결함)
-* **직접 구현체 Import (테스트) -> [복원됨 (PR #39, PR #43)]:**
-  * 과거 감사 대상 파일 (현재 삭제됨):
-    * `core/application/src/test/kotlin/cc/midolog/persistence/FileMetaRepositoryPortContractTest.kt:6`<br>`import cc.midolog.storage.jpa.file.FileMetaJpaEntity`
-    * `core/application/src/test/kotlin/cc/midolog/persistence/PersistenceProfileContextTest.kt:5`<br>`import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter`
-    * `core/application/src/test/kotlin/cc/midolog/persistence/UserRepositoryPortContractTest.kt:3`<br>`import cc.midolog.storage.jpa.user.JpaUserRepositoryAdapter`
-    * `core/application/src/test/kotlin/cc/midolog/persistence/SampleRepositoryPortContractTest.kt:5`<br>`import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter`
-    * `core/application/src/test/kotlin/cc/midolog/persistence/MyBatisProfileContextTest.kt:5`<br>`import cc.midolog.storage.mybatis.sample.SampleMapper`
-  * **복원 근거:** 위 5개 테스트 파일은 전면 삭제되었으며, 현재 `core/application` 내에는 concrete storage 어댑터 import가 0건입니다. 신규 `PersistenceBoundaryTest` 가드가 재유출을 원천 차단합니다.
+* **직접 구현체 Import (테스트) -> [복원됨 (PR #43)]:**
+  * 과거 감사 대상 파일 (5개):
+    * 계약 테스트 (3개, 전면 삭제됨):
+      * `core/application/src/test/kotlin/cc/midolog/persistence/FileMetaRepositoryPortContractTest.kt:6`<br>`import cc.midolog.storage.jpa.file.FileMetaJpaEntity`
+      * `core/application/src/test/kotlin/cc/midolog/persistence/UserRepositoryPortContractTest.kt:3`<br>`import cc.midolog.storage.jpa.user.JpaUserRepositoryAdapter`
+      * `core/application/src/test/kotlin/cc/midolog/persistence/SampleRepositoryPortContractTest.kt:5`<br>`import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter`
+    * 프로파일 테스트 (2개, concrete import/FQCN 제거 후 재작성되어 존속):
+      * `core/application/src/test/kotlin/cc/midolog/persistence/PersistenceProfileContextTest.kt:5`<br>`import cc.midolog.storage.jpa.sample.JpaSampleRepositoryAdapter`
+      * `core/application/src/test/kotlin/cc/midolog/persistence/MyBatisProfileContextTest.kt:5`<br>`import cc.midolog.storage.mybatis.sample.SampleMapper`
+  * **복원 근거 및 현재 상태:**
+    - Fake/Proxy 기반의 계약 테스트 3개(`FileMeta/Sample/UserRepositoryPortContractTest.kt`)는 전면 삭제되었으며, `core:domain`의 testFixtures 계약 키트를 상속받아 각 storage 모듈의 실제 H2 어댑터 테스트로 완전 이관되었습니다 (PR #43).
+    - 프로파일 컨텍스트 테스트 2개(`core/application/src/test/kotlin/cc/midolog/persistence/PersistenceProfileContextTest.kt`, `MyBatisProfileContextTest.kt`)는 concrete storage 패키지 import 및 FQCN 직접 참조를 완전히 제거하고, 순수 도메인 포트 인터페이스(`*RepositoryPort`)와 Spring Profile 기반으로 활성화된 프로파일의 단일 어댑터 빈 등록을 검증하도록 재작성되어 존속합니다 (PR #43).
+    - 현재 `core/application` 내에는 concrete storage 어댑터 import가 0건이며, 신규 `PersistenceBoundaryTest` 가드가 영속성 관심사 재유출을 원천 차단합니다.
 * **프레임워크 설정 문자열 유출 -> [복원됨 (PR #39)]:**
   * `core/application/src/test/kotlin/cc/midolog/storage/FileStorageIntegrationTest.kt:28`<br>`            "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration," +`
     * *판정:* 허용 예외 (import가 아닌 자동 설정 제외용 프로퍼티 값 문자열 리터럴).
@@ -110,6 +117,6 @@ PR #24 기준, 포트 1건 추가 시 20개 파일이 변경되며 이는 스토
   * `build-logic/src/main/kotlin/cc/midolog/buildlogic/jpadsl/JpaDslRenderer.kt:137`<br>`import org.springframework.data.jpa.repository.JpaRepository` (공통 빌드 도구이므로 소스 스캔 대상 밖 명시적 예외)
 
 ### 6.2 경계 복원 및 가드 추천 (구현 완료 현황)
-* **계약 테스트 복원 [구현 완료 (PR #39, PR #43)]:** `core:domain`의 `src/testFixtures`에 3개 포트 계약 키트(`*RepositoryPortContract`)를 배치하고, 각 저장소 모듈(`storage:jpa`, `storage:mybatis`)에서 이를 상속받아 H2 환경에서 실제 어댑터를 실행하는 계약 테스트 6종으로 완전 이관되었습니다.
+* **계약 테스트 복원 [구현 완료 (PR #43)]:** `core:domain`의 `src/testFixtures`에 3개 포트 계약 키트(`*RepositoryPortContract`)를 배치하고, 각 저장소 모듈(`storage:jpa`, `storage:mybatis`)에서 이를 상속받아 H2 환경에서 실제 어댑터를 실행하는 계약 테스트 6종으로 완전 이관되었습니다.
 * **설정 복원 [구현 완료 (PR #39)]:** 전역 `application.yml`의 JPA/MyBatis 프로퍼티들을 각 스토리지 모듈 내부 `resources/application-{profile}.yml`로 이전하여 모듈별 설정 소유권을 확립했습니다.
 * **가드 도입 [구현 완료]:** `core/application/src/test/kotlin/cc/midolog/PersistenceBoundaryTest.kt`를 도입하여 `core/**`, `gateway/**`, `support/**`, `client/**` 모듈의 실제 소스 트리 전체를 스캔해 `jakarta.persistence`, `org.springframework.data.jpa`, `org.hibernate`, `org.mybatis`, `org.apache.ibatis`, `cc.midolog.storage.jpa`, `cc.midolog.storage.mybatis` import 유입을 영구 차단합니다.
