@@ -108,4 +108,21 @@ class FileStorageAutoConfigurationTest {
         }
     }
 
+    class ExistingLegacyComponentConfig {
+        @org.springframework.context.annotation.Bean("localFileStorageAdapter")
+        fun localFileStorageAdapter(): String = "legacyComponent"
+    }
+
+    @Test
+    fun `옛 component와 동일한 bean 이름 localFileStorageAdapter가 존재해도 충돌 없이 컨텍스트가 로드된다`() {
+        contextRunner.withUserConfiguration(ExistingLegacyComponentConfig::class.java)
+            .withPropertyValues(
+                "storage.file.provider=local",
+                "storage.file.local.root-dir=${System.getProperty("user.dir")}/build/files"
+            ).run { context ->
+                org.assertj.core.api.Assertions.assertThat(context).hasNotFailed()
+                org.assertj.core.api.Assertions.assertThat(context).hasBean("fileLocalStorageAdapter")
+                org.assertj.core.api.Assertions.assertThat(context).hasBean("localFileStorageAdapter")
+            }
+    }
 }
