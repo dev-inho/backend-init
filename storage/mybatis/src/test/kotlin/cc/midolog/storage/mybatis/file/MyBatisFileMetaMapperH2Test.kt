@@ -12,6 +12,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 @MybatisTest
+@org.springframework.context.annotation.Import(cc.midolog.storage.mybatis.TestDatabaseIdProviderConfig::class)
 @TestPropertySource(properties = [
     "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL",
     "spring.datasource.driverClassName=org.h2.Driver",

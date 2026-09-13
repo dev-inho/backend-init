@@ -9,9 +9,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.persistence.autoconfigure.EntityScan
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
-import org.springframework.context.annotation.Profile
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionOperations
 import org.springframework.transaction.support.TransactionTemplate
@@ -23,7 +21,6 @@ import kotlin.test.assertEquals
         "spring.data.jpa.repositories.enabled=true",
     ],
 )
-@ActiveProfiles("jpa")
 @Import(JpaSampleRepositoryAdapter::class, JpaSampleRepositoryAdapterTest.JpaTestConfig::class)
 class JpaSampleRepositoryAdapterTest {
 
@@ -38,7 +35,6 @@ class JpaSampleRepositoryAdapterTest {
         assertEquals(sample, adapter.findById(sample.id))
     }
 
-    @Profile("jpa")
     @SpringBootConfiguration
     @EntityScan("cc.midolog.storage.jpa.sample")
     @EnableJpaRepositories("cc.midolog.storage.jpa.sample")

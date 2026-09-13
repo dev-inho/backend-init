@@ -19,7 +19,28 @@
     </select>
 
     <insert id="upsert">
-        INSERT INTO file_meta (
+        MERGE INTO file_meta s
+        USING (VALUES (
+            #{id},
+            #{ownerId},
+            #{storageKey},
+            #{sizeBytes},
+            #{contentType},
+            #{checksum},
+            #{status},
+            #{createdAt},
+            #{updatedAt}
+        )) AS v(id, owner_id, storage_key, size_bytes, content_type, checksum, status, created_at, updated_at)
+        ON s.id = v.id
+        WHEN MATCHED THEN UPDATE SET
+            owner_id = v.owner_id,
+            storage_key = v.storage_key,
+            size_bytes = v.size_bytes,
+            content_type = v.content_type,
+            checksum = v.checksum,
+            status = v.status,
+            updated_at = v.updated_at
+        WHEN NOT MATCHED THEN INSERT (
             id,
             owner_id,
             storage_key,
@@ -30,24 +51,16 @@
             created_at,
             updated_at
         ) VALUES (
-            #{id},
-            #{ownerId},
-            #{storageKey},
-            #{sizeBytes},
-            #{contentType},
-            #{checksum},
-            #{status},
-            #{createdAt},
-            #{updatedAt}
+            v.id,
+            v.owner_id,
+            v.storage_key,
+            v.size_bytes,
+            v.content_type,
+            v.checksum,
+            v.status,
+            v.created_at,
+            v.updated_at
         )
-        ON CONFLICT (id) DO UPDATE SET
-            owner_id = EXCLUDED.owner_id,
-            storage_key = EXCLUDED.storage_key,
-            size_bytes = EXCLUDED.size_bytes,
-            content_type = EXCLUDED.content_type,
-            checksum = EXCLUDED.checksum,
-            status = EXCLUDED.status,
-            updated_at = EXCLUDED.updated_at
     </insert>
 
     <update id="updateStatus">

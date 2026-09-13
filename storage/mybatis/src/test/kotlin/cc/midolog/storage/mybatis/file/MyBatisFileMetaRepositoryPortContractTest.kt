@@ -13,6 +13,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 @MybatisTest
+@org.springframework.context.annotation.Import(cc.midolog.storage.mybatis.TestDatabaseIdProviderConfig::class)
 @AutoConfigureTestDatabase(replace = Replace.NONE)
 @TestPropertySource(properties = [
     "spring.datasource.url=jdbc:h2:mem:testdb_filemeta;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH",
