@@ -53,20 +53,42 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 | **support:logging** | 통합 로깅 및 모니터링 |
 | **support:web** | 공통 WebFlux 필터, API 응답, 예외 처리 |
 | **support:jwt** | JWT 토큰 발급 및 검증 코덱 (`JwtCodec`) |
+| **examples:minimal-app** | 최소 소비자 레퍼런스 앱 (스토리지 스타터 자동 구성 및 포트 확장 실증) |
+
+### 프레임워크로 쓰기 (Storage Starter)
+
+`backend-init`의 영속성 모듈(`storage:jpa`, `storage:mybatis`)은 Spring Boot Starter 형태로 제공됩니다. 외부 소비자 애플리케이션은 의존성 3줄과 프로퍼티 2줄만으로 어댑터를 주입받아 사용할 수 있습니다:
+
+```groovy
+dependencies {
+    implementation project(':core:domain')
+    implementation project(':storage:jpa') // 또는 project(':storage:mybatis')
+}
+```
+
+```yaml
+storage:
+  persistence:
+    provider: jpa # 또는 mybatis
+```
+
+- **필수 프로퍼티 Fail-Fast**: `storage.persistence.provider` 미설정 또는 오타 시 구동 단계에서 즉시 실패합니다.
+- **소비자 Override**: 소비자가 `SampleRepositoryPort` 등의 사용자 빈을 등록하면 스타터의 기본 자동 구성 어댑터가 물러납니다(`@ConditionalOnMissingBean`).
+- 자세한 내용은 [docs/STORAGE_STARTER.md](docs/STORAGE_STARTER.md) 및 [examples/minimal-app](examples/minimal-app)을 참조하세요.
 
 ### Persistence 선택
 
-| 구현 | 모듈 | Profile | 저장 방식 | 검증 상태 | 주의사항 |
-|------|------|---------|----------|----------|----------|
-| MyBatis | `storage:mybatis` | `mybatis` | XML mapper + PostgreSQL SQL | adapter/profile wiring 테스트 통과 | 로컬 실행 시 `local,mybatis`를 명시 |
-| JPA | `storage:jpa` | `jpa` | Spring Data JPA entity/repository | H2 기반 adapter 테스트와 profile wiring 테스트 통과 | blocking JPA 호출은 `Dispatchers.IO`와 `TransactionOperations` 경계에서 실행 |
+| 구현 | 모듈 | Provider 프로퍼티 | 저장 방식 | 검증 상태 | 주의사항 |
+|------|------|-------------------|----------|----------|----------|
+| MyBatis | `storage:mybatis` | `storage.persistence.provider=mybatis` | XML mapper + PostgreSQL SQL | 어댑터 H2 실증 및 자동 구성 테스트 통과 | `STORAGE_PERSISTENCE_PROVIDER=mybatis`로 지정 |
+| JPA | `storage:jpa` | `storage.persistence.provider=jpa` | Spring Data JPA entity/repository | H2 기반 어댑터 테스트와 자동 구성 테스트 통과 | blocking JPA 호출은 `Dispatchers.IO`와 `TransactionOperations` 경계에서 실행 |
 
-운영 실행에서는 `mybatis`와 `jpa` persistence profile을 동시에 켜지 않습니다. 둘을 동시에 활성화하면 같은 도메인 repository port 구현이 2개 등록될 수 있습니다.
+운영 실행에서는 `storage.persistence.provider`로 `mybatis` 또는 `jpa` 중 하나를 지정합니다. 프로퍼티가 누락되거나 유효하지 않은 값이면 애플리케이션이 즉시 fail-fast합니다.
 
 ### 도메인 예제
 
 - `sample` 도메인은 gateway/application/storage smoke와 회귀 테스트를 위한 최소 예제로 유지합니다.
-- `user` 도메인은 새 업무 도메인을 추가하는 표준 흐름을 보여주는 실전형 예제입니다: `core:domain` model/port → `core:application` service/controller/infra → `storage:mybatis` (`cc.midolog.storage.mybatis`) mapper/adapter → `storage:jpa` DSL/adapter → contract/profile test.
+- `user` 도메인은 새 업무 도메인을 추가하는 표준 흐름을 보여주는 실전형 예제입니다: `core:domain` model/port → `core:application` service/controller/infra → `storage:mybatis` (`cc.midolog.storage.mybatis`) mapper/adapter → `storage:jpa` DSL/adapter → contract/provider test.
 - `user` API는 사용자 생성/조회 persistence 예제만 제공합니다. 비밀번호 저장, 회원가입 보안, refresh token, role/permission 체계는 이 템플릿 예제 범위 밖입니다.
 
 ### 플랫폼 옵션
@@ -179,11 +201,11 @@ SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :cor
 # readiness 확인
 docker compose ps
 
-# 로컬 MyBatis profile로 application 테스트/기동
+# 로컬 MyBatis provider로 application 테스트/기동
 SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:test
 SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:bootRun
 
-# 로컬 JPA profile로 user/sample persistence adapter 검증
+# 로컬 JPA provider로 user/sample persistence adapter 검증
 SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=jpa ./gradlew :core:application:test
 
 # generated JPA mapping을 실제 PostgreSQL에 대해 검증
@@ -250,14 +272,14 @@ CI는 의존성·시크릿 스캔만 돌린다(`.github/workflows/security.yml`)
 - `core:application`: sample API, user 생성/조회 API, file API 4종(`POST /api/files`, `GET /api/files/{id}`, `GET /api/files/{id}/content` 스트리밍, `DELETE /api/files/{id}`), 전용 응답 DTO(`*Response`), Redis 캐시 인프라(`cc.midolog.infra.cache.RedisSampleCacheAdapter`), 인증 토큰 발급, SecurityConfig, 예외 응답 처리
 - `core:domain`: Spring/JPA/MyBatis annotation 없는 Plain Kotlin domain model/port (`DomainPurityTest` 가드)
 - `storage:file-local`: Local FS 기반 파일 저장 어댑터(`cc.midolog.storage.file.local.*`), Spring Boot 4 `AutoConfiguration.imports` 기반 자동 설정(`FileStorageAutoConfiguration`), Fail-fast 설정 검증(`storage.file.provider=local`, `storage.file.local.root-dir`, `storage.file.max-size-bytes`), 레거시 빈(`localFileStorageAdapter`)과의 공존 가드(`FileStorageIntegrationTest` 통과)
-- `storage:mybatis`: `mybatis` profile adapter(`cc.midolog.storage.mybatis.*`), `MyBatis*RepositoryAdapter` (Sample/User 및 `MyBatisFileMetaRepositoryAdapter`), mapper upsert, cutoff+limit 계약(`findExpiredPending`), V2 Flyway `file_meta`, sample/user profile wiring 테스트
-- `storage:jpa`: `jpa` profile adapter, `Jpa*RepositoryAdapter` (Sample/User 및 `JpaFileMetaRepositoryAdapter`), DSL 생성 JPA entity/repository/mapper, JPA 픽스처(`cc.midolog.jpadsl.fixture`), H2 기반 sample/user adapter 테스트, live PostgreSQL 분리 검증(`livePostgresTest`)
+- `storage:mybatis`: `mybatis` provider starter auto-configuration(`cc.midolog.storage.mybatis.*`), `MyBatis*RepositoryAdapter` (Sample/User 및 `MyBatisFileMetaRepositoryAdapter`), mapper upsert, cutoff+limit 계약(`findExpiredPending`), V2 Flyway `file_meta`, sample/user provider wiring 테스트
+- `storage:jpa`: `jpa` provider starter auto-configuration, `Jpa*RepositoryAdapter` (Sample/User 및 `JpaFileMetaRepositoryAdapter`), DSL 생성 JPA entity/repository/mapper, JPA 픽스처(`cc.midolog.jpadsl.fixture`), H2 기반 sample/user adapter 테스트, live PostgreSQL 분리 검증(`livePostgresTest`)
 - `client:storage-file`, `support:*`: 도메인 포트/어댑터(레거시 `FileStoragePort` 호환 유지), `support:web`(`RequestIdFilter`, `HttpLoggingFilter`), `support:jwt`(`JwtCodec`) 및 공통 유틸리티/웹/로깅 골격
 - `./gradlew build && ./gradlew -p build-logic test` 통과
 
 **backend-init-evolution 완료 범위**
 - A — 운영형 템플릿화: Gateway proxy correctness, profile local 분리, docs 정합성
-- B — 도메인 예제 확장: sample smoke 유지 + user 실전 예제, MyBatis/JPA contract/profile 검증
+- B — 도메인 예제 확장: sample smoke 유지 + user 실전 예제, MyBatis/JPA contract/provider 검증
 - C — 플랫폼화: Gateway 내부 라운드로빈, request visibility 최소 기능, Config Server/OpenTelemetry 보류 결정
 
 **후속 후보**

@@ -270,7 +270,7 @@ client/storage-file/
 - Domain model을 저장소 전용 schema/entity/mapper에 매핑
 - Domain Port(Repository, FileStoragePort) 구현
 - MyBatis SQL query 또는 JPA repository 관리
-- Persistence 구현은 profile로 하나만 선택 (`mybatis` vs `jpa`)
+- Persistence 구현은 Spring Boot Starter AutoConfiguration과 프로퍼티(`storage.persistence.provider=jpa|mybatis`)로 하나만 선택
 - **`storage:file-local` 자동 설정 및 Fail-Fast**:
   - `cc.midolog.file.port.storage.FileStoragePort` 구현체(`cc.midolog.storage.file.local.LocalFileStorageAdapter`) 제공.
   - Spring Boot 4 규격 `AutoConfiguration.imports`를 통해 `cc.midolog.storage.file.autoconfigure.FileStorageAutoConfiguration` 등록.
@@ -326,7 +326,7 @@ storage/file-local/
 - JPA `@Entity`, `@Table`, Spring Data repository는 `storage:jpa` 내부에만 둔다.
 - MyBatis mapper interface와 XML mapper는 `storage:mybatis` 내부에만 둔다.
 - `core:application`은 `SampleRepositoryPort`, `UserRepositoryPort`, `FileMetaRepositoryPort`, `FileStoragePort` 같은 domain port만 사용하고 구체 storage 구현을 main source에서 import하지 않는다.
-- 운영 실행에서는 `mybatis`와 `jpa` profile을 동시에 켜지 않는다.
+- 운영 실행에서는 `storage.persistence.provider`로 `jpa` 또는 `mybatis` 중 하나만 지정하며, 미설정 시 fail-fast한다.
 
 ### 2.7 Support (cc.midolog.support.*)
 
@@ -415,6 +415,7 @@ support/jwt/
 | `support:logging` | `support:util` | 통합 로깅 및 MDC 유틸리티 |
 | `support:web` | `support:logging`, `support:util` | 웹 공통 필터, 응답 래퍼, 전역 예외 처리 |
 | `support:jwt` | `support:util` (api) | JWT 인코딩/디코딩 유틸리티 |
+| `examples:minimal-app` | `core:domain`, `support:web`, `storage:jpa`, `storage:mybatis` | 프레임워크 저장소 스타터 자동 구성 및 확장 계약 실증 레퍼런스 앱 |
 | `build-logic` | (Gradle composite build) | JPA DSL 코드 생성 및 Flyway 마이그레이션 검증/생성 플러그인 (`includeBuild`) |
 
 ### 3.2 runtimeOnly 의존성
@@ -453,6 +454,19 @@ class CreateUserUseCase(
 3. **Client/Storage 간 직접 의존 금지**: 모두 Domain Port를 통해 통신.
 4. **Support 역의존 금지**: Support 모듈은 어떤 상위 모듈도 의존하지 않음.
 5. **Domain 내 프레임워크 사용 금지**: Spring, JPA, Mybatis 어노테이션 불가.
+
+### 3.4 프레임워크 vs 레퍼런스 앱 (Framework vs Reference App)
+
+모노레포 내 모듈들은 "재사용 가능한 인프라 프레임워크 스타터"와 "이를 소비하는 레퍼런스 애플리케이션"으로 명확히 역할이 구분됩니다:
+
+- **프레임워크 스타터 (Framework Starters)**:
+  - `gateway:starter`: 독립 실행형 게이트웨이 및 임베디드 모드를 제공하는 WebFlux 라우팅/보안/관측성 스타터.
+  - `storage:jpa`, `storage:mybatis`: `AutoConfiguration.imports`와 `storage.persistence.provider`를 통해 도메인 저장소 포트(`SampleRepositoryPort` 등)의 기본 어댑터를 자동 주입하는 스타터.
+  - `storage:file-local`: 로컬 파일 시스템 저장소 어댑터 스타터.
+  - 이들 모듈은 호스트 애플리케이션의 패키지 컴포넌트 스캔에 의존하지 않고 독립된 스타터로 작동하며, `@ConditionalOnMissingBean`을 통해 소비자가 자체 빈을 등록할 경우 기본 어댑터가 자동으로 물러나는 확장성을 보장합니다.
+- **레퍼런스 애플리케이션 (Reference Apps)**:
+  - `core:application`: 전체 비즈니스 도메인(user, file, sample), REST API, 보안, 스케줄러를 통합 탑재한 운영형 백엔드 서비스 (모듈 조합 루트).
+  - `examples:minimal-app`: 호스트 패키지(`cc.midolog.examples.minimal`)를 격리하여, 외부 소비자의 관점에서 저장소 스타터의 자동 구성, 필수 프로퍼티 fail-fast, 및 포트 빈 오버라이드 확장 계약을 실증하는 최소 소비자 레퍼런스 앱.
 
 ---
 
@@ -725,6 +739,7 @@ fun onUserCreated(event: UserCreatedEvent) {
 7단계: 실행 계층 빌드
 ├─ core:batch (logging 의존)
 ├─ gateway:app (gateway:starter, logging 의존)
+├─ examples:minimal-app (domain, web, storage:jpa, storage:mybatis 의존)
 └─ core:application (domain, logging, util, web, jwt 의존 및 client, storage runtimeOnly)
 ```
 

@@ -21,8 +21,9 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 15개 �
    - [12. support:util](#12-supportutil)
    - [13. support:logging](#13-supportlogging)
    - [14. support:web](#14-supportweb)
-   - [15. support:jwt](#15-supportjwt)
-   - [16. build-logic](#16-build-logic)
+    - [15. support:jwt](#15-supportjwt)
+    - [16. build-logic](#16-build-logic)
+    - [17. examples:minimal-app](#17-examplesminimal-app)
 3. [헥사고날 의존 규칙](#헥사고날-의존-규칙)
 4. [설정 파일 (settings.gradle)](#설정-파일)
 5. [관련 문서](#관련-문서)
@@ -48,6 +49,7 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 15개 �
 | **Support Logging** | `support:logging` | 로깅 설정 (logback-classic, logback-spring.xml, Reactor MDC) | `support:util`, `logback-classic`, `reactor-core`, `logstash-logback-encoder:8.0` |
 | **Support Web** | `support:web` | 공통 WebFlux 필터, API 응답 봉투, 전역 예외 처리 | `support:logging`, `support:util`, `webflux` |
 | **Support JWT** | `support:jwt` | JJWT 라이브러리 격리 및 토큰 발급/파싱 코덱 | `support:util`, `jjwt-api:0.12.6`, `jjwt-impl`(runtime), `jjwt-jackson`(runtime) |
+| **Examples Minimal App** | `examples:minimal-app` | 최소 소비자 레퍼런스 앱 (스토리지 스타터 자동 구성 및 포트 확장 실증) | `core:domain`, `support:web`, `storage:jpa`, `storage:mybatis`, `webflux` |
 
 ---
 
@@ -153,7 +155,7 @@ cc.midolog
 - **라이브러리**: `reactor-kotlin-extensions`, `kotlinx-coroutines-reactor`, `tools.jackson.module:jackson-module-kotlin`
 - **영속성 격리 및 설정 소유권**:
   - `core:application`은 공용 `DataSource` 설정만 소유하며, 구체적인 JPA/MyBatis 영속성 구현체에 대한 컴파일 타임 의존성을 일절 갖지 않고 `core:domain`의 포트 인터페이스(`*RepositoryPort`)에만 의존합니다.
-  - concrete 저장소 어댑터(`storage:mybatis`, `storage:jpa`, `storage:file-local`)는 조합 루트로서 `runtimeOnly` 및 `testRuntimeOnly`로만 주입되며, JPA/MyBatis 전용 설정은 각 storage 모듈의 `application-{profile}.yml`이 자체 소유합니다.
+  - concrete 저장소 어댑터(`storage:mybatis`, `storage:jpa`, `storage:file-local`)는 조합 루트로서 `runtimeOnly` 및 `testRuntimeOnly`로만 주입되며, JPA/MyBatis 전용 설정은 각 storage 모듈의 `AutoConfiguration`과 `EnvironmentPostProcessor`가 자체 소유하고 `storage.persistence.provider=jpa|mybatis` 프로퍼티로 활성화됩니다.
 
 **build.gradle 예시**:
 ```groovy
@@ -617,7 +619,7 @@ resources/mapper/
 **File 도메인 지원 및 설정 소유권**:
 - `MyBatisFileMetaRepositoryAdapter`: `core:domain`의 `FileMetaRepositoryPort` 구현체. V2 Flyway 마이그레이션(`V2__create_file_meta.sql`)으로 생성된 `file_meta` 테이블을 대상으로 `upsert`, `selectById`, `updateStatus`를 처리합니다.
 - **cutoff+limit 계약 준수**: `findExpiredPending(cutoff, limit)` 메서드를 통해 PENDING 상태이면서 cutoff 시각 이전에 갱신된 만료 레코드를 `limit` 건수만큼 정렬 조회합니다.
-- **설정 소유권 (`application-mybatis.yml`)**: 매퍼 위치(`mybatis.mapper-locations`) 및 카멜케이스 변환(`map-underscore-to-camel-case`) 등 MyBatis 특화 설정은 모듈 내부 `resources/application-mybatis.yml`이 자체 소유합니다.
+- **설정 소유권 및 자동 구성**: 매퍼 위치(`mybatis.mapper-locations`) 및 카멜케이스 변환(`map-underscore-to-camel-case`) 등 MyBatis 기본 설정은 `MyBatisDefaultPropertiesEnvironmentPostProcessor`가 환경 최하위 우선순위(`addLast`)로 자동 주입하며, 소비자가 지정한 설정이 우선합니다. Spring Boot 표준 starter 형태로 `AutoConfiguration.imports`를 통해 제공되며, `storage.persistence.provider=mybatis` 프로퍼티를 통해 활성화됩니다.
 - **H2 인메모리 실제 어댑터 계약 테스트**: `core:domain`의 testFixtures 계약(`FileMetaRepositoryPortContract`, `SampleRepositoryPortContract`, `UserRepositoryPortContract`)을 상속받아 `@MybatisTest` 환경에서 실제 H2 DB를 대상으로 어댑터 계약을 실증합니다.
 
 **주요 의존성**:
@@ -677,7 +679,7 @@ cc.midolog.storage.jpa
 **File 도메인 지원, 설정 소유권 및 livePostgresTest 격리**:
 - `JpaFileMetaRepositoryAdapter`: `FileMetaRepositoryPort` 포트 구현체로, blocking JPA 호출을 `Dispatchers.IO` 및 `TransactionOperations` 경계 내에서 안전하게 실행합니다.
 - `FileMetaRepositoryPort`의 cutoff+limit 계약(`findExpiredPending(cutoff, limit)`) 및 `updateStatus`를 QueryDSL `JPAQueryFactory`와 `QFileMetaJpaEntity`를 사용하여 컴파일 타임에 타입 안전하게 구현합니다 (`.limit(limit.toLong())`).
-- **설정 소유권 (`application-jpa.yml`)**: JPA repository 활성화 설정(`spring.data.jpa.repositories.enabled: true`) 등 JPA 특화 설정은 모듈 내부 `resources/application-jpa.yml`이 자체 소유합니다.
+- **설정 소유권 및 자동 구성**: Spring Data JPA repository 활성화 및 어댑터 빈 등록은 Spring Boot 표준 starter 형태로 `AutoConfiguration.imports`를 통해 제공되며, `storage.persistence.provider=jpa` 프로퍼티를 통해 활성화됩니다.
 - **H2 인메모리 실제 어댑터 계약 테스트**: `core:domain`의 testFixtures 계약(`FileMetaRepositoryPortContract`, `SampleRepositoryPortContract`, `UserRepositoryPortContract`)을 상속받아 `@DataJpaTest` 환경에서 실제 H2 DB를 대상으로 어댑터 계약을 실증합니다.
 - **테스트 분리 정책**: 기본 `./gradlew build` 및 `./gradlew test`에서는 H2 In-Memory DB로 어댑터를 검증하며, 실제 PostgreSQL DB 연결이 필요한 `livePostgresTest` 태스크는 기본 빌드 실행에서 제외되어 선택적으로만 수행됩니다.
 
@@ -1128,6 +1130,20 @@ dependencies {
 
 ---
 
+### 17. examples:minimal-app
+**책임**: 저장소 스타터 모듈(`storage:jpa`, `storage:mybatis`)의 자동 구성 및 확장 계약을 증명하는 최소 소비자 레퍼런스 애플리케이션.
+
+**특징 및 계약 실증**:
+- **호스트 컴포넌트 스캔 격리**: `@SpringBootApplication(scanBasePackages = ["cc.midolog.examples.minimal"])`로 설정하여 `cc.midolog.storage.*` 패키지가 호스트 컴포넌트 스캔에 절대 걸리지 않도록 격리.
+- **순수 포트 의존**: 웹 컨트롤러 및 테스트는 `core:domain`의 `SampleRepositoryPort`와 `Sample` 도메인 모델만 import하며, 영속성 세부 구현(JPA/MyBatis/QueryDSL)에 대한 import가 0건.
+- **Spring Boot Starter 자동 바인딩 실증**: `storage.persistence.provider=jpa` 및 `storage.persistence.provider=mybatis` 설정 시 도메인 포트 빈이 정확히 1개 등록되고 H2 DB에서 save/findById 왕복이 정상 동작함을 검증.
+- **Fail-Fast 계약**: 필수 프로퍼티(`storage.persistence.provider`) 미지정 시 기동 단계에서 즉시 fail-fast 실패.
+- **소비자 오버라이드 확장**: 소비자가 `SampleRepositoryPort` 빈을 직접 등록 시, Spring Boot 기본 `allow-bean-definition-overriding=false` 상태에서도 스타터의 기본 자동 구성 어댑터가 물러나고(@ConditionalOnMissingBean) 사용자 빈이 우선 등록됨을 실증.
+
+상세 사용법은 [docs/STORAGE_STARTER.md](./STORAGE_STARTER.md)를 참조하세요.
+
+---
+
 ## 헥사고날 의존 규칙
 
 ### 새 도메인 추가 절차
@@ -1137,9 +1153,9 @@ dependencies {
 1. `core:domain`에 `<context>.model.*` domain data class와 `<context>.port.repository.*RepositoryPort`를 추가한다.
 2. `core:application`에 application service를 추가하고, concrete storage import 없이 domain port만 주입한다.
 3. REST API가 필요하면 `web.<context>` controller와 DTO를 추가한다. controller는 request/response 변환만 담당하고 저장 구현을 직접 알지 않는다.
-4. MyBatis를 지원하려면 `storage:mybatis`에 mapper interface, XML mapper, `@Profile("mybatis")` repository adapter를 추가한다.
-5. JPA를 지원하려면 `storage:jpa/build.gradle`의 `jpaDsl { ... }`에 domain class/table/id/field/relation 매핑을 선언하고, `@Profile("jpa")` repository adapter를 추가한다.
-6. `core:domain`의 `src/testFixtures`에 공통 포트 계약 테스트(`*RepositoryPortContract`)를 추가하고, `storage:mybatis`와 `storage:jpa`에서 이를 상속받아 H2 인메모리 DB를 대상으로 실제 어댑터 계약 테스트(`*RepositoryPortContractTest`)를 각각 구현한다. `core:application`에서는 profile wiring 테스트를 통해 활성화된 profile의 단일 port bean만 등록되는지 검증한다.
+4. MyBatis를 지원하려면 `storage:mybatis`에 mapper interface, XML mapper, AutoConfiguration 등록 및 repository adapter를 추가한다.
+5. JPA를 지원하려면 `storage:jpa/build.gradle`의 `jpaDsl { ... }`에 domain class/table/id/field/relation 매핑을 선언하고, AutoConfiguration에 `@ConditionalOnMissingBean` repository adapter를 추가한다.
+6. `core:domain`의 `src/testFixtures`에 공통 포트 계약 테스트(`*RepositoryPortContract`)를 추가하고, `storage:mybatis`와 `storage:jpa`에서 이를 상속받아 H2 인메모리 DB를 대상으로 실제 어댑터 계약 테스트(`*RepositoryPortContractTest`)를 각각 구현한다. `core:application` 및 `examples:minimal-app`에서는 provider property(`storage.persistence.provider=jpa|mybatis`)를 통해 활성화된 단일 port bean만 등록되는지 검증한다.
 7. `core:domain` purity test가 Spring/JPA/MyBatis annotation 유입을 막는지 확인한 뒤 `./gradlew test`를 실행한다.
 8. JPA DSL이 실패하면 generated Kotlin을 고치지 말고 `jpaDsl { ... }` 선언이나 domain data class를 수정한다. unsupported DSL은 plugin validation 단계에서 실패해야 한다.
 
@@ -1176,7 +1192,7 @@ storage:file-local ──────┘
 **핵심 규칙**:
 1. **상향식 의존**: 상위 계층(application, gateway:app, batch)은 하위 계층(domain, client, storage, support, gateway:core/autoconfigure/starter)에 의존.
 2. **역전 원칙**: domain은 client/storage에 의존하지 않음. 대신 client/storage가 domain의 포트(인터페이스)를 구현.
-3. **어댑터 주입 및 설정 소유권**: application에서 client, storage는 `runtimeOnly` / `testRuntimeOnly`로 선언하여 컴파일 의존을 차단하고 Spring이 런타임에 자동 와이어링. application은 공용 `DataSource` 설정만 소유하며, 세부 영속성 설정은 각 storage 모듈의 `application-{profile}.yml`이 자체 소유.
+3. **어댑터 주입 및 설정 소유권**: application에서 client, storage는 `runtimeOnly` / `testRuntimeOnly`로 선언하여 컴파일 의존을 차단하고 Spring Boot Starter AutoConfiguration이 런타임에 자동 와이어링. application은 공용 `DataSource` 설정만 소유하며, 세부 영속성 설정은 각 storage 모듈의 `AutoConfiguration`과 `EnvironmentPostProcessor`가 자체 소유하고 `storage.persistence.provider` 프로퍼티로 공급자를 선택.
 4. **공유 모듈**: support:util, support:logging, support:web, support:jwt는 상위 모듈에서 필요에 따라 의존 가능 (단, domain은 프레임워크 비의존 순수 Kotlin 유지).
 5. **경계 존중**: 모듈 간 직접 import 금지. 공개된 인터페이스(포트)만 사용.
 
@@ -1214,6 +1230,9 @@ include 'support:util'
 include 'support:logging'
 include 'support:web'
 include 'support:jwt'
+
+// examples
+include 'examples:minimal-app'
 ```
 
 ### 빌드 순서
@@ -1223,7 +1242,7 @@ include 'support:jwt'
 4. `gateway:core` (`support:web`, `support:jwt`, `support:logging`, `support:util` 의존)
 5. `gateway:autoconfigure` (`gateway:core` 의존)
 6. `gateway:starter` (`gateway:core`, `gateway:autoconfigure` 의존)
-7. `core:batch`, `gateway:app`, `core:application` (도메인, 어댑터, 스타터/지원 모듈 의존)
+7. `core:batch`, `gateway:app`, `core:application`, `examples:minimal-app` (도메인, 어댑터, 스타터/지원 모듈 의존)
 
 Gradle은 자동으로 의존도를 계산하여 올바른 순서로 빌드합니다.
 

@@ -1,0 +1,20 @@
+plugins {
+    id 'org.jetbrains.kotlin.plugin.spring'
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+}
+
+dependencies {
+    implementation project(':core:domain')
+    implementation project(':support:web')
+    implementation project(':storage:jpa')
+    implementation project(':storage:mybatis')
+
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-reactor'
+    implementation 'tools.jackson.module:jackson-module-kotlin'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test'
+    testRuntimeOnly 'com.h2database:h2'
+}

@@ -26,3 +26,6 @@ include 'support:util'
 include 'support:logging'
 include 'support:web'
 include 'support:jwt'
+
+// examples
+include 'examples:minimal-app'
