@@ -22,7 +22,7 @@ dependencies {
 }
 ```
 
-> **단일 provider 선택**: 런타임 클래스패스에 두 모듈이 모두 존재할 수도 있으나, 실제 활성화는 `storage.persistence.provider` 프로퍼티를 통해 단 하나만 선택됩니다.
+> **단일 provider 선택 및 인프라 빈 격리**: 런타임 클래스패스에 두 모듈(`storage:jpa`, `storage:mybatis`)이 모두 존재하더라도 실제 활성화는 `storage.persistence.provider` 프로퍼티를 통해 단 하나만 선택됩니다. 각 storage 스타터의 `EnvironmentPostProcessor`가 선택되지 않은 기술의 Spring Boot 자동 구성(`HibernateJpaAutoConfiguration`, `MybatisAutoConfiguration` 등)을 `spring.autoconfigure.exclude`에 자동 주입하여 교차 인프라 빈(`EntityManagerFactory`, `SqlSessionFactory`) 생성을 원천 차단합니다.
 
 ---
 
@@ -45,7 +45,9 @@ java.lang.IllegalStateException: storage.persistence.provider 값이 설정되�
 java.lang.IllegalStateException: 알 수 없는 persistence provider입니다: foo. 지원되는 값: jpa, mybatis
 ```
 
-이를 통해 잘못된 설정으로 인한 런타임 NullPointerException이나 의존성 미주입 사고를 조기에 원천 차단합니다.
+또한 `storage:mybatis`의 `DatabaseIdProvider` 역시 데이터베이스 식별 시 지원 벤더(`postgresql`, `h2`) 외의 미지원 벤더가 감지되거나 식별에 실패할 경우 기본 벤더로 삼키지 않고 `IllegalStateException("지원 벤더: postgresql, h2 — 감지: <name>")`으로 즉시 실패합니다.
+
+이를 통해 잘못된 설정이나 환경 불일치로 인한 런타임 오동작을 조기에 원천 차단합니다.
 
 ---
 
