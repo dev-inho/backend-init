@@ -174,6 +174,18 @@ class JpaDslPlugin : Plugin<Project> {
                     deps
                 })
             }
+            project.tasks.matching { it.name == "sourcesJar" }.configureEach { task ->
+                task.dependsOn(project.provider {
+                    val deps = mutableListOf<Any>()
+                    if (jpaDsl.specs().isNotEmpty()) {
+                        deps.add(generateJpaDslSources)
+                    }
+                    if (mybatisDynamicSql.specs().isNotEmpty()) {
+                        deps.add(generateMyBatisDynamicSqlSources)
+                    }
+                    deps
+                })
+            }
         }
 
         project.tasks.withType(Test::class.java).configureEach { test ->
