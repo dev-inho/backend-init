@@ -16,23 +16,30 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.EnvironmentAware
 import org.springframework.context.ResourceLoaderAware
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.ImportBeanDefinitionRegistrar
+import org.springframework.core.env.Environment
 import org.springframework.core.io.ResourceLoader
 import org.springframework.core.type.AnnotationMetadata
 import java.util.Properties
 
-class MyBatisMapperScannerRegistrar : ImportBeanDefinitionRegistrar, ResourceLoaderAware {
+class MyBatisMapperScannerRegistrar : ImportBeanDefinitionRegistrar, ResourceLoaderAware, EnvironmentAware {
     private lateinit var resourceLoader: ResourceLoader
+    private lateinit var environment: Environment
 
     override fun setResourceLoader(resourceLoader: ResourceLoader) {
         this.resourceLoader = resourceLoader
     }
 
+    override fun setEnvironment(environment: Environment) {
+        this.environment = environment
+    }
+
     override fun registerBeanDefinitions(importingClassMetadata: AnnotationMetadata, registry: BeanDefinitionRegistry) {
-        val scanner = ClassPathMapperScanner(registry)
+        val scanner = ClassPathMapperScanner(registry, environment)
         if (::resourceLoader.isInitialized) {
             scanner.setResourceLoader(resourceLoader)
         }
