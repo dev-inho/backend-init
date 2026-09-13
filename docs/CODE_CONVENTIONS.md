@@ -155,7 +155,7 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
   - **현재 예시**: `client:storage-file`의 `@Component class LocalFileStorageAdapter`는 Spring의 기본 명명 규칙에 따라 `localFileStorageAdapter`로 등록됩니다. 반면 신규 자동 설정 모듈 `storage:file-local`의 `FileStorageAutoConfiguration`에서는 `@Bean("fileLocalStorageAdapter")`로 명시적 이름을 지정함으로써, 호스트 컴포넌트 스캔과 자동 설정이 함께 로드될 때 빈 이름 충돌(`BeanDefinitionOverrideException`) 없이 두 어댑터가 컨텍스트 내에 안전하게 공존하도록 보장합니다.
 
 ### 시간 소스
-시각이 필요한 코드는 `java.time.Clock` 을 생성자로 주입받아 `clock.instant()` 를 쓴다. `Instant.now()`·`System.currentTimeMillis()`·`Date()` 직접 호출을 금지한다(예외: 소요 시간 측정처럼 벽시계와 무관한 경과 시간). 애플리케이션은 `ClockConfig`, 게이트웨이는 `GatewayClockConfig` 가 `Clock.systemUTC()` 를 제공하며 테스트는 `Clock.fixed` 를 주입한다. 가드: `ApplicationTimeSourceGuardTest`, `JwtTimeSourceGuardTest`.
+시각이 필요한 코드는 `java.time.Clock` 을 생성자로 주입받아 `clock.instant()` 를 쓴다. `Instant.now()`·`System.currentTimeMillis()`·`Date()` 직접 호출을 금지한다(소요 시간은 `kotlin.time.TimeSource` 를 주입받아 `markNow()`/`elapsedNow()` 로 잰다 — `System.currentTimeMillis()` 차이 금지). 애플리케이션은 `ClockConfig`, 게이트웨이는 `GatewayClockConfig` 가 `Clock.systemUTC()` 를 제공하며 테스트는 `Clock.fixed` 를 주입한다. 가드: `ApplicationTimeSourceGuardTest`, `JwtTimeSourceGuardTest`, `WebTimeSourceGuardTest`.
 
 ---
 
@@ -179,6 +179,7 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
    - 지키는 것: `storage/jpa/src/main` 내 문자열 JPQL(`createQuery(`) 0건 유지 및 6개 QueryDSL Q 클래스(`QSampleJpaEntity`, `QUserJpaEntity`, `QFileMetaJpaEntity`, `QScalarSampleJpaEntity`, `QRelationParentJpaEntity`, `QRelationChildJpaEntity`)의 정확한 파일 경로 존재를 검증.
 8. **ApplicationTimeSourceGuardTest** (core/application/src/test/kotlin/cc/midolog/ApplicationTimeSourceGuardTest.kt) — 지키는 것: core:application main 소스에 Instant.now() 직접 호출 유입 차단
 9. **JwtTimeSourceGuardTest** (support/jwt/src/test/kotlin/cc/midolog/jwt/JwtTimeSourceGuardTest.kt) — 지키는 것: support:jwt main 소스에 System.currentTimeMillis()/Instant.now()/Date() 직접 호출 유입 차단
+10. **WebTimeSourceGuardTest** (support/web/src/test/kotlin/cc/midolog/web/WebTimeSourceGuardTest.kt) — 지키는 것: support:web main 소스에 System.currentTimeMillis()/Instant.now()/Date() 직접 호출 유입 차단
 
 ---
 
