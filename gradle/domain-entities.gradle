@@ -1,0 +1,76 @@
+ext.configureDomainEntities = { dsl ->
+    dsl.entity('cc.midolog.sample.model.Sample') {
+        table = 'sample'
+        id = 'id'
+    }
+
+    dsl.entity('cc.midolog.user.model.User') {
+        table = 'app_user'
+        id = 'id'
+
+        field('displayName') {
+            column = 'display_name'
+        }
+    }
+
+    dsl.entity('cc.midolog.file.model.FileMeta') {
+        table = 'file_meta'
+        id = 'id'
+        field('ownerId') { column = 'owner_id' }
+        field('storageKey') { column = 'storage_key' }
+        field('status') { enumStrategy = 'STRING' }
+        field('sizeBytes') { column = 'size_bytes'; nullable = true }
+        field('contentType') { column = 'content_type'; nullable = true }
+        field('checksum') { nullable = true }
+        field('createdAt') { column = 'created_at' }
+        field('updatedAt') { column = 'updated_at' }
+    }
+
+    dsl.entity('cc.midolog.jpadsl.fixture.ScalarSample') {
+        table = 'scalar_sample'
+        id = 'id'
+
+        field('displayName') {
+            column = 'display_name'
+        }
+        field('nickname') {
+            nullable = true
+        }
+        field('status') {
+            enumStrategy = 'STRING'
+        }
+        field('code') {
+            column = 'code_value'
+            storageType = 'String'
+            converter = 'cc.midolog.storage.jpa.sample.ScalarSampleCodeJpaConverter'
+        }
+    }
+
+    dsl.entity('cc.midolog.jpadsl.fixture.RelationParent') {
+        table = 'relation_parent'
+        id = 'id'
+
+        relation('children') {
+            type = 'oneToMany'
+            target = 'cc.midolog.jpadsl.fixture.RelationChild'
+            mappedBy = 'parent'
+            toDomain = 'emptyList()'
+        }
+    }
+
+    dsl.entity('cc.midolog.jpadsl.fixture.RelationChild') {
+        table = 'relation_child'
+        id = 'id'
+
+        field('parentId') {
+            relation = 'parent'
+        }
+        relation('parent') {
+            type = 'manyToOne'
+            target = 'cc.midolog.jpadsl.fixture.RelationParent'
+            sourceField = 'parentId'
+            joinColumn = 'parent_id'
+            referencedColumn = 'id'
+        }
+    }
+}
