@@ -12,6 +12,10 @@ import org.springframework.test.context.jdbc.Sql
 import java.nio.file.Files
 import java.util.UUID
 
+/**
+ * MyBatis Dynamic SQL 매퍼 및 어댑터가 XML 없이 기본 자동 구성을 통해 정상 바인딩되고
+ * 런타임 쿼리를 성공적으로 실행함을 실호출로 검증하는 영속성 바인딩 가드 테스트.
+ */
 @SpringBootTest(
     classes = [ApplicationServer::class],
     properties = [
@@ -38,7 +42,7 @@ class MyBatisMapperBindingGuardTest {
 
     @Test
     @Sql(statements = ["CREATE TABLE IF NOT EXISTS sample (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL)"])
-    fun `guard - mybatis mapper should be bound by default auto-configuration`() {
+    fun `guard - mybatis dynamic sql mapper should be bound by default auto-configuration and execute probe query`() {
         runBlocking {
             sampleRepositoryPort.findById("guard-probe")
         }
