@@ -49,33 +49,10 @@ tasks.register('livePostgresTest', Test) {
     }
 }
 
+apply from: rootProject.file('gradle/domain-entities.gradle')
+
 jpaDsl {
-    entity('cc.midolog.sample.model.Sample') {
-        table = 'sample'
-        id = 'id'
-    }
-
-    entity('cc.midolog.user.model.User') {
-        table = 'app_user'
-        id = 'id'
-
-        field('displayName') {
-            column = 'display_name'
-        }
-    }
-
-    entity('cc.midolog.file.model.FileMeta') {
-        table = 'file_meta'
-        id = 'id'
-        field('ownerId') { column = 'owner_id' }
-        field('storageKey') { column = 'storage_key' }
-        field('status') { enumStrategy = 'STRING' }
-        field('sizeBytes') { column = 'size_bytes'; nullable = true }
-        field('contentType') { column = 'content_type'; nullable = true }
-        field('checksum') { nullable = true }
-        field('createdAt') { column = 'created_at' }
-        field('updatedAt') { column = 'updated_at' }
-    }
+    configureDomainEntities(it)
 
     entity('cc.midolog.jpadsl.fixture.ScalarSample') {
         table = 'scalar_sample'

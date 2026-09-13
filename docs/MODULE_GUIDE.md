@@ -590,6 +590,11 @@ dependencies {
 ---
 
 ### 9. storage:mybatis
+> **공유 도메인 엔티티**
+> `gradle/domain-entities.gradle`에 선언된 공통 도메인 엔티티 정의(Sample, User, FileMeta)를 `storage/jpa`와 `storage/mybatis` 양쪽에서 공유하여 사용합니다. JPA 테스트 및 검증용 픽스처(ScalarSample, RelationParent, RelationChild)는 **storage/jpa 전용**으로 격리되어 관리되며 공유 스크립트에 포함되지 않습니다.
+
+**MyBatis Dynamic SQL 2.x** 및 **build-logic** 생성기(`generateMyBatisDynamicSqlSources`)를 사용해 도메인 엔티티 선언을 공유 DSL(`gradle/domain-entities.gradle`)으로 관리합니다 (픽스처는 storage/jpa 전용).
+주요 의존성에 `org.mybatis.dynamic-sql:mybatis-dynamic-sql:2.0.0` 를 추가하고, `mybatisDynamicSql { configureDomainEntities(it) }` DSL 연동을 반영합니다.
 **책임**: MyBatis + PostgreSQL 저장소 구현. `*RepositoryAdapter` + `*Mapper` + SQL 매핑 (`resources/mapper/{context}/*Mapper.xml`).
 
 **패키지 구조**:
