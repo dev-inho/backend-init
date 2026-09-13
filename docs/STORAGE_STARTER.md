@@ -35,7 +35,7 @@ dependencies {
 | `storage.persistence.provider` | `STORAGE_PERSISTENCE_PROVIDER` | `jpa`, `mybatis` | **없음 (필수)** | 활성화할 영속성 공급자 선택 |
 
 ### Fail-Fast 원칙
-소비자 애플리케이션 구동 시 `storage.persistence.provider` 프로퍼티가 누락되었거나 오타가 있는 경우, 애플리케이션 컨텍스트 초기화 단계(`@PostConstruct` 유효성 검증)에서 즉시 실패(`fail-fast`)합니다:
+소비자 애플리케이션 구동 시 `storage.persistence.provider` 프로퍼티가 누락되었거나 오타가 있는 경우, 빈 팩토리 후처리 단계(`BeanFactoryPostProcessor`)에서 일반 싱글톤 빈이 만들어지기 전에 즉시 실패(`fail-fast`)합니다:
 
 ```
 java.lang.IllegalStateException: storage.persistence.provider 값이 설정되지 않았습니다. jpa 또는 mybatis를 지정하세요.
