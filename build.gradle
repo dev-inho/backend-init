@@ -109,3 +109,16 @@ tasks.register('verifyBom') {
         logger.lifecycle("BOM verification passed! All ${expectedArtifacts.size()} target modules present in BOM dependencyManagement.")
     }
 }
+
+tasks.register('verifyArtifacts', Exec) {
+    group = 'verification'
+    description = 'Publishes all artifacts to local repo and executes consumer test suite.'
+    dependsOn('publishAllToLocalRepo')
+
+    workingDir = rootDir
+    def execArgs = ['./gradlew', '-p', 'examples/artifact-consumer', 'test']
+    if (project.hasProperty('backendInitRepo')) {
+        execArgs += ["-PbackendInitRepo=${project.property('backendInitRepo')}"]
+    }
+    commandLine execArgs
+}
