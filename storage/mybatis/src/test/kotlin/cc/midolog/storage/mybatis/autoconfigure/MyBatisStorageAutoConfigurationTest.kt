@@ -65,16 +65,25 @@ class MyBatisStorageAutoConfigurationTest {
         // Missing
         contextRunner.run { context ->
             assertThat(context).hasFailed()
-            val cause = context.startupFailure!!.cause
-            assertThat(cause!!.message).contains("jpa").contains("mybatis")
+            val cause = context.startupFailure!!.let { it.cause ?: it }
+            assertThat(cause.message).contains("jpa").contains("mybatis")
         }
 
         // Typo
         contextRunner.withPropertyValues("storage.persistence.provider=mybatus").run { context ->
             assertThat(context).hasFailed()
-            val cause = context.startupFailure!!.cause
-            assertThat(cause!!.message).contains("jpa").contains("mybatis")
+            val cause = context.startupFailure!!.let { it.cause ?: it }
+            assertThat(cause.message).contains("jpa").contains("mybatis")
         }
+    }
+
+    @Test
+    fun `MyBatisProviderValidationAutoConfiguration의 BeanFactoryPostProcessor 빈 메서드는 static 바이트코드로 노출되어야 한다`() {
+        val beanMethods = MyBatisProviderValidationAutoConfiguration::class.java.methods
+            .filter { it.isAnnotationPresent(Bean::class.java) }
+
+        assertThat(beanMethods).isNotEmpty
+        assertThat(beanMethods).allMatch { java.lang.reflect.Modifier.isStatic(it.modifiers) }
     }
 
     @Configuration
@@ -86,6 +95,30 @@ class MyBatisStorageAutoConfigurationTest {
                 override suspend fun findById(id: String): cc.midolog.sample.model.Sample? = null
             }
         }
+    }
+
+    class ConsumerService(val sampleRepositoryPort: SampleRepositoryPort)
+
+    @Test
+    fun `provider 미설정 시 SampleRepositoryPort를 요구하는 소비자 빈이 있더라도 NoSuchBeanDefinitionException 전에 provider 검증 실패가 발생해야 한다`() {
+        contextRunner.withUserConfiguration(ConsumerService::class.java)
+            .run { context ->
+                assertThat(context).hasFailed()
+                val failure = context.startupFailure
+                assertThat(failure).isNotNull
+
+                val causes = generateSequence(failure) { it.cause }.toList()
+                assertThat(causes)
+                    .`as`("원인 chain에 NoSuchBeanDefinitionException이 존재하지 않아야 한다")
+                    .noneMatch { it is org.springframework.beans.factory.NoSuchBeanDefinitionException }
+
+                assertThat(causes.any { cause ->
+                    val msg = cause.message ?: ""
+                    msg.contains("storage.persistence.provider") && msg.contains("jpa") && msg.contains("mybatis")
+                })
+                    .`as`("원인 chain에 storage.persistence.provider, jpa, mybatis가 모두 포함된 검증 예외가 존재해야 한다")
+                    .isTrue()
+            }
     }
 
     @Test
