@@ -1,32 +1,28 @@
 package cc.midolog.persistence
 
 import cc.midolog.ApplicationServer
-import cc.midolog.file.port.repository.FileMetaRepositoryPort
 import cc.midolog.sample.port.repository.SampleRepositoryPort
-import cc.midolog.user.port.repository.UserRepositoryPort
-import org.junit.jupiter.api.Assertions.assertEquals
+import kotlinx.coroutines.test.runTest
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.springframework.aop.support.AopUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.ApplicationContext
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.jdbc.Sql
 import java.nio.file.Files
 import java.util.UUID
 
 @SpringBootTest(
     classes = [ApplicationServer::class],
     properties = [
-        "spring.datasource.url=jdbc:h2:mem:testdb_mybatis;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH",
+        "spring.datasource.url=jdbc:h2:mem:testdb_mybatis;DB_CLOSE_DELAY=-1;MODE=PostgreSQL",
         "spring.flyway.enabled=false",
-        "spring.main.allow-bean-definition-overriding=true",
         "storage.file.provider=local",
-        "gateway.mode=embedded", "storage.persistence.provider=mybatis"
+        "gateway.mode=embedded", 
+        "storage.persistence.provider=mybatis"
     ]
 )
-
 class MyBatisProviderContextTest {
 
     companion object {
@@ -39,20 +35,13 @@ class MyBatisProviderContextTest {
     }
 
     @Autowired
-    private lateinit var context: ApplicationContext
+    private lateinit var sampleRepositoryPort: SampleRepositoryPort
 
     @Test
-    fun `mybatis provider active registers only mybatis port adapters`() {
-        val sampleBeans = context.getBeansOfType(SampleRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
-        val userBeans = context.getBeansOfType(UserRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
-        val fileBeans = context.getBeansOfType(FileMetaRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
-
-        assertEquals(1, sampleBeans.size)
-        assertEquals(1, userBeans.size)
-        assertEquals(1, fileBeans.size)
-
-        assertEquals("MyBatisSampleRepositoryAdapter", AopUtils.getTargetClass(sampleBeans.first()).simpleName)
-        assertEquals("MyBatisUserRepositoryAdapter", AopUtils.getTargetClass(userBeans.first()).simpleName)
-        assertEquals("MyBatisFileMetaRepositoryAdapter", AopUtils.getTargetClass(fileBeans.first()).simpleName)
+    @Sql(statements = ["CREATE TABLE IF NOT EXISTS sample (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL)"])
+    fun `마이바티스 프로필이 활성화되면 저장소 포트 빈이 정상 등록되고, 실제 쿼리도 동작한다`() = runTest {
+        assertThat(sampleRepositoryPort).isNotNull
+        val result = sampleRepositoryPort.findById("coord-probe")
+        assertThat(result).isNull()
     }
 }

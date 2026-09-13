@@ -16,7 +16,6 @@ import org.springframework.test.context.jdbc.Sql
     "spring.datasource.driverClassName=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "mybatis.mapper-locations=classpath*:mapper-h2/**/*.xml"
 ])
 @Sql(statements = [
     "DROP TABLE IF EXISTS sample;",

@@ -43,25 +43,24 @@ class MyBatisMapperScannerRegistrar : ImportBeanDefinitionRegistrar, ResourceLoa
 @Import(MyBatisMapperScannerRegistrar::class)
 class MyBatisStorageAutoConfiguration {
 
-    
+    @Bean
     @ConditionalOnMissingBean(SampleRepositoryPort::class)
-        @Bean
     fun sampleRepositoryPort(
         sampleMapper: SampleMapper,
     ): SampleRepositoryPort {
         return MyBatisSampleRepositoryAdapter(sampleMapper)
     }
 
+    @Bean
     @ConditionalOnMissingBean(UserRepositoryPort::class)
-        @Bean
     fun userRepositoryPort(
         userMapper: UserMapper,
     ): UserRepositoryPort {
         return MyBatisUserRepositoryAdapter(userMapper)
     }
 
+    @Bean
     @ConditionalOnMissingBean(FileMetaRepositoryPort::class)
-        @Bean
     fun fileMetaRepositoryPort(
         fileMetaMapper: FileMetaMapper,
     ): FileMetaRepositoryPort {

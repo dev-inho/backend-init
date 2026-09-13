@@ -93,7 +93,6 @@ class JpaStorageAutoConfigurationTest {
     @Test
     fun `소비자가 SampleRepositoryPort 빈을 선등록하면 기본 어댑터는 물러난다`() {
         contextRunner.withUserConfiguration(ConsumerConfig::class.java)
-            .withAllowBeanDefinitionOverriding(true)
             .withPropertyValues("storage.persistence.provider=jpa")
             .run { context ->
                 assertThat(context).hasNotFailed()
