@@ -32,3 +32,6 @@ include 'examples:minimal-app'
 
 // platform
 include 'platform:bom'
+
+// customers
+include 'customers:acme'

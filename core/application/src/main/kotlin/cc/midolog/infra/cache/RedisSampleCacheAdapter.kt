@@ -12,7 +12,7 @@ import java.time.Duration
  *
  * 특정 외부 인프라스트럭처(Redis)에 의존하는 어댑터 클래스이므로 S3 아키텍처 규칙에 따라 `core/application` 내의 `infra/cache` 패키지에 위치한다.
  * 캐시 엔트리는 10분([Duration.ofMinutes(10)])의 고정 TTL을 가지며, 저장 데이터는 단순 파이프 문자열(`id|name`)로 결합되어 직렬화된다.
- * 따라서 직렬화 규약상 식별자([Sample.id]) 내부에는 구분자(`|`)를 포함할 수 없다는 구조적 제약이 존재한다.
+ * 고객 전용 모듈에서 자체 [SampleCachePort] 빈을 등록할 경우 본 어댑터가 물러나도록 [@ConditionalOnMissingBean]을 적용한다.
  */
 @Component
 class RedisSampleCacheAdapter(

@@ -1,6 +1,7 @@
 package cc.midolog.business.service
 
 import cc.midolog.user.model.User
+import cc.midolog.user.policy.UserSavePolicy
 import cc.midolog.user.port.repository.UserRepositoryPort
 import org.springframework.stereotype.Service
 
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service
 @Service
 class UserService(
     private val userRepositoryPort: UserRepositoryPort,
+    private val userSavePolicies: List<UserSavePolicy> = emptyList(),
 ) {
     /**
      * 식별자로 사용자를 조회하며 대상이 없으면 null을 반환한다.
@@ -22,11 +24,16 @@ class UserService(
         userRepositoryPort.findById(id)
 
     /**
-     * 사용자 정보를 저장하거나 기존 정보를 갱신(upsert)한다.
+     * 사용자 정보를 등록된 [UserSavePolicy] 정책들의 [UserSavePolicy.order] 오름차순으로 적용한 후
+     * 영속 저장소에 저장하거나 기존 정보를 갱신(upsert)한다.
      *
      * 영속성 계층(MyBatis 매퍼의 ON CONFLICT DO UPDATE 구문 또는 JPA save 동작)의 upsert 규약에 따라,
      * 동일 id를 가진 사용자가 이미 존재하면 전달된 데이터로 덮어쓰고 신규 id이면 새 레코드로 삽입한다.
      */
     suspend fun save(user: User): User =
-        userRepositoryPort.save(user)
+        userRepositoryPort.save(
+            userSavePolicies
+                .sortedBy { it.order }
+                .fold(user) { acc, policy -> policy.beforeSave(acc) },
+        )
 }
