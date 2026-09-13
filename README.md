@@ -143,10 +143,10 @@ export JWT_SECRET="$(openssl rand -base64 48)"
 GATEWAY_REQUEST_VISIBILITY_ENABLED=true SPRING_PROFILES_ACTIVE=local ./gradlew :gateway:app:bootRun
 
 # 비즈니스 서버 (포트 8081)
-SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:bootRun
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:bootRun
 
 # 비즈니스 서버 + JPA persistence
-SPRING_PROFILES_ACTIVE=local,jpa ./gradlew :core:application:bootRun
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=jpa ./gradlew :core:application:bootRun
 
 # 배치 서버 (포트 8082)
 SPRING_PROFILES_ACTIVE=local ./gradlew :core:batch:bootRun
@@ -163,7 +163,9 @@ SPRING_PROFILES_ACTIVE=local ./gradlew :core:batch:bootRun
 - 무인증 상태로 보호 API(예: `GET /api/sample/ping`)를 호출하면 `JwtAuthFilter`에 의해 즉시 `401 Unauthorized`가 반환됩니다.
 - 라우팅 정상 동작 확인은 유효한 JWT Bearer 토큰을 포함하여 요청할 때 확인할 수 있습니다. 다운스트림 비즈니스 서버(8081)가 미기동 상태인 경우 연결 실패로 `502 Bad Gateway`(또는 타임아웃 시 `504 Gateway Timeout`)가 반환되어 프록시 중계 동작을 검증할 수 있습니다 (무인증 요청이 502를 반환하는 것이 아닙니다).
 
-### 로컬 인프라 Smoke Test
+>
+> `storage:jpa` 또는 `storage:mybatis` starter 모듈을 사용하는 소비자는 `storage.persistence.provider` 속성을 필수로 지정해야 합니다. (지정하지 않으면 기동 실패합니다.) `application.yml`에 정의된 `provider: ${STORAGE_PERSISTENCE_PROVIDER:mybatis}`는 레퍼런스 앱 기동 편의를 위한 기본값입니다.
+> ### 로컬 인프라 Smoke Test
 
 ```bash
 # PostgreSQL(5432) + Redis(6380) 시작
@@ -172,17 +174,17 @@ docker compose up -d postgres redis
 # 5432가 이미 사용 중이면 대체 포트로 시작
 POSTGRES_PORT=55432 docker compose up -d postgres redis
 DB_URL=jdbc:postgresql://localhost:55432/backend \
-SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:test
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:test
 
 # readiness 확인
 docker compose ps
 
 # 로컬 MyBatis profile로 application 테스트/기동
-SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:test
-SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:bootRun
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:test
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:bootRun
 
 # 로컬 JPA profile로 user/sample persistence adapter 검증
-SPRING_PROFILES_ACTIVE=local,jpa ./gradlew :core:application:test
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=jpa ./gradlew :core:application:test
 
 # generated JPA mapping을 실제 PostgreSQL에 대해 검증
 DB_URL=jdbc:postgresql://localhost:55432/backend \

@@ -23,13 +23,12 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
+import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.boot.persistence.autoconfigure.EntityScan
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
-import org.springframework.context.annotation.Profile
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionOperations
 import org.springframework.transaction.support.TransactionTemplate
@@ -49,7 +48,7 @@ import kotlin.test.assertTrue
     ],
 )
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@ActiveProfiles("jpa")
+@SpringBootTest(properties = ["storage.persistence.provider=jpa"])
 @Import(
     JpaSampleRepositoryAdapter::class,
     JpaUserRepositoryAdapter::class,
@@ -139,7 +138,6 @@ class LivePostgresJpaMappingSmokeTest {
         assertEquals(cc.midolog.file.model.FileStatus.READY, updated.status)
     }
 
-    @Profile("jpa")
     @SpringBootConfiguration
     @EntityScan("cc.midolog.storage.jpa")
     @EnableJpaRepositories("cc.midolog.storage.jpa")

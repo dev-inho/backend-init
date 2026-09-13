@@ -3,15 +3,11 @@ package cc.midolog.storage.mybatis.file
 import cc.midolog.file.model.FileMeta
 import cc.midolog.file.model.FileStatus
 import cc.midolog.file.port.repository.FileMetaRepositoryPort
-import org.springframework.context.annotation.Profile
-import org.springframework.stereotype.Repository
 import java.time.Instant
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-@Profile("mybatis")
-@Repository
 class MyBatisFileMetaRepositoryAdapter(
     private val mapper: FileMetaMapper,
     private val clock: java.time.Clock = java.time.Clock.systemUTC(),

@@ -11,7 +11,6 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.persistence.autoconfigure.EntityScan
 import org.springframework.context.annotation.Bean
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionOperations
 import org.springframework.transaction.support.TransactionTemplate
@@ -24,7 +23,6 @@ import kotlin.test.assertEquals
         "spring.data.jpa.repositories.enabled=true",
     ],
 )
-@ActiveProfiles("jpa")
 class ScalarSampleJpaGenerationTest {
 
     @Autowired

@@ -4,13 +4,14 @@ import cc.midolog.ApplicationServer
 import cc.midolog.file.port.repository.FileMetaRepositoryPort
 import cc.midolog.sample.port.repository.SampleRepositoryPort
 import cc.midolog.user.port.repository.UserRepositoryPort
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.springframework.aop.support.AopUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import java.nio.file.Files
@@ -23,11 +24,10 @@ import java.util.UUID
         "spring.flyway.enabled=false",
         "spring.main.allow-bean-definition-overriding=true",
         "storage.file.provider=local",
-        "gateway.mode=embedded"
+        "gateway.mode=embedded", "storage.persistence.provider=jpa"
     ]
 )
-@ActiveProfiles("jpa")
-class PersistenceProfileContextTest {
+class JpaProviderContextTest {
 
     companion object {
         @JvmStatic
@@ -41,8 +41,11 @@ class PersistenceProfileContextTest {
     @Autowired
     private lateinit var context: ApplicationContext
 
+    @Autowired
+    private lateinit var sampleRepositoryPort: SampleRepositoryPort
+
     @Test
-    fun `jpa profile registers exactly one of each port adapter`() {
+    fun `jpa provider registers exactly one of each port adapter and queries work`() = runTest {
         val sampleBeans = context.getBeansOfType(SampleRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
         val userBeans = context.getBeansOfType(UserRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
         val fileBeans = context.getBeansOfType(FileMetaRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
@@ -52,5 +55,8 @@ class PersistenceProfileContextTest {
         assertEquals(1, fileBeans.size)
 
         assertEquals("JpaFileMetaRepositoryAdapter", AopUtils.getTargetClass(fileBeans.first()).simpleName)
+
+        val result = sampleRepositoryPort.findById("coord-probe")
+        assertNull(result)
     }
 }

@@ -28,7 +28,9 @@ import java.nio.file.Path
             "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration," +
             "org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration," +
             "org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration," +
-            "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration",
+            "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration," +
+            "cc.midolog.storage.jpa.autoconfigure.JpaStorageAutoConfiguration," +
+            "cc.midolog.storage.mybatis.autoconfigure.MyBatisStorageAutoConfiguration",
     ],
 )
 class FileStorageIntegrationTest {

@@ -13,11 +13,11 @@ import kotlin.test.assertTrue
 
 @MybatisTest
 @TestPropertySource(properties = [
+    "mybatis.mapper-locations=classpath*:mapper-h2/**/*.xml",
     "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL",
     "spring.datasource.driverClassName=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "mybatis.mapper-locations=classpath:mapper/**/*.xml"
 ])
 class MyBatisFileMetaMapperH2Test {
 
