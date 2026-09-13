@@ -67,16 +67,36 @@ class JpaStorageAutoConfigurationTest {
         // Missing
         contextRunner.run { context ->
             assertThat(context).hasFailed()
-            val cause = context.startupFailure!!.cause
-            assertThat(cause!!.message).contains("jpa").contains("mybatis")
+            val cause = context.startupFailure!!.let { it.cause ?: it }
+            assertThat(cause.message).contains("jpa").contains("mybatis")
         }
 
         // Typo
         contextRunner.withPropertyValues("storage.persistence.provider=jppa").run { context ->
             assertThat(context).hasFailed()
-            val cause = context.startupFailure!!.cause
-            assertThat(cause!!.message).contains("jpa").contains("mybatis")
+            val cause = context.startupFailure!!.let { it.cause ?: it }
+            assertThat(cause.message).contains("jpa").contains("mybatis")
         }
+    }
+
+    @Test
+    fun `JpaProviderValidationAutoConfiguration의 BeanFactoryPostProcessor 빈 메서드는 static 바이트코드로 노출되어야 한다`() {
+        val beanMethods = JpaProviderValidationAutoConfiguration::class.java.methods
+            .filter { it.isAnnotationPresent(Bean::class.java) }
+
+        assertThat(beanMethods).isNotEmpty
+        assertThat(beanMethods).allMatch { java.lang.reflect.Modifier.isStatic(it.modifiers) }
+    }
+
+    @Test
+    fun `검증 자동 구성이 중복 등록되어도 멱등하게 정상 통과해야 한다`() {
+        contextRunner
+            .withConfiguration(AutoConfigurations.of(JpaProviderValidationAutoConfiguration::class.java))
+            .withPropertyValues("storage.persistence.provider=jpa")
+            .run { context ->
+                assertThat(context).hasNotFailed()
+                assertThat(context).hasSingleBean(SampleRepositoryPort::class.java)
+            }
     }
 
     @Configuration
