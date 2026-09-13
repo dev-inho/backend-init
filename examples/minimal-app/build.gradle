@@ -7,8 +7,8 @@ plugins {
 dependencies {
     implementation project(':core:domain')
     implementation project(':support:web')
-    implementation project(':storage:jpa')
-    implementation project(':storage:mybatis')
+    runtimeOnly project(':storage:jpa')
+    runtimeOnly project(':storage:mybatis')
 
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-reactor'

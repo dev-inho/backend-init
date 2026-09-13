@@ -12,13 +12,13 @@
 
 ```groovy
 dependencies {
-    // 1. 순수 도메인 모델 및 포트 인터페이스
+    // 1. 순수 도메인 모델 및 포트 인터페이스 (컴파일 타임 참조)
     implementation project(':core:domain')
 
-    // 2. 사용하고자 하는 영속성 기술 스타터 (JPA 또는 MyBatis)
-    implementation project(':storage:jpa')
+    // 2. 영속성 기술 스타터 (런타임 주입: 코드는 도메인 포트만 보고 컴파일되므로 runtimeOnly 사용)
+    runtimeOnly project(':storage:jpa')
     // 또는
-    // implementation project(':storage:mybatis')
+    // runtimeOnly project(':storage:mybatis')
 }
 ```
 

@@ -35,7 +35,7 @@
 1. `core:domain`에 annotation 없는 primary-constructor `data class`를 추가한다.
 2. repository port는 `core:domain`에 두고 concrete JPA type은 import하지 않는다.
 3. `storage:jpa/build.gradle`의 `jpaDsl { ... }`에 `entity('<fqcn>')`를 추가하고 `table`, `id`, field/relation mapping을 선언한다.
-4. `@Profile("jpa")` adapter를 추가하고 domain port contract test를 재사용한다.
+4. provider(`storage.persistence.provider=jpa`) 기반 auto-configuration(`@ConditionalOnMissingBean`)에 등록할 adapter를 추가하고 domain port contract test를 재사용한다.
 5. `./gradlew :storage:jpa:clean :storage:jpa:test :core:domain:test`로 generated source와 domain purity를 확인한다.
 6. PostgreSQL-specific mapping confidence가 필요하면 live database를 띄우고 `:storage:jpa:livePostgresTest`를 실행한다.
 

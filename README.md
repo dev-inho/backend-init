@@ -62,7 +62,7 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 ```groovy
 dependencies {
     implementation project(':core:domain')
-    implementation project(':storage:jpa') // 또는 project(':storage:mybatis')
+    runtimeOnly project(':storage:jpa') // 또는 project(':storage:mybatis')
 }
 ```
 
