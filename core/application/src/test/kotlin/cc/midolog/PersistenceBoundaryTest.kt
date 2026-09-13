@@ -9,7 +9,7 @@ import kotlin.io.path.extension
 
 class PersistenceBoundaryTest {
 
-    private val targetModules = listOf("core", "gateway", "support", "client")
+    private val targetModules = listOf("core", "gateway", "support", "client", "examples")
 
     private val forbiddenImportPrefixes = listOf(
         "jakarta.persistence",
@@ -27,13 +27,38 @@ class PersistenceBoundaryTest {
         while (candidate != null) {
             val hasSettings = Files.exists(candidate.resolve("settings.gradle")) ||
                 Files.exists(candidate.resolve("settings.gradle.kts"))
-            val hasTargetModules = targetModules.all { Files.isDirectory(candidate.resolve(it)) }
-            if (hasSettings && hasTargetModules) {
+            val hasBaseModules = listOf("core", "gateway", "support", "client")
+                .all { Files.isDirectory(candidate.resolve(it)) }
+            if (hasSettings && hasBaseModules) {
                 return candidate.normalize()
             }
             candidate = candidate.parent
         }
-        throw AssertionError("Failed to resolve repository root containing settings.gradle and target modules: $targetModules")
+        throw AssertionError("Failed to resolve repository root containing settings.gradle and base modules")
+    }
+
+    @Test
+    fun `minimal consumer app must exist and be included in settings with port-only contract`() {
+        val repoRoot = resolveRepositoryRoot()
+        val settingsFile = if (Files.exists(repoRoot.resolve("settings.gradle"))) {
+            repoRoot.resolve("settings.gradle")
+        } else {
+            repoRoot.resolve("settings.gradle.kts")
+        }
+        val settingsContent = Files.readString(settingsFile)
+        assertTrue(
+            settingsContent.contains("examples:minimal-app"),
+            "settings.gradle must include 'examples:minimal-app'"
+        )
+
+        val exampleAppDir = repoRoot.resolve("examples/minimal-app")
+        assertTrue(Files.isDirectory(exampleAppDir), "examples/minimal-app directory must exist: $exampleAppDir")
+        val buildGradle = exampleAppDir.resolve("build.gradle")
+        val buildGradleKts = exampleAppDir.resolve("build.gradle.kts")
+        assertTrue(
+            Files.exists(buildGradle) || Files.exists(buildGradleKts),
+            "examples/minimal-app build.gradle must exist"
+        )
     }
 
     @Test
