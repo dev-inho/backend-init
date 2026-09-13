@@ -1165,7 +1165,7 @@ dependencies {
 
 - MyBatis는 SQL을 명시적으로 통제해야 하거나 기존 PostgreSQL 쿼리/튜닝 자산을 그대로 쓰는 서비스에 적합하다. mapper XML과 adapter 테스트로 SQL 경계를 검증한다.
 - JPA는 단순 CRUD 중심 도메인과 Spring Data repository 생태계를 활용할 때 적합하다. 이 프로젝트에서는 domain model을 오염시키지 않기 위해 `storage:jpa/build.gradle` DSL로 JPA entity/repository/mapper를 생성한다.
-- 두 구현은 같은 repository port contract를 만족해야 한다. 운영 profile은 `mybatis` 또는 `jpa` 중 하나만 활성화한다.
+- 두 구현은 같은 repository port contract를 만족해야 한다. 운영 실행 시에는 `storage.persistence.provider` 속성을 통해 `mybatis` 또는 `jpa` 중 하나만 선택한다.
 
 ### 계층별 의존 방향
 ```

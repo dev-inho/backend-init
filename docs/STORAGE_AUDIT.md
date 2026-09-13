@@ -132,7 +132,7 @@ PR #24 기준, 포트 1건 추가 시 20개 파일이 변경되며 이는 스토
   * `core/application/src/test/kotlin/cc/midolog/storage/FileStorageIntegrationTest.kt:28`<br>`            "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration," +`
     * *판정:* 허용 예외 (import가 아닌 자동 설정 제외용 프로퍼티 값 문자열 리터럴).
   * 실제 `application.yml` 설정 키 유출: `spring.data.jpa.repositories.enabled: false`, `mybatis.mapper-locations` 등 인프라 설정이 전역 앱 설정에 노출되었던 결함.
-    * *복원 근거:* 전역 `application.yml`에서 JPA/MyBatis 설정 키가 전면 제거되었으며, 각 storage 모듈의 `resources/application-jpa.yml` 및 `resources/application-mybatis.yml`로 격리 이전되어 설정 소유권이 복원되었습니다.
+    * *복원 근거:* 전역 `application.yml`에서 JPA/MyBatis 설정 키가 전면 제거되었으며, 모듈별 격리 이전(PR #39)을 거쳐 PR #49에서 profile yml 파일들이 완전히 삭제되고 스타터의 AutoConfiguration 및 EnvironmentPostProcessor가 설정을 자체 소유하도록 발전했습니다.
 * **모듈 의존성 유출 -> [복원됨 (PR #39, PR #43)]:**
   * `core/application/build.gradle:37-38` (과거 `testImplementation` -> 현행 `testRuntimeOnly`로 복원):
     * 과거: `testImplementation project(':storage:mybatis')`, `testImplementation project(':storage:jpa')`
@@ -147,6 +147,6 @@ PR #24 기준, 포트 1건 추가 시 20개 파일이 변경되며 이는 스토
 
 ### 6.2 경계 복원 및 가드 추천 (구현 완료 현황)
 * **계약 테스트 복원 [구현 완료 (PR #43)]:** `core:domain`의 `src/testFixtures`에 3개 포트 계약 키트(`*RepositoryPortContract`)를 배치하고, 각 저장소 모듈(`storage:jpa`, `storage:mybatis`)에서 이를 상속받아 H2 환경에서 실제 어댑터를 실행하는 계약 테스트 6종으로 완전 이관되었습니다.
-* **설정 복원 [구현 완료 (PR #39)]:** 전역 `application.yml`의 JPA/MyBatis 프로퍼티들을 각 스토리지 모듈 내부 `resources/application-{profile}.yml`로 이전하여 모듈별 설정 소유권을 확립했습니다.
+* **설정 복원 [과거 PR #39 완료 → PR #49로 대체됨]:** 전역 `application.yml`의 JPA/MyBatis 프로퍼티들을 각 스토리지 모듈 내부로 이전(PR #39)한 뒤, PR #49에서 profile yml 파일을 완전히 삭제하고 스타터 자동 구성 및 `EnvironmentPostProcessor`가 기본값 설정을 자체 소유하도록 대체되었습니다.
 * **등록 방식 복원 [구현 완료 (PR #49)]:** 기존 Spring Profile 및 호스트 컴포넌트 스캔 기반 어댑터 등록 방식을 Spring Boot 표준 Starter 자동 구성(`AutoConfiguration.imports`, `@ConditionalOnProperty(prefix = "storage.persistence", name = ["provider"])`, `@ConditionalOnMissingBean`) 및 `storage.persistence.provider=jpa|mybatis` 프로퍼티 방식으로 복원했습니다. 미설정/오타 시 즉시 fail-fast하며, 소비자가 포트 빈을 직접 정의할 경우 기본 어댑터가 안전하게 물러납니다.
 * **가드 도입 [구현 완료]:** `core/application/src/test/kotlin/cc/midolog/PersistenceBoundaryTest.kt`를 도입하여 `core/**`, `gateway/**`, `support/**`, `client/**`, `examples/**` 모듈의 실제 소스 트리 전체를 스캔해 `jakarta.persistence`, `org.springframework.data.jpa`, `org.hibernate`, `org.mybatis`, `org.apache.ibatis`, `cc.midolog.storage.jpa`, `cc.midolog.storage.mybatis`, `com.querydsl` import 유입을 영구 차단하고, `examples/minimal-app`의 설정 include 및 최소 소비자 계약을 강제합니다.

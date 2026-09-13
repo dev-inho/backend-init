@@ -62,6 +62,44 @@ class PersistenceBoundaryTest {
     }
 
     @Test
+    fun `minimal consumer app main sources must not use @Lazy to defer dependency wiring`() {
+        val repoRoot = resolveRepositoryRoot()
+        val examplesMain = repoRoot.resolve("examples/minimal-app/src/main")
+        assertTrue(Files.isDirectory(examplesMain), "examples/minimal-app/src/main directory must exist: $examplesMain")
+
+        val sourceFiles = mutableListOf<Path>()
+        Files.walk(examplesMain).use { stream ->
+            stream
+                .filter { path ->
+                    Files.isRegularFile(path) && (path.extension == "kt" || path.extension == "java") && !isExcludedPath(path)
+                }
+                .forEach { sourceFiles.add(it) }
+        }
+
+        assertTrue(sourceFiles.isNotEmpty(), "examples/minimal-app/src/main source files must not be empty")
+
+        val violations = mutableListOf<String>()
+        val lazyPattern = Regex("""(@(\w+\.)*Lazy\b|import\s+org\.springframework\.context\.annotation\.Lazy)""")
+
+        for (file in sourceFiles) {
+            val relativePath = repoRoot.relativize(file).toString().replace('\\', '/')
+            val lines = Files.readAllLines(file, StandardCharsets.UTF_8)
+            for ((index, rawLine) in lines.withIndex()) {
+                if (lazyPattern.containsMatchIn(rawLine)) {
+                    val lineNumber = index + 1
+                    violations.add("$relativePath:$lineNumber: $rawLine")
+                }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            "Minimal consumer app main sources must not use @Lazy to defer dependency wiring (${violations.size} violations found):\n" +
+                violations.joinToString("\n")
+        )
+    }
+
+    @Test
     fun `persistence concerns must stay within storage modules`() {
         val repoRoot = resolveRepositoryRoot()
 

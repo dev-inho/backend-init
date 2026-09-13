@@ -151,9 +151,10 @@ jpaDsl {
 - domain source parsing이 Kotlin syntax edge cases를 더 많이 다뤄야 하면 compiler/Kotlin parser adoption을 별도 검토한다.
 - 해소된 리스크와 잔여 non-blocking 리스크는 `docs/JPA_DSL_RISK_REGISTER.md`에 기록한다.
 
-## Runtime Profile
-- `JpaSampleRepositoryAdapter`와 JPA repository scan은 `jpa` profile에서만 활성화된다.
-- `mybatis` profile과 동시에 켜면 `SampleRepositoryPort` 구현이 둘 이상 생길 수 있으므로, 운영 실행에서는 persistence profile을 하나만 선택한다.
+## Runtime Provider
+- `storage:jpa`는 Spring Boot AutoConfiguration 기반 스타터 모듈로 동작하며, `storage.persistence.provider=jpa` 설정 시 활성화된다.
+- `JpaSampleRepositoryAdapter`, `JpaUserRepositoryAdapter`, `JpaFileMetaRepositoryAdapter` 등 기본 어댑터 빈은 `@ConditionalOnMissingBean`으로 등록되므로, 소비자가 커스텀 포트 구현체를 빈으로 등록하면 기본 어댑터가 자동으로 양보(override)한다.
+- `storage.persistence.provider` 속성이 누락되었거나 오타(`jpa`, `mybatis` 외의 값)가 있는 경우, 싱글톤 빈 생성 전 static `BeanFactoryPostProcessor` 검증 단계에서 즉시 실패(`fail-fast`)하여 잘못된 기동을 방지한다.
 
 ## Blocking I/O
 - JPA는 blocking persistence다.
