@@ -1,14 +1,18 @@
 package cc.midolog.web.handler
 
+import cc.midolog.logging.LoggingMdc
 import cc.midolog.web.exception.ApiException
 import cc.midolog.web.exception.ErrorCode
 import cc.midolog.web.response.ApiResponse
+import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.bind.support.WebExchangeBindException
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.server.ServerWebExchange
 
 /**
  * 웹 계층에서 발생하는 예외를 포착해 표준 [ApiResponse] 에러 형태로 변환하는 전역 예외 처리기.
@@ -17,6 +21,8 @@ import org.springframework.web.server.ResponseStatusException
  */
 @RestControllerAdvice
 class GlobalExceptionHandler {
+
+    private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
 
     /**
      * 비즈니스 예외([ApiException])를 처리하여 예외에 지정된 [ErrorCode]의 HTTP 상태 코드와 에러 응답을 반환한다.
@@ -56,10 +62,16 @@ class GlobalExceptionHandler {
     /**
      * 처리되지 않은 기타 모든 예외([Exception])를 HTTP 500(INTERNAL_SERVER_ERROR)으로 표준화하여 반환한다.
      *
+     * 예상치 못한 장애의 원인 규명을 위해 요청 ID와 예외 클래스, 메시지, 전체 스택트레이스를 ERROR 레벨로 로깅한다.
      * 내부 시스템 오류 메시지나 스택트레이스는 응답 본문에 노출하지 않고 표준 안내 메시지만 반환한다.
      */
     @ExceptionHandler(Exception::class)
-    fun handleUnexpected(e: Exception): ResponseEntity<ApiResponse<Nothing>> =
-        ResponseEntity.status(ErrorCode.INTERNAL.status)
+    fun handleUnexpected(e: Exception, exchange: ServerWebExchange? = null): ResponseEntity<ApiResponse<Nothing>> {
+        val requestId = exchange?.request?.headers?.getFirst(LoggingMdc.REQUEST_ID)
+            ?: MDC.get(LoggingMdc.REQUEST_ID)
+            ?: "-"
+        log.error("[{}] Unexpected exception occurred: {} - {}", requestId, e.javaClass.name, e.message, e)
+        return ResponseEntity.status(ErrorCode.INTERNAL.status)
             .body(ApiResponse.error(ErrorCode.INTERNAL.name, ErrorCode.INTERNAL.defaultMessage))
+    }
 }

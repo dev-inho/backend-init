@@ -105,8 +105,8 @@ core/domain/
 
 **제공 API**
 - `POST /api/auth/token`: 인증 토큰 발급
-- `GET /api/sample/ping`, `GET /api/sample/{id}`, `POST /api/sample`: Sample API
-- `POST /api/user`, `GET /api/user/{id}`: User API
+- `GET /api/sample/ping`, `GET /api/sample/{id}`, `POST /api/sample`: Sample API (`POST /api/sample` 등록 시 `HttpStatus.CREATED` 201)
+- `POST /api/user`, `GET /api/user/{id}`: User API (`POST /api/user` 생성/갱신 시 `HttpStatus.CREATED` 201)
 - `POST /api/files`: 멀티파트 파일 업로드 (`HttpStatus.CREATED` 201). 크기 초과 시 413 Payload Too Large, 허용되지 않는 미디어 타입 시 415 Unsupported Media Type.
 - `GET /api/files/{id}`: 파일 메타데이터 조회 (`ApiResponse<FileResponse>`)
 - `GET /api/files/{id}/content`: 파일 스트리밍 다운로드 (`ResponseEntity<Flux<DataBuffer>>`, 청크 버퍼 기반 논블로킹 스트리밍)

@@ -3,12 +3,14 @@ package cc.midolog.examples.minimal.controller
 import cc.midolog.sample.model.Sample
 import cc.midolog.sample.port.repository.SampleRepositoryPort
 import cc.midolog.web.response.ApiResponse
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
 data class CreateSampleRequest(
@@ -42,9 +44,10 @@ class MinimalSampleController(
 ) {
 
     /**
-     * 신규 샘플 데이터를 저장하고 200 OK와 [SampleResponse]를 반환한다.
+     * 신규 샘플 데이터를 저장하고 201 Created와 [SampleResponse]를 반환한다.
      */
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     suspend fun save(@RequestBody request: CreateSampleRequest): ApiResponse<SampleResponse> {
         val saved = sampleRepositoryPort.save(Sample(id = request.id, name = request.name))
         return ApiResponse.ok(SampleResponse.from(saved))

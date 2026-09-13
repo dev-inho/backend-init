@@ -7,11 +7,13 @@ import cc.midolog.web.response.ApiResponse
 import cc.midolog.web.sample.dto.CreateSampleRequest
 import cc.midolog.web.sample.dto.SampleResponse
 import jakarta.validation.Valid
+import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
 /**
@@ -42,11 +44,12 @@ class SampleController(
     }
 
     /**
-     * 신규 샘플 데이터를 등록하고 200 OK와 [SampleResponse]를 반환한다.
+     * 신규 샘플 데이터를 등록하고 201 Created와 [SampleResponse]를 반환한다.
      *
      * 요청 본문([CreateSampleRequest])은 [@Valid]에 의해 필드 제약을 검증받으며, 유효하지 않은 입력은 400 Bad Request 에러로 거부된다.
      */
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     suspend fun create(@Valid @RequestBody request: CreateSampleRequest): ApiResponse<SampleResponse> {
         val saved = sampleService.save(Sample(id = request.id, name = request.name))
         return ApiResponse.ok(SampleResponse.from(saved))
