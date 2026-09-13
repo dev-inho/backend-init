@@ -29,3 +29,6 @@ include 'support:jwt'
 
 // examples
 include 'examples:minimal-app'
+
+// platform
+include 'platform:bom'
