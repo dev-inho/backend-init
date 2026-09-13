@@ -1,3 +1,5 @@
+import groovy.xml.XmlSlurper
+
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '2.2.21' apply false
     id 'org.jetbrains.kotlin.plugin.spring' version '2.2.21' apply false
@@ -32,6 +34,9 @@ allprojects {
 }
 
 subprojects {
+    if (path == ':platform:bom') {
+        return
+    }
     apply plugin: 'org.jetbrains.kotlin.jvm'
 
     java {
@@ -52,7 +57,55 @@ subprojects {
         testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     }
 
-    tasks.named('test') {
+    tasks.matching { it.name == 'test' }.configureEach {
         useJUnitPlatform()
+    }
+}
+
+tasks.register('verifyBom') {
+    group = 'verification'
+    description = 'Verifies that the published BOM contains dependency constraints for all 11 target modules.'
+    dependsOn('publishAllToLocalRepo')
+
+    doLast {
+        def repoBaseDir = project.findProperty('backendInitRepo') ?
+            file(project.property('backendInitRepo')) :
+            file('build/repo')
+
+        def bomDir = new File(repoBaseDir, 'cc/midolog/backend-init-bom/0.0.1-SNAPSHOT')
+        if (!bomDir.exists()) {
+            throw new GradleException("BOM publication directory not found at: ${bomDir.absolutePath}")
+        }
+
+        def pomFiles = bomDir.listFiles({ dir, name -> name.endsWith('.pom') } as FilenameFilter)
+        if (!pomFiles || pomFiles.length == 0) {
+            throw new GradleException("BOM POM file not found in: ${bomDir.absolutePath}")
+        }
+        def bomPom = pomFiles.max { it.lastModified() }
+
+        def pomXml = new XmlSlurper().parse(bomPom)
+        def actualArtifacts = pomXml.dependencyManagement.dependencies.dependency.collect { it.artifactId.text() } as Set
+
+        def expectedArtifacts = [
+            'backend-init-domain',
+            'backend-init-support-util',
+            'backend-init-support-logging',
+            'backend-init-support-web',
+            'backend-init-support-jwt',
+            'backend-init-storage-jpa',
+            'backend-init-storage-mybatis',
+            'backend-init-storage-file-local',
+            'backend-init-gateway-core',
+            'backend-init-gateway-autoconfigure',
+            'backend-init-gateway-starter'
+        ] as Set
+
+        if (actualArtifacts != expectedArtifacts) {
+            def missing = expectedArtifacts - actualArtifacts
+            def unexpected = actualArtifacts - expectedArtifacts
+            throw new GradleException("BOM validation failed! Missing: ${missing}, Unexpected: ${unexpected}. Actual: ${actualArtifacts}")
+        }
+
+        logger.lifecycle("BOM verification passed! All ${expectedArtifacts.size()} target modules present in BOM dependencyManagement.")
     }
 }

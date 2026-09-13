@@ -1,4 +1,5 @@
 plugins {
+    id 'cc.midolog.publishing'
     id 'org.jetbrains.kotlin.plugin.spring'
     id 'io.spring.dependency-management'
     id 'cc.midolog.jpa-dsl'

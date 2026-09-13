@@ -18,6 +18,10 @@ gradlePlugin {
             id = "cc.midolog.jpa-dsl"
             implementationClass = "cc.midolog.buildlogic.jpadsl.JpaDslPlugin"
         }
+        create("publishing") {
+            id = "cc.midolog.publishing"
+            implementationClass = "cc.midolog.buildlogic.publishing.PublishingConventionPlugin"
+        }
     }
 }
 
