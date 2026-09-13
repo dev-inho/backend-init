@@ -58,5 +58,9 @@ class JpaProviderContextTest {
 
         val result = sampleRepositoryPort.findById("coord-probe")
         assertNull(result)
+
+        val sqlSessionFactoryClass = Class.forName("org.apache.ibatis.session.SqlSessionFactory")
+        val sqlSessionFactories = context.getBeanNamesForType(sqlSessionFactoryClass)
+        assertEquals(0, sqlSessionFactories.size, "JPA 프로필 활성화 시 다른 기술(MyBatis) 인프라 빈(SqlSessionFactory)이 0이어야 한다")
     }
 }

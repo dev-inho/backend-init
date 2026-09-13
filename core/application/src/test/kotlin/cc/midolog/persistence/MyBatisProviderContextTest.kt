@@ -35,6 +35,9 @@ class MyBatisProviderContextTest {
     }
 
     @Autowired
+    private lateinit var context: org.springframework.context.ApplicationContext
+
+    @Autowired
     private lateinit var sampleRepositoryPort: SampleRepositoryPort
 
     @Test
@@ -43,5 +46,9 @@ class MyBatisProviderContextTest {
         assertThat(sampleRepositoryPort).isNotNull
         val result = sampleRepositoryPort.findById("coord-probe")
         assertThat(result).isNull()
+
+        val emfClass = Class.forName("jakarta.persistence.EntityManagerFactory")
+        val entityManagers = context.getBeanNamesForType(emfClass)
+        assertThat(entityManagers).`as`("MyBatis 프로필 활성화 시 다른 기술(JPA) 인프라 빈(EntityManagerFactory)이 0이어야 한다").isEmpty()
     }
 }
