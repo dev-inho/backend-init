@@ -132,4 +132,25 @@ class MyBatisStorageAutoConfigurationTest {
                 assertThat(beans.values.first()).isNotInstanceOf(MyBatisSampleRepositoryAdapter::class.java)
             }
     }
+
+    @Test
+    fun `미지원 데이터베이스 벤더 감지 시 fail-fast 예외가 발생해야 한다`() {
+        val autoConfig = MyBatisStorageAutoConfiguration()
+        val provider = autoConfig.databaseIdProvider()
+
+        val mockDataSource = mock(javax.sql.DataSource::class.java)
+        val mockConnection = mock(java.sql.Connection::class.java)
+        val mockMetaData = mock(java.sql.DatabaseMetaData::class.java)
+
+        `when`(mockDataSource.connection).thenReturn(mockConnection)
+        `when`(mockConnection.metaData).thenReturn(mockMetaData)
+        `when`(mockMetaData.databaseProductName).thenReturn("Oracle")
+
+        org.junit.jupiter.api.assertThrows<IllegalStateException> {
+            provider.getDatabaseId(mockDataSource)
+        }.also { ex ->
+            assertThat(ex.message).contains("지원 벤더: postgresql, h2 — 감지: Oracle")
+        }
+    }
+
 }
