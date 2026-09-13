@@ -32,6 +32,7 @@
 | support:web | support/web | 공통 WebFlux 필터, API 응답, 예외 처리 | support:logging, support:util |
 | support:jwt | support/jwt | JWT 토큰 발급 및 검증 코덱 | support:util |
 | examples:minimal-app | examples/minimal-app | 최소 소비자 레퍼런스 앱 (스토리지 스타터 자동 구성 및 포트 확장 실증) | core:domain, support:web, storage:jpa, storage:mybatis |
+| customers:acme | customers/acme | Acme 고객 전용 확장 모듈 (Descriptor, 정책, 캐시 오버라이드, 라우터) | core:domain (runtimeOnly on core:application) |
 
 > 모듈별 상세 책임과 사용 가이드는 [docs/MODULE_GUIDE.md](docs/MODULE_GUIDE.md)를 참조하세요.
 
