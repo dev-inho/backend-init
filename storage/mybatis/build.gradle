@@ -1,6 +1,19 @@
 plugins {
     id 'org.jetbrains.kotlin.plugin.spring'
     id 'io.spring.dependency-management'
+    id 'cc.midolog.jpa-dsl'
+}
+
+apply from: rootProject.file('gradle/domain-entities.gradle')
+
+mybatisDynamicSql {
+    configureDomainEntities(it)
+}
+
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.add('-Xjspecify-annotations=ignore')
+    }
 }
 
 dependencyManagement {
@@ -14,6 +27,7 @@ dependencies {
     implementation project(':support:util')
 
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1'
+    implementation 'org.mybatis.dynamic-sql:mybatis-dynamic-sql:2.0.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
     runtimeOnly 'org.postgresql:postgresql'
     implementation 'tools.jackson.module:jackson-module-kotlin'
