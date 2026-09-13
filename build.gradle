@@ -32,6 +32,15 @@ allprojects {
 }
 
 subprojects {
+    if (path == ':platform:bom') {
+        return
+    }
+    if (path == ':platform:bom') {
+        return
+    }
+    if (path == ":platform:bom") {
+        return
+    }
     apply plugin: 'org.jetbrains.kotlin.jvm'
 
     java {
@@ -52,7 +61,7 @@ subprojects {
         testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     }
 
-    tasks.named('test') {
+        tasks.matching { it.name == 'test' }.configureEach {
         useJUnitPlatform()
     }
 }
