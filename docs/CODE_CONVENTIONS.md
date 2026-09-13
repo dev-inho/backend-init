@@ -136,6 +136,9 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
   - `@AutoConfiguration` 클래스에서 등록하는 `@Bean`의 이름은 호스트 애플리케이션의 패키지 컴포넌트 스캔에 의해 감지되는 레거시 `@Component`의 기본 빈 이름(`decapitalize(ClassName)`)과 충돌하지 않도록 명시적 빈 이름을 부여해야 합니다.
   - **현재 예시**: `client:storage-file`의 `@Component class LocalFileStorageAdapter`는 Spring의 기본 명명 규칙에 따라 `localFileStorageAdapter`로 등록됩니다. 반면 신규 자동 설정 모듈 `storage:file-local`의 `FileStorageAutoConfiguration`에서는 `@Bean("fileLocalStorageAdapter")`로 명시적 이름을 지정함으로써, 호스트 컴포넌트 스캔과 자동 설정이 함께 로드될 때 빈 이름 충돌(`BeanDefinitionOverrideException`) 없이 두 어댑터가 컨텍스트 내에 안전하게 공존하도록 보장합니다.
 
+### 시간 소스
+시각이 필요한 코드는 `java.time.Clock` 을 생성자로 주입받아 `clock.instant()` 를 쓴다. `Instant.now()`·`System.currentTimeMillis()`·`Date()` 직접 호출을 금지한다(예외: 소요 시간 측정처럼 벽시계와 무관한 경과 시간). 애플리케이션은 `ClockConfig`, 게이트웨이는 `GatewayClockConfig` 가 `Clock.systemUTC()` 를 제공하며 테스트는 `Clock.fixed` 를 주입한다. 가드: `ApplicationTimeSourceGuardTest`, `JwtTimeSourceGuardTest`.
+
 ---
 
 ## 4. 구조 가드 (Architecture Guards)
@@ -156,6 +159,8 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
    - 지키는 것: `storage/jpa`, `storage/mybatis` 외 모듈(`core`, `gateway`, `support`, `client`) 소스 트리 전체에서 JPA, MyBatis, Hibernate, QueryDSL(`com.querydsl`) 등 영속성 관심사의 import 유출을 원천 차단.
 7. **`SelfContainedQueryDslGuardTest`** (`storage/jpa/src/test/kotlin/cc/midolog/storage/jpa/sample/SelfContainedQueryDslGuardTest.kt`)
    - 지키는 것: `storage/jpa/src/main` 내 문자열 JPQL(`createQuery(`) 0건 유지 및 6개 QueryDSL Q 클래스(`QSampleJpaEntity`, `QUserJpaEntity`, `QFileMetaJpaEntity`, `QScalarSampleJpaEntity`, `QRelationParentJpaEntity`, `QRelationChildJpaEntity`)의 정확한 파일 경로 존재를 검증.
+8. **ApplicationTimeSourceGuardTest** (core/application/src/test/kotlin/cc/midolog/ApplicationTimeSourceGuardTest.kt) — 지키는 것: core:application main 소스에 Instant.now() 직접 호출 유입 차단
+9. **JwtTimeSourceGuardTest** (support/jwt/src/test/kotlin/cc/midolog/jwt/JwtTimeSourceGuardTest.kt) — 지키는 것: support:jwt main 소스에 System.currentTimeMillis()/Instant.now()/Date() 직접 호출 유입 차단
 
 ---
 
