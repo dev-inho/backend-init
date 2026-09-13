@@ -38,7 +38,7 @@ data class SampleResponse(
 @RestController
 @RequestMapping("/samples")
 class MinimalSampleController(
-    @org.springframework.context.annotation.Lazy private val sampleRepositoryPort: SampleRepositoryPort,
+    private val sampleRepositoryPort: SampleRepositoryPort,
 ) {
 
     /**

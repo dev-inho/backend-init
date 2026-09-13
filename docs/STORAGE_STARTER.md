@@ -57,12 +57,13 @@ java.lang.IllegalStateException: 알 수 없는 persistence provider입니다: f
 2. `mybatis.configuration.map-underscore-to-camel-case`: `true`
 
 ### 소비자 명시값 우선 원칙
-`EnvironmentPostProcessor`의 프로퍼티 소스는 최하위 순위(`addLast`)로 등록되므로, 소비자 애플리케이션이 `application.yml`이나 테스트 프로퍼티 소스에서 `mybatis.mapper-locations` 등을 명시적으로 정의할 경우, **소비자가 지정한 설정이 기본값을 완벽히 덮어씁니다**.
+`EnvironmentPostProcessor`의 프로퍼티 소스는 최하위 순위(`addLast`)로 등록되므로, 소비자 애플리케이션이 `application.yml`이나 환경 변수에서 MyBatis 속성을 명시적으로 정의할 경우, **소비자가 지정한 설정이 기본값을 완벽히 덮어씁니다**. 기본 매퍼 위치(`classpath*:mapper/**/*.xml`)는 스타터 내부에서 완결되므로 소비자가 별도로 지정할 필요가 없습니다.
 
-예시 (소비자 테스트 전용 매퍼 위치 지정):
+예시 (소비자 추가 설정 지정):
 ```yaml
 mybatis:
-  mapper-locations: classpath*:mapper-h2/**/*.xml
+  configuration:
+    default-fetch-size: 100
 ```
 
 ---
