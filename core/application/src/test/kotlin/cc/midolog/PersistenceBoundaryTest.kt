@@ -9,7 +9,7 @@ import kotlin.io.path.extension
 
 class PersistenceBoundaryTest {
 
-    private val targetModules = listOf("core", "gateway", "support", "client")
+    private val targetModules = listOf("core", "gateway", "support", "client", "examples")
 
     private val forbiddenImportPrefixes = listOf(
         "jakarta.persistence",
@@ -27,13 +27,76 @@ class PersistenceBoundaryTest {
         while (candidate != null) {
             val hasSettings = Files.exists(candidate.resolve("settings.gradle")) ||
                 Files.exists(candidate.resolve("settings.gradle.kts"))
-            val hasTargetModules = targetModules.all { Files.isDirectory(candidate.resolve(it)) }
-            if (hasSettings && hasTargetModules) {
+            val hasBaseModules = listOf("core", "gateway", "support", "client")
+                .all { Files.isDirectory(candidate.resolve(it)) }
+            if (hasSettings && hasBaseModules) {
                 return candidate.normalize()
             }
             candidate = candidate.parent
         }
-        throw AssertionError("Failed to resolve repository root containing settings.gradle and target modules: $targetModules")
+        throw AssertionError("Failed to resolve repository root containing settings.gradle and base modules")
+    }
+
+    @Test
+    fun `minimal consumer app must exist and be included in settings with port-only contract`() {
+        val repoRoot = resolveRepositoryRoot()
+        val settingsFile = if (Files.exists(repoRoot.resolve("settings.gradle"))) {
+            repoRoot.resolve("settings.gradle")
+        } else {
+            repoRoot.resolve("settings.gradle.kts")
+        }
+        val settingsContent = Files.readString(settingsFile)
+        assertTrue(
+            settingsContent.contains("examples:minimal-app"),
+            "settings.gradle must include 'examples:minimal-app'"
+        )
+
+        val exampleAppDir = repoRoot.resolve("examples/minimal-app")
+        assertTrue(Files.isDirectory(exampleAppDir), "examples/minimal-app directory must exist: $exampleAppDir")
+        val buildGradle = exampleAppDir.resolve("build.gradle")
+        val buildGradleKts = exampleAppDir.resolve("build.gradle.kts")
+        assertTrue(
+            Files.exists(buildGradle) || Files.exists(buildGradleKts),
+            "examples/minimal-app build.gradle must exist"
+        )
+    }
+
+    @Test
+    fun `minimal consumer app main sources must not use @Lazy to defer dependency wiring`() {
+        val repoRoot = resolveRepositoryRoot()
+        val examplesMain = repoRoot.resolve("examples/minimal-app/src/main")
+        assertTrue(Files.isDirectory(examplesMain), "examples/minimal-app/src/main directory must exist: $examplesMain")
+
+        val sourceFiles = mutableListOf<Path>()
+        Files.walk(examplesMain).use { stream ->
+            stream
+                .filter { path ->
+                    Files.isRegularFile(path) && (path.extension == "kt" || path.extension == "java") && !isExcludedPath(path)
+                }
+                .forEach { sourceFiles.add(it) }
+        }
+
+        assertTrue(sourceFiles.isNotEmpty(), "examples/minimal-app/src/main source files must not be empty")
+
+        val violations = mutableListOf<String>()
+        val lazyPattern = Regex("""(@(\w+\.)*Lazy\b|import\s+org\.springframework\.context\.annotation\.Lazy)""")
+
+        for (file in sourceFiles) {
+            val relativePath = repoRoot.relativize(file).toString().replace('\\', '/')
+            val lines = Files.readAllLines(file, StandardCharsets.UTF_8)
+            for ((index, rawLine) in lines.withIndex()) {
+                if (lazyPattern.containsMatchIn(rawLine)) {
+                    val lineNumber = index + 1
+                    violations.add("$relativePath:$lineNumber: $rawLine")
+                }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            "Minimal consumer app main sources must not use @Lazy to defer dependency wiring (${violations.size} violations found):\n" +
+                violations.joinToString("\n")
+        )
     }
 
     @Test

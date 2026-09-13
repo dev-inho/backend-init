@@ -94,7 +94,7 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
   - 문자열 기반 JPQL(`entityManager.createQuery(...)`) 사용은 전면 금지됩니다.
   - `SelfContainedQueryDslGuardTest` 가드가 `storage/jpa/src/main` 소스 전체에서 문자열 JPQL(`createQuery(`) 0건과 6종의 QueryDSL Q 클래스(`QSampleJpaEntity.java`, `QUserJpaEntity.java`, `QFileMetaJpaEntity.java`, `QScalarSampleJpaEntity.java`, `QRelationParentJpaEntity.java`, `QRelationChildJpaEntity.java`)의 정확한 파일 경로 존재를 검증합니다.
 - **가드 대상 및 금지 import**:
-  - `storage/**`, `build-logic/**`를 제외한 모든 모듈(`core/**`, `gateway/**`, `support/**`, `client/**`)의 실제 소스 트리(`src/main`, `src/test`, `src/testFixtures`) 내 `.kt`/`.java` 소스에서 아래 영속성 패키지 import를 전면 금지합니다 (`PersistenceBoundaryTest` 가드):
+  - `storage/**`, `build-logic/**`를 제외한 모든 모듈(`core/**`, `gateway/**`, `support/**`, `client/**`, `examples/**`)의 실제 소스 트리(`src/main`, `src/test`, `src/testFixtures`) 내 `.kt`/`.java` 소스에서 아래 영속성 패키지 import를 전면 금지합니다 (`PersistenceBoundaryTest` 가드):
     - `jakarta.persistence`
     - `org.springframework.data.jpa`
     - `org.hibernate`
@@ -130,6 +130,24 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 - **support:web 웹 필터 호스트 스캔 경계**:
   - `support:web`의 `HttpLoggingFilter`(@Order(-2))와 `RequestIdFilter`(@Order(0))는 호스트 애플리케이션의 `cc.midolog` 패키지 스캔으로 자동 감지 및 등록되며, `gateway:autoconfigure`가 별도로 등록하지 않습니다.
 
+### 프레임워크 모듈 규약 (Gateway / Storage / File 공통)
+
+프레임워크 성격의 인프라 스타터 모듈(`gateway:starter`, `storage:jpa`, `storage:mybatis`, `storage:file-local`)은 호스트 애플리케이션의 패키지 컴포넌트 스캔에 의존하지 않고 독립적인 라이브러리로 동작하기 위해 아래 5대 원칙을 공통으로 준수합니다:
+
+1. **AutoConfiguration + imports 표준 등록**:
+   - 광범위한 패키지 `@ComponentScan`을 금지하며, `@AutoConfiguration`, `@Bean`, `@Import`를 통해 필요한 빈을 명시적으로 등록합니다.
+   - Spring Boot 표준 메커니즘인 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`에 자동 구성 클래스의 FQCN을 명시합니다. 레거시 `spring.factories`는 사용하지 않습니다.
+2. **필수 Property Fail-Fast**:
+   - 모듈 동작에 필수적인 설정(예: `storage.persistence.provider`, `gateway.mode`)은 암묵적 기본값에 기대지 않고, 누락되거나 잘못된 값인 경우 애플리케이션 구동 단계(`@PostConstruct` 또는 검증 자동 구성)에서 즉시 실패(`fail-fast`)하여 오류 원인과 허용 값을 안내합니다.
+3. **소비자 Override 및 확장성 (@ConditionalOnMissingBean)**:
+   - 프레임워크가 제공하는 기본 포트 어댑터 빈은 반드시 `@ConditionalOnMissingBean`으로 등록합니다.
+   - 소비자가 자체 구현 빈을 등록하면, Spring Boot의 기본 `allow-bean-definition-overriding=false` 상태에서도 프레임워크의 기본 어댑터가 충돌 없이 물러납니다(`back off`).
+4. **Adapter Stereotype 0 (컴포넌트 스캔 침범 방지)**:
+   - 구체 어댑터 클래스(예: `JpaSampleRepositoryAdapter`, `MyBatisSampleRepositoryAdapter`)에는 `@Component`, `@Repository`, `@Service` 등의 스프링 스테레오타입 어노테이션을 절대 붙이지 않습니다.
+   - 어댑터는 오직 `@AutoConfiguration` 클래스의 `@Bean` 팩토리 메서드를 통해서만 생성되며, 호스트 컴포넌트 스캔에 의해 원치 않게 빈으로 등록되는 사고를 원천 방지합니다.
+5. **엄격한 경계 가드 (Architecture Guards)**:
+   - 외부 소비자 및 상위 모듈(`core`, `gateway`, `support`, `client`, `examples`)의 소스에서 구체 저장소 구현체(`cc.midolog.storage.*`), JPA/Hibernate, MyBatis, QueryDSL 라이브러리 import를 아키텍처 가드로 차단합니다.
+
 ### 인프라 어댑터 및 자동 설정
 - 인프라 격리: Redis, 외부 스토리지 등 인프라 어댑터 구현체는 비즈니스 계층과 분리하여 `infra/` 패키지 아래 위치시킵니다 (예: `cc.midolog.infra.cache.RedisSampleCacheAdapter`). application의 인프라·설정 코드는 `infra/`로 통일하며 `common/` 패키지를 금지합니다.
 - **자동 설정 @Bean 이름 충돌 방지 규칙**:
@@ -156,7 +174,7 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 5. **`ApplicationPackageStructureTest`** (`core/application/src/test/kotlin/cc/midolog/ApplicationPackageStructureTest.kt`)
    - 지키는 것: `core:application` 내 인프라·설정 코드를 `infra/`로 통일하고 `common/` 패키지 사용을 원천 차단.
 6. **`PersistenceBoundaryTest`** (`core/application/src/test/kotlin/cc/midolog/PersistenceBoundaryTest.kt`)
-   - 지키는 것: `storage/jpa`, `storage/mybatis` 외 모듈(`core`, `gateway`, `support`, `client`) 소스 트리 전체에서 JPA, MyBatis, Hibernate, QueryDSL(`com.querydsl`) 등 영속성 관심사의 import 유출을 원천 차단.
+   - 지키는 것: `storage/jpa`, `storage/mybatis` 외 모듈(`core`, `gateway`, `support`, `client`, `examples`) 소스 트리 전체에서 JPA, MyBatis, Hibernate, QueryDSL(`com.querydsl`) 등 영속성 관심사의 import 유출을 원천 차단하고, `examples/minimal-app`의 설정 include 및 최소 소비자 계약을 강제.
 7. **`SelfContainedQueryDslGuardTest`** (`storage/jpa/src/test/kotlin/cc/midolog/storage/jpa/sample/SelfContainedQueryDslGuardTest.kt`)
    - 지키는 것: `storage/jpa/src/main` 내 문자열 JPQL(`createQuery(`) 0건 유지 및 6개 QueryDSL Q 클래스(`QSampleJpaEntity`, `QUserJpaEntity`, `QFileMetaJpaEntity`, `QScalarSampleJpaEntity`, `QRelationParentJpaEntity`, `QRelationChildJpaEntity`)의 정확한 파일 경로 존재를 검증.
 8. **ApplicationTimeSourceGuardTest** (core/application/src/test/kotlin/cc/midolog/ApplicationTimeSourceGuardTest.kt) — 지키는 것: core:application main 소스에 Instant.now() 직접 호출 유입 차단
