@@ -23,6 +23,8 @@ class PublishingConventionPluginTest {
             """
             rootProject.name = "fixture-root"
             include("storage:jpa")
+            include("custom:jpa")
+            include("core:jpa")
             include("support:web")
             include("core:domain")
             """.trimIndent()
@@ -48,6 +50,30 @@ class PublishingConventionPluginTest {
         )
         val storageJpaSrc = storageJpaDir.resolve("src/main/java/sample").createDirectories()
         storageJpaSrc.resolve("JpaSample.java").writeText("package sample; public class JpaSample {}")
+
+        val customJpaDir = rootDir.resolve("custom/jpa").createDirectories()
+        customJpaDir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                `java-library`
+                id("cc.midolog.publishing")
+            }
+            """.trimIndent()
+        )
+        val customJpaSrc = customJpaDir.resolve("src/main/java/sample").createDirectories()
+        customJpaSrc.resolve("CustomJpaSample.java").writeText("package sample; public class CustomJpaSample {}")
+
+        val coreJpaDir = rootDir.resolve("core/jpa").createDirectories()
+        coreJpaDir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                `java-library`
+                id("cc.midolog.publishing")
+            }
+            """.trimIndent()
+        )
+        val coreJpaSrc = coreJpaDir.resolve("src/main/java/sample").createDirectories()
+        coreJpaSrc.resolve("CoreJpaSample.java").writeText("package sample; public class CoreJpaSample {}")
 
         val supportWebDir = rootDir.resolve("support/web").createDirectories()
         supportWebDir.resolve("build.gradle.kts").writeText(
@@ -96,6 +122,41 @@ class PublishingConventionPluginTest {
             jpaPomContent.contains("<artifactId>backend-init-storage-jpa</artifactId>"),
             "POM artifactId must be backend-init-storage-jpa"
         )
+
+        // custom:jpa verification (same terminal name 'jpa', distinct path prefix 'custom')
+        val customJpaGroupDir = repoDir.resolve("cc/midolog/backend-init-custom-jpa/0.0.1-SNAPSHOT")
+        assertTrue(customJpaGroupDir.exists(), "custom-jpa repo directory must exist to prevent collision")
+        val customJpaPom = Files.list(customJpaGroupDir).filter { it.fileName.toString().endsWith(".pom") }.findFirst().orElse(null)
+        val customJpaSourcesJar = Files.list(customJpaGroupDir).filter { it.fileName.toString().endsWith("-sources.jar") }.findFirst().orElse(null)
+        assertTrue(customJpaPom != null && customJpaPom.exists(), "custom-jpa pom must exist: $customJpaPom")
+        assertTrue(customJpaSourcesJar != null && customJpaSourcesJar.exists(), "custom-jpa sources jar must exist: $customJpaSourcesJar")
+        val customJpaPomContent = customJpaPom.readText()
+        assertTrue(
+            customJpaPomContent.contains("<artifactId>backend-init-custom-jpa</artifactId>"),
+            "POM artifactId must be backend-init-custom-jpa"
+        )
+
+        // core:jpa verification (same terminal name 'jpa', core prefix stripped)
+        val coreJpaGroupDir = repoDir.resolve("cc/midolog/backend-init-jpa/0.0.1-SNAPSHOT")
+        assertTrue(coreJpaGroupDir.exists(), "core-jpa repo directory must exist to prevent collision")
+        val coreJpaPom = Files.list(coreJpaGroupDir).filter { it.fileName.toString().endsWith(".pom") }.findFirst().orElse(null)
+        val coreJpaSourcesJar = Files.list(coreJpaGroupDir).filter { it.fileName.toString().endsWith("-sources.jar") }.findFirst().orElse(null)
+        assertTrue(coreJpaPom != null && coreJpaPom.exists(), "core-jpa pom must exist: $coreJpaPom")
+        assertTrue(coreJpaSourcesJar != null && coreJpaSourcesJar.exists(), "core-jpa sources jar must exist: $coreJpaSourcesJar")
+        val coreJpaPomContent = coreJpaPom.readText()
+        assertTrue(
+            coreJpaPomContent.contains("<artifactId>backend-init-jpa</artifactId>"),
+            "POM artifactId must be backend-init-jpa"
+        )
+
+        // Verify that all modules sharing terminal name 'jpa' have distinct artifactIds
+        val regex = Regex("<artifactId>(.*?)</artifactId>")
+        val storageArtifactId = regex.find(jpaPomContent)?.groupValues?.get(1)
+        val customArtifactId = regex.find(customJpaPomContent)?.groupValues?.get(1)
+        val coreArtifactId = regex.find(coreJpaPomContent)?.groupValues?.get(1)
+
+        val jpaArtifactIds = setOf(storageArtifactId, customArtifactId, coreArtifactId)
+        assertEquals(3, jpaArtifactIds.size, "All 3 modules sharing terminal name 'jpa' must have mutually distinct artifactIds: $jpaArtifactIds")
 
         // support:web verification
         val webGroupDir = repoDir.resolve("cc/midolog/backend-init-support-web/0.0.1-SNAPSHOT")
