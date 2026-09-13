@@ -3,10 +3,11 @@ package cc.midolog.storage.mybatis.file
 import cc.midolog.file.model.FileMeta
 import cc.midolog.file.model.FileStatus
 import kotlinx.coroutines.runBlocking
+import java.lang.reflect.Proxy
+import java.sql.Timestamp
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
-import java.sql.Timestamp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -19,19 +20,46 @@ class MyBatisFileMetaRepositoryAdapterTest {
         val localDateTime = LocalDateTime.ofInstant(instant, ZoneId.of("UTC"))
 
         // test Instant
-        var mapper = FakeFileMetaMapper(row = mapOf("id" to "f1", "ownerId" to "o1", "storageKey" to "k1", "status" to "READY", "createdAt" to instant, "updatedAt" to instant))
+        var mapper = fakeFileMetaMapper(
+            row = mapOf(
+                "id" to "f1",
+                "owner_id" to "o1",
+                "storage_key" to "k1",
+                "status" to "READY",
+                "created_at" to instant,
+                "updated_at" to instant,
+            ),
+        )
         var adapter = MyBatisFileMetaRepositoryAdapter(mapper)
         var result = adapter.findById("f1")!!
         assertEquals(instant, result.createdAt)
 
         // test Timestamp
-        mapper = FakeFileMetaMapper(row = mapOf("id" to "f1", "ownerId" to "o1", "storageKey" to "k1", "status" to "READY", "createdAt" to sqlTimestamp, "updatedAt" to sqlTimestamp))
+        mapper = fakeFileMetaMapper(
+            row = mapOf(
+                "id" to "f1",
+                "owner_id" to "o1",
+                "storage_key" to "k1",
+                "status" to "READY",
+                "created_at" to sqlTimestamp,
+                "updated_at" to sqlTimestamp,
+            ),
+        )
         adapter = MyBatisFileMetaRepositoryAdapter(mapper)
         result = adapter.findById("f1")!!
         assertEquals(instant, result.createdAt)
 
         // test LocalDateTime
-        mapper = FakeFileMetaMapper(row = mapOf("id" to "f1", "ownerId" to "o1", "storageKey" to "k1", "status" to "READY", "createdAt" to localDateTime, "updatedAt" to localDateTime))
+        mapper = fakeFileMetaMapper(
+            row = mapOf(
+                "id" to "f1",
+                "owner_id" to "o1",
+                "storage_key" to "k1",
+                "status" to "READY",
+                "created_at" to localDateTime,
+                "updated_at" to localDateTime,
+            ),
+        )
         adapter = MyBatisFileMetaRepositoryAdapter(mapper)
         result = adapter.findById("f1")!!
         assertEquals(instant, result.createdAt)
@@ -42,19 +70,35 @@ class MyBatisFileMetaRepositoryAdapterTest {
         val instant = Instant.ofEpochMilli(1700000000000L)
         val file = FileMeta("f1", "o1", "k1", null, null, null, FileStatus.PENDING, instant, instant)
 
-        var adapter = MyBatisFileMetaRepositoryAdapter(FakeFileMetaMapper(upsertResult = 0))
-        var exception = kotlin.test.assertFailsWith<IllegalStateException> { adapter.save(file) }
-        assertEquals("Save failed, affected rows: 0", exception.message)
+        val adapter1 = MyBatisFileMetaRepositoryAdapter(fakeFileMetaMapper(upsertResult = 0))
+        val exception1 = kotlin.test.assertFailsWith<IllegalStateException> { adapter1.save(file) }
+        assertEquals("Save failed, affected rows: 0", exception1.message)
 
-        adapter = MyBatisFileMetaRepositoryAdapter(FakeFileMetaMapper(upsertResult = 2))
-        exception = kotlin.test.assertFailsWith<IllegalStateException> { adapter.save(file) }
-        assertEquals("Save failed, affected rows: 2", exception.message)
+        val adapter2 = MyBatisFileMetaRepositoryAdapter(fakeFileMetaMapper(upsertResult = 2))
+        val exception2 = kotlin.test.assertFailsWith<IllegalStateException> { adapter2.save(file) }
+        assertEquals("Save failed, affected rows: 2", exception2.message)
     }
 
-    private class FakeFileMetaMapper(private val row: Map<String, Any?>? = null, private val upsertResult: Int = 1) : FileMetaMapper {
-        override fun selectById(id: String): Map<String, Any?>? = row
-        override fun upsert(id: String, ownerId: String, storageKey: String, sizeBytes: Long?, contentType: String?, checksum: String?, status: String, createdAt: Instant, updatedAt: Instant): Int = upsertResult
-        override fun updateStatus(id: String, status: String, updatedAt: Instant): Int = 1
-        override fun findExpiredPending(status: String, cutoff: Instant, limit: Int): List<Map<String, Any?>> = emptyList()
+    private fun fakeFileMetaMapper(
+        row: Map<String, Any?>? = null,
+        rows: List<Map<String, Any?>> = emptyList(),
+        upsertResult: Int = 1,
+        updateResult: Int = 1,
+    ): FileMetaMapper {
+        return Proxy.newProxyInstance(
+            FileMetaMapper::class.java.classLoader,
+            arrayOf(FileMetaMapper::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "selectOneMappedRow" -> row
+                "selectManyMappedRows" -> rows
+                "update" -> updateResult
+                "upsert" -> upsertResult
+                "toString" -> "FakeFileMetaMapper"
+                "hashCode" -> 1
+                "equals" -> false
+                else -> null
+            }
+        } as FileMetaMapper
     }
 }
