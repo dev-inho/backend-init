@@ -15,6 +15,9 @@ dependencies {
     runtimeOnly project(':storage:mybatis')
     runtimeOnly project(':storage:jpa')
     runtimeOnly project(':storage:file-local')
+    if (project.hasProperty('customer')) {
+        runtimeOnly project(":customers:${project.property('customer')}")
+    }
 
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'io.projectreactor.kotlin:reactor-kotlin-extensions'
