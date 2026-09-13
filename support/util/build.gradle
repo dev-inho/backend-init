@@ -1,1 +1,5 @@
+plugins {
+    id 'cc.midolog.publishing'
+}
+
 // 순수 Kotlin 유틸리티 모듈
