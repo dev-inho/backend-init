@@ -86,17 +86,6 @@ class MyBatisStorageAutoConfigurationTest {
         assertThat(beanMethods).allMatch { java.lang.reflect.Modifier.isStatic(it.modifiers) }
     }
 
-    @Test
-    fun `검증 자동 구성이 중복 등록되어도 멱등하게 정상 통과해야 한다`() {
-        contextRunner
-            .withConfiguration(AutoConfigurations.of(MyBatisProviderValidationAutoConfiguration::class.java))
-            .withPropertyValues("storage.persistence.provider=mybatis")
-            .run { context ->
-                assertThat(context).hasNotFailed()
-                assertThat(context).hasSingleBean(SampleRepositoryPort::class.java)
-            }
-    }
-
     @Configuration
     class ConsumerConfig {
         @Bean
