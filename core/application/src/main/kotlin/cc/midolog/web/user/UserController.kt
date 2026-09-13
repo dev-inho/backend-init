@@ -7,11 +7,13 @@ import cc.midolog.web.response.ApiResponse
 import cc.midolog.web.user.dto.CreateUserRequest
 import cc.midolog.web.user.dto.UserResponse
 import jakarta.validation.Valid
+import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
 /**
@@ -21,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController
  * 도메인 모델 직접 누출 여부는 [cc.midolog.web.ControllerResponseTypeTest]에 의해 엄격하게 검증된다.
  */
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping("/api/users", "/api/user")
 class UserController(
     private val userService: UserService,
 ) {
@@ -38,11 +40,12 @@ class UserController(
     }
 
     /**
-     * 신규 사용자를 생성하거나 갱신한 뒤 200 OK와 [UserResponse]를 반환한다.
+     * 신규 사용자를 생성하거나 갱신한 뒤 201 Created와 [UserResponse]를 반환한다.
      *
      * 요청 본문([CreateUserRequest])은 [@Valid]에 의해 유효성 검증을 거치며, 제약 조건 위반 시 글로벌 예외 핸들러를 통해 400 Bad Request 에러 응답으로 변환된다.
      */
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     suspend fun create(@Valid @RequestBody request: CreateUserRequest): ApiResponse<UserResponse> {
         val saved = userService.save(
             User(
