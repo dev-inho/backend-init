@@ -5,12 +5,8 @@ import cc.midolog.file.model.FileStatus
 import cc.midolog.file.port.repository.FileMetaRepositoryPort
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.springframework.context.annotation.Profile
-import org.springframework.stereotype.Repository
 import org.springframework.transaction.support.TransactionOperations
 
-@Profile("jpa")
-@Repository
 class JpaFileMetaRepositoryAdapter(
     private val fileMetaJpaRepository: FileMetaJpaRepository,
     private val transactionOperations: TransactionOperations,

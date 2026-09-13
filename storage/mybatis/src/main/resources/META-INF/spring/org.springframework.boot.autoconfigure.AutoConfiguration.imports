@@ -1,0 +1,2 @@
+cc.midolog.storage.mybatis.autoconfigure.MyBatisProviderValidationAutoConfiguration
+cc.midolog.storage.mybatis.autoconfigure.MyBatisStorageAutoConfiguration

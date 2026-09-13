@@ -25,6 +25,10 @@ gateway:
   request-visibility:
     enabled: false
 
+storage:
+  persistence:
+    provider: ${STORAGE_PERSISTENCE_PROVIDER:mybatis}
+
 ---
 spring:
   config:

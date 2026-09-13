@@ -6,8 +6,12 @@ import cc.midolog.user.port.repository.UserRepositoryPort
 import cc.midolog.storage.mybatis.file.MyBatisFileMetaRepositoryAdapter
 import cc.midolog.storage.mybatis.sample.MyBatisSampleRepositoryAdapter
 import cc.midolog.storage.mybatis.user.MyBatisUserRepositoryAdapter
+import org.apache.ibatis.session.Configuration as MyBatisConfiguration
+import org.apache.ibatis.session.SqlSessionFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Bean
@@ -15,8 +19,20 @@ import org.springframework.context.annotation.Configuration
 
 class MyBatisStorageAutoConfigurationTest {
 
+    @Configuration
+    class MockConfig {
+        @Bean fun sqlSessionFactory(): SqlSessionFactory {
+            val factory = mock(SqlSessionFactory::class.java)
+            val config = MyBatisConfiguration()
+            config.environment = org.apache.ibatis.mapping.Environment("test", org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory(), mock(javax.sql.DataSource::class.java))
+            `when`(factory.configuration).thenReturn(config)
+            return factory
+        }
+    }
+
     private val contextRunner = ApplicationContextRunner()
-        .withConfiguration(AutoConfigurations.of(MyBatisStorageAutoConfiguration::class.java))
+        .withUserConfiguration(MockConfig::class.java)
+        .withConfiguration(AutoConfigurations.of(MyBatisStorageAutoConfiguration::class.java, MyBatisProviderValidationAutoConfiguration::class.java))
 
     @Test
     fun `provider가 mybatis일 때 자동 구성이 활성화되어 3개의 어댑터가 등록된다`() {
@@ -49,15 +65,15 @@ class MyBatisStorageAutoConfigurationTest {
         // Missing
         contextRunner.run { context ->
             assertThat(context).hasFailed()
-            assertThat(context.startupFailure).hasMessageContaining("jpa")
-            assertThat(context.startupFailure).hasMessageContaining("mybatis")
+            val cause = context.startupFailure!!.cause
+            assertThat(cause!!.message).contains("jpa").contains("mybatis")
         }
 
         // Typo
         contextRunner.withPropertyValues("storage.persistence.provider=mybatus").run { context ->
             assertThat(context).hasFailed()
-            assertThat(context.startupFailure).hasMessageContaining("jpa")
-            assertThat(context.startupFailure).hasMessageContaining("mybatis")
+            val cause = context.startupFailure!!.cause
+            assertThat(cause!!.message).contains("jpa").contains("mybatis")
         }
     }
 

@@ -23,11 +23,11 @@ import java.util.UUID
         "spring.flyway.enabled=false",
         "spring.main.allow-bean-definition-overriding=true",
         "storage.file.provider=local",
-        "gateway.mode=embedded"
+        "gateway.mode=embedded", "storage.persistence.provider=mybatis"
     ]
 )
-@ActiveProfiles("mybatis")
-class MyBatisProfileContextTest {
+
+class MyBatisProviderContextTest {
 
     companion object {
         @JvmStatic
@@ -42,7 +42,7 @@ class MyBatisProfileContextTest {
     private lateinit var context: ApplicationContext
 
     @Test
-    fun `mybatis profile active registers only mybatis port adapters`() {
+    fun `mybatis provider active registers only mybatis port adapters`() {
         val sampleBeans = context.getBeansOfType(SampleRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
         val userBeans = context.getBeansOfType(UserRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
         val fileBeans = context.getBeansOfType(FileMetaRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }

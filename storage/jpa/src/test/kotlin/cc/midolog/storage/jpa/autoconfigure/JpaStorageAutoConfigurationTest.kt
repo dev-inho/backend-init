@@ -9,6 +9,9 @@ import cc.midolog.storage.jpa.user.JpaUserRepositoryAdapter
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
+import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+import org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration
+import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -16,7 +19,22 @@ import org.springframework.context.annotation.Configuration
 class JpaStorageAutoConfigurationTest {
 
     private val contextRunner = ApplicationContextRunner()
-        .withConfiguration(AutoConfigurations.of(JpaStorageAutoConfiguration::class.java))
+        .withPropertyValues(
+            "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+            "spring.datasource.driverClassName=org.h2.Driver",
+            "spring.datasource.username=sa",
+            "spring.datasource.password=",
+            "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect"
+        )
+        .withConfiguration(
+            AutoConfigurations.of(
+                DataSourceAutoConfiguration::class.java,
+                DataSourceTransactionManagerAutoConfiguration::class.java,
+                HibernateJpaAutoConfiguration::class.java,
+                JpaStorageAutoConfiguration::class.java,
+                JpaProviderValidationAutoConfiguration::class.java
+            )
+        )
 
     @Test
     fun `provider가 jpa일 때 자동 구성이 활성화되어 3개의 어댑터가 등록된다`() {
@@ -49,15 +67,15 @@ class JpaStorageAutoConfigurationTest {
         // Missing
         contextRunner.run { context ->
             assertThat(context).hasFailed()
-            assertThat(context.startupFailure).hasMessageContaining("jpa")
-            assertThat(context.startupFailure).hasMessageContaining("mybatis")
+            val cause = context.startupFailure!!.cause
+            assertThat(cause!!.message).contains("jpa").contains("mybatis")
         }
 
         // Typo
         contextRunner.withPropertyValues("storage.persistence.provider=jppa").run { context ->
             assertThat(context).hasFailed()
-            assertThat(context.startupFailure).hasMessageContaining("jpa")
-            assertThat(context.startupFailure).hasMessageContaining("mybatis")
+            val cause = context.startupFailure!!.cause
+            assertThat(cause!!.message).contains("jpa").contains("mybatis")
         }
     }
 
@@ -75,6 +93,7 @@ class JpaStorageAutoConfigurationTest {
     @Test
     fun `소비자가 SampleRepositoryPort 빈을 선등록하면 기본 어댑터는 물러난다`() {
         contextRunner.withUserConfiguration(ConsumerConfig::class.java)
+            .withAllowBeanDefinitionOverriding(true)
             .withPropertyValues("storage.persistence.provider=jpa")
             .run { context ->
                 assertThat(context).hasNotFailed()

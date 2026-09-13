@@ -23,11 +23,11 @@ import java.util.UUID
         "spring.flyway.enabled=false",
         "spring.main.allow-bean-definition-overriding=true",
         "storage.file.provider=local",
-        "gateway.mode=embedded"
+        "gateway.mode=embedded", "storage.persistence.provider=jpa"
     ]
 )
-@ActiveProfiles("jpa")
-class PersistenceProfileContextTest {
+
+class JpaProviderContextTest {
 
     companion object {
         @JvmStatic
@@ -42,7 +42,7 @@ class PersistenceProfileContextTest {
     private lateinit var context: ApplicationContext
 
     @Test
-    fun `jpa profile registers exactly one of each port adapter`() {
+    fun `jpa provider registers exactly one of each port adapter`() {
         val sampleBeans = context.getBeansOfType(SampleRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
         val userBeans = context.getBeansOfType(UserRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }
         val fileBeans = context.getBeansOfType(FileMetaRepositoryPort::class.java).values.filter { !it.javaClass.name.contains("TestStubConfig") }

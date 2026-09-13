@@ -143,10 +143,10 @@ export JWT_SECRET="$(openssl rand -base64 48)"
 GATEWAY_REQUEST_VISIBILITY_ENABLED=true SPRING_PROFILES_ACTIVE=local ./gradlew :gateway:app:bootRun
 
 # 비즈니스 서버 (포트 8081)
-SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:bootRun
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:bootRun
 
 # 비즈니스 서버 + JPA persistence
-SPRING_PROFILES_ACTIVE=local,jpa ./gradlew :core:application:bootRun
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=jpa ./gradlew :core:application:bootRun
 
 # 배치 서버 (포트 8082)
 SPRING_PROFILES_ACTIVE=local ./gradlew :core:batch:bootRun
@@ -172,17 +172,17 @@ docker compose up -d postgres redis
 # 5432가 이미 사용 중이면 대체 포트로 시작
 POSTGRES_PORT=55432 docker compose up -d postgres redis
 DB_URL=jdbc:postgresql://localhost:55432/backend \
-SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:test
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:test
 
 # readiness 확인
 docker compose ps
 
 # 로컬 MyBatis profile로 application 테스트/기동
-SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:test
-SPRING_PROFILES_ACTIVE=local,mybatis ./gradlew :core:application:bootRun
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:test
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=mybatis ./gradlew :core:application:bootRun
 
 # 로컬 JPA profile로 user/sample persistence adapter 검증
-SPRING_PROFILES_ACTIVE=local,jpa ./gradlew :core:application:test
+SPRING_PROFILES_ACTIVE=local STORAGE_PERSISTENCE_PROVIDER=jpa ./gradlew :core:application:test
 
 # generated JPA mapping을 실제 PostgreSQL에 대해 검증
 DB_URL=jdbc:postgresql://localhost:55432/backend \

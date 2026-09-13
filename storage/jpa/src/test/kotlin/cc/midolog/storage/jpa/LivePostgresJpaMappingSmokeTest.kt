@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
+import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.boot.persistence.autoconfigure.EntityScan
 import org.springframework.context.annotation.Bean
@@ -49,7 +50,7 @@ import kotlin.test.assertTrue
     ],
 )
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@ActiveProfiles("jpa")
+@SpringBootTest(properties = ["storage.persistence.provider=jpa"])
 @Import(
     JpaSampleRepositoryAdapter::class,
     JpaUserRepositoryAdapter::class,

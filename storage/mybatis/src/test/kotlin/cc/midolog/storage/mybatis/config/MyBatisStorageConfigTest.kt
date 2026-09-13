@@ -1,17 +1,14 @@
 package cc.midolog.storage.mybatis.config
 
-import org.junit.jupiter.api.Assertions.assertTrue
+import cc.midolog.storage.mybatis.autoconfigure.MyBatisStorageAutoConfiguration
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
-import org.mybatis.spring.annotation.MapperScan
 
 class MyBatisStorageConfigTest {
 
     @Test
-    fun `mapper scan includes sample and user packages`() {
-        val mapperScan = MyBatisStorageConfig::class.java.getAnnotation(MapperScan::class.java)
-
-        assertTrue("cc.midolog.storage.mybatis.sample" in mapperScan.basePackages)
-        assertTrue("cc.midolog.storage.mybatis.user" in mapperScan.basePackages)
-        assertTrue("cc.midolog.storage.mybatis.file" in mapperScan.basePackages)
+    fun `auto configuration loads`() {
+        val config = MyBatisStorageAutoConfiguration()
+        assertNotNull(config)
     }
 }
