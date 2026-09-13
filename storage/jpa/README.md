@@ -10,7 +10,7 @@
 
 ## Generated JPA Sources & QueryDSL
 > **공유 도메인 엔티티**
-> `gradle/domain-entities.gradle`에 선언된 엔티티 정의가 `storage/jpa`와 `storage/mybatis` 양쪽에서 동일하게 사용됩니다.
+> `gradle/domain-entities.gradle`에 선언된 공통 도메인 엔티티 정의(Sample, User, FileMeta)가 `storage/jpa`와 `storage/mybatis` 양쪽에서 동일하게 사용됩니다. 단, 테스트 및 검증용 픽스처(ScalarSample, RelationParent, RelationChild)는 **storage/jpa 전용**으로 `storage/jpa/build.gradle`에서 단독 관리되며 공유 스크립트에 포함되지 않습니다.
 - `core:domain` 모델은 어노테이션 없이 plain data class로 유지한다.
 - `storage:jpa`는 `build-logic`의 `cc.midolog.jpa-dsl` 내부 Gradle plugin을 적용한다.
 - `storage:jpa/build.gradle`의 typed `jpaDsl { ... }` 선언이 JPA table/id/field/relation 매핑의 source다.
@@ -33,7 +33,7 @@
 - 현재 plugin은 `jpaDsl` extension, typed entity/field/relation model, parser, validator, renderer, `generateJpaDslSources`, `validateJpaDslGeneratorNegativeCases`를 제공한다.
 - plugin은 repository-private included build다. public plugin publishing, binary compatibility, and release automation are intentionally out of scope.
 > **공유 도메인 엔티티**
-> `gradle/domain-entities.gradle`에 선언된 엔티티 정의가 `storage/jpa`와 `storage/mybatis` 양쪽에서 동일하게 사용됩니다.
+> `gradle/domain-entities.gradle`에 선언된 공통 도메인 엔티티 정의(Sample, User, FileMeta)가 `storage/jpa`와 `storage/mybatis` 양쪽에서 동일하게 사용됩니다. 단, 테스트 및 검증용 픽스처(ScalarSample, RelationParent, RelationChild)는 **storage/jpa 전용**으로 `storage/jpa/build.gradle`에서 단독 관리되며 공유 스크립트에 포함되지 않습니다.
 
 ### Adding a Domain to JPA
 1. `core:domain`에 annotation 없는 primary-constructor `data class`를 추가한다.

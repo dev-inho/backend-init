@@ -48,6 +48,7 @@ abstract class GenerateMyBatisDynamicSqlSourcesTask : DefaultTask() {
         val domainRoot = domainSourceDir.get().asFile
 
         specs.forEach { spec ->
+            validateMyBatisEntitySpec(spec)
             val domainFile = File(domainRoot, spec.domainClass.replace('.', '/') + ".kt")
             if (domainFile.isFile) {
                 val properties = parser.parse(spec.domainClass, domainFile)

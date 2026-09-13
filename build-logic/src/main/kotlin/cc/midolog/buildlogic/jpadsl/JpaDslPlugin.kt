@@ -24,6 +24,7 @@ open class MyBatisDynamicSqlExtension {
     fun entity(domainClass: String, configure: Action<JpaEntitySpec>) {
         val spec = JpaEntitySpec(domainClass)
         configure.execute(spec)
+        validateMyBatisEntitySpec(spec)
         entities += spec
     }
 
@@ -32,10 +33,32 @@ open class MyBatisDynamicSqlExtension {
         configure.delegate = spec
         configure.resolveStrategy = Closure.DELEGATE_FIRST
         configure.call()
+        validateMyBatisEntitySpec(spec)
         entities += spec
     }
 
     internal fun specs(): List<JpaEntitySpec> = entities.toList()
+}
+
+fun validateMyBatisEntitySpec(spec: JpaEntitySpec) {
+    if (spec.relations.isNotEmpty()) {
+        val relationNames = spec.relations.keys.joinToString(", ")
+        throw org.gradle.api.GradleException(
+            "MyBatis Dynamic SQL does not support JPA relations. Entity '${spec.domainClass}' declares relation(s): $relationNames",
+        )
+    }
+    for ((fieldName, fieldSpec) in spec.fields) {
+        if (fieldSpec.converter != null) {
+            throw org.gradle.api.GradleException(
+                "MyBatis Dynamic SQL does not support JPA converters. Entity '${spec.domainClass}', field '$fieldName' declares converter '${fieldSpec.converter}'",
+            )
+        }
+        if (fieldSpec.relation != null) {
+            throw org.gradle.api.GradleException(
+                "MyBatis Dynamic SQL does not support JPA relations. Entity '${spec.domainClass}', field '$fieldName' declares relation '${fieldSpec.relation}'",
+            )
+        }
+    }
 }
 
 abstract class JpaDslPluginInfoTask : DefaultTask() {
