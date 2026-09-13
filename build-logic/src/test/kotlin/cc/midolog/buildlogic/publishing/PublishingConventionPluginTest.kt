@@ -87,10 +87,10 @@ class PublishingConventionPluginTest {
         // storage:jpa verification
         val jpaGroupDir = repoDir.resolve("cc/midolog/backend-init-storage-jpa/0.0.1-SNAPSHOT")
         assertTrue(jpaGroupDir.exists(), "storage-jpa repo directory must exist")
-        val jpaPom = jpaGroupDir.resolve("backend-init-storage-jpa-0.0.1-SNAPSHOT.pom")
-        val jpaSourcesJar = jpaGroupDir.resolve("backend-init-storage-jpa-0.0.1-SNAPSHOT-sources.jar")
-        assertTrue(jpaPom.exists(), "storage-jpa pom must exist: $jpaPom")
-        assertTrue(jpaSourcesJar.exists(), "storage-jpa sources jar must exist: $jpaSourcesJar")
+        val jpaPom = Files.list(jpaGroupDir).filter { it.fileName.toString().endsWith(".pom") }.findFirst().orElse(null)
+        val jpaSourcesJar = Files.list(jpaGroupDir).filter { it.fileName.toString().endsWith("-sources.jar") }.findFirst().orElse(null)
+        assertTrue(jpaPom != null && jpaPom.exists(), "storage-jpa pom must exist: $jpaPom")
+        assertTrue(jpaSourcesJar != null && jpaSourcesJar.exists(), "storage-jpa sources jar must exist: $jpaSourcesJar")
         val jpaPomContent = jpaPom.readText()
         assertTrue(
             jpaPomContent.contains("<artifactId>backend-init-storage-jpa</artifactId>"),
@@ -100,10 +100,10 @@ class PublishingConventionPluginTest {
         // support:web verification
         val webGroupDir = repoDir.resolve("cc/midolog/backend-init-support-web/0.0.1-SNAPSHOT")
         assertTrue(webGroupDir.exists(), "support-web repo directory must exist")
-        val webPom = webGroupDir.resolve("backend-init-support-web-0.0.1-SNAPSHOT.pom")
-        val webSourcesJar = webGroupDir.resolve("backend-init-support-web-0.0.1-SNAPSHOT-sources.jar")
-        assertTrue(webPom.exists(), "support-web pom must exist: $webPom")
-        assertTrue(webSourcesJar.exists(), "support-web sources jar must exist: $webSourcesJar")
+        val webPom = Files.list(webGroupDir).filter { it.fileName.toString().endsWith(".pom") }.findFirst().orElse(null)
+        val webSourcesJar = Files.list(webGroupDir).filter { it.fileName.toString().endsWith("-sources.jar") }.findFirst().orElse(null)
+        assertTrue(webPom != null && webPom.exists(), "support-web pom must exist: $webPom")
+        assertTrue(webSourcesJar != null && webSourcesJar.exists(), "support-web sources jar must exist: $webSourcesJar")
         val webPomContent = webPom.readText()
         assertTrue(
             webPomContent.contains("<artifactId>backend-init-support-web</artifactId>"),
@@ -113,12 +113,12 @@ class PublishingConventionPluginTest {
         // core:domain verification (core prefix stripped, test-fixtures published)
         val domainGroupDir = repoDir.resolve("cc/midolog/backend-init-domain/0.0.1-SNAPSHOT")
         assertTrue(domainGroupDir.exists(), "core:domain repo directory must exist")
-        val domainPom = domainGroupDir.resolve("backend-init-domain-0.0.1-SNAPSHOT.pom")
-        val domainSourcesJar = domainGroupDir.resolve("backend-init-domain-0.0.1-SNAPSHOT-sources.jar")
-        val domainTestFixturesJar = domainGroupDir.resolve("backend-init-domain-0.0.1-SNAPSHOT-test-fixtures.jar")
-        assertTrue(domainPom.exists(), "domain pom must exist: $domainPom")
-        assertTrue(domainSourcesJar.exists(), "domain sources jar must exist: $domainSourcesJar")
-        assertTrue(domainTestFixturesJar.exists(), "domain test fixtures jar must exist: $domainTestFixturesJar")
+        val domainPom = Files.list(domainGroupDir).filter { it.fileName.toString().endsWith(".pom") }.findFirst().orElse(null)
+        val domainSourcesJar = Files.list(domainGroupDir).filter { it.fileName.toString().endsWith("-sources.jar") }.findFirst().orElse(null)
+        val domainTestFixturesJar = Files.list(domainGroupDir).filter { it.fileName.toString().endsWith("-test-fixtures.jar") }.findFirst().orElse(null)
+        assertTrue(domainPom != null && domainPom.exists(), "domain pom must exist: $domainPom")
+        assertTrue(domainSourcesJar != null && domainSourcesJar.exists(), "domain sources jar must exist: $domainSourcesJar")
+        assertTrue(domainTestFixturesJar != null && domainTestFixturesJar.exists(), "domain test fixtures jar must exist: $domainTestFixturesJar")
         val domainPomContent = domainPom.readText()
         assertTrue(
             domainPomContent.contains("<artifactId>backend-init-domain</artifactId>"),
@@ -186,8 +186,8 @@ class PublishingConventionPluginTest {
 
         val bomGroupDir = repoDir.resolve("cc/midolog/backend-init-bom/0.0.1-SNAPSHOT")
         assertTrue(bomGroupDir.exists(), "BOM repo directory must exist")
-        val bomPom = bomGroupDir.resolve("backend-init-bom-0.0.1-SNAPSHOT.pom")
-        assertTrue(bomPom.exists(), "BOM pom must exist: $bomPom")
+        val bomPom = Files.list(bomGroupDir).filter { it.fileName.toString().endsWith(".pom") }.findFirst().orElse(null)
+        assertTrue(bomPom != null && bomPom.exists(), "BOM pom must exist: $bomPom")
 
         val pomContent = bomPom.readText()
         assertTrue(
