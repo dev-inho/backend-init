@@ -53,7 +53,30 @@ Spring Boot 4 + Kotlin 헥사고날 멀티모듈 백엔드 — 게이트웨이�
 | **support:logging** | 통합 로깅 및 모니터링 |
 | **support:web** | 공통 WebFlux 필터, API 응답, 예외 처리 |
 | **support:jwt** | JWT 토큰 발급 및 검증 코덱 (`JwtCodec`) |
+| **platform:bom** | 모듈 버전 관리를 위한 Bill of Materials (BOM) |
 | **examples:minimal-app** | 최소 소비자 레퍼런스 앱 (스토리지 스타터 자동 구성 및 포트 확장 실증) |
+| **examples:artifact-consumer** | 퍼블리시된 아티팩트 및 BOM 소비를 실증하는 독립 소비자 예제 |
+
+### 아티팩트 소비 (BOM & Publishing)
+
+`backend-init`의 핵심 라이브러리(도메인, 게이트웨이, 스토리지, 서포트 등 11개 모듈)와 BOM(`cc.midolog:backend-init-bom`)은 독립적인 외부 프로젝트에서 의존성으로 소비될 수 있습니다.
+
+소비자 프로젝트의 `build.gradle`에서 BOM 플랫폼을 임포트하면 버전을 생략하고 모듈을 선언할 수 있습니다:
+
+```groovy
+dependencies {
+    // 1. BOM 플랫폼 임포트 (일괄 버전 관리)
+    implementation platform("cc.midolog:backend-init-bom:0.0.1-SNAPSHOT")
+
+    // 2. 무버전 아티팩트 선언
+    implementation "cc.midolog:backend-init-domain"
+    implementation "cc.midolog:backend-init-support-web"
+    runtimeOnly "cc.midolog:backend-init-storage-jpa"
+}
+```
+
+- **아티팩트 검증**: `./gradlew verifyArtifacts` (또는 `./scripts/verify-artifacts.sh`)를 실행하여 아티팩트를 로컬 저장소에 발행하고 독립 소비자(`examples/artifact-consumer`) 테스트로 호환성을 검증합니다.
+- 자세한 퍼블리싱 좌표와 사용법은 [docs/PUBLISHING.md](docs/PUBLISHING.md)를 참조하세요.
 
 ### 프레임워크로 쓰기 (Storage Starter)
 

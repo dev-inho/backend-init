@@ -415,7 +415,9 @@ support/jwt/
 | `support:logging` | `support:util` | 통합 로깅 및 MDC 유틸리티 |
 | `support:web` | `support:logging`, `support:util` | 웹 공통 필터, 응답 래퍼, 전역 예외 처리 |
 | `support:jwt` | `support:util` (api) | JWT 인코딩/디코딩 유틸리티 |
+| `platform:bom` | `core:domain`, `gateway:*`, `storage:*`, `support:*` | 멀티모듈 배포 아티팩트 간 호환 버전을 일괄 제어하는 BOM (`java-platform`) |
 | `examples:minimal-app` | `core:domain`, `support:web`, `storage:jpa`, `storage:mybatis` | 프레임워크 저장소 스타터 자동 구성 및 확장 계약 실증 레퍼런스 앱 |
+| `examples:artifact-consumer` | `backend-init-bom`(platform), `backend-init-domain`, `backend-init-support-web`, `backend-init-storage-jpa` | 퍼블리시된 로컬 Maven 아티팩트 및 BOM 소비를 실증하는 독립 소비자 예제 (독립 빌드) |
 | `build-logic` | (Gradle composite build) | JPA DSL 코드 생성 및 Flyway 마이그레이션 검증/생성 플러그인 (`includeBuild`) |
 
 ### 3.2 runtimeOnly 의존성
@@ -467,6 +469,7 @@ class CreateUserUseCase(
 - **레퍼런스 애플리케이션 (Reference Apps)**:
   - `core:application`: 전체 비즈니스 도메인(user, file, sample), REST API, 보안, 스케줄러를 통합 탑재한 운영형 백엔드 서비스 (모듈 조합 루트).
   - `examples:minimal-app`: 호스트 패키지(`cc.midolog.examples.minimal`)를 격리하여, 외부 소비자의 관점에서 저장소 스타터의 자동 구성, 필수 프로퍼티 fail-fast, 및 포트 빈 오버라이드 확장 계약을 실증하는 최소 소비자 레퍼런스 앱.
+  - `examples:artifact-consumer`: 루트 빌드와 격리된 독립 프로젝트에서 로컬 Maven 저장소 및 BOM(`cc.midolog:backend-init-bom`)을 통한 아티팩트 소비와 런타임 영속성 계약을 실증하는 예제 (상세: [docs/PUBLISHING.md](./PUBLISHING.md)).
 
 ---
 

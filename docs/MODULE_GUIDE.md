@@ -24,6 +24,8 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 15개 �
     - [15. support:jwt](#15-supportjwt)
     - [16. build-logic](#16-build-logic)
     - [17. examples:minimal-app](#17-examplesminimal-app)
+    - [18. platform:bom](#18-platformbom)
+    - [19. examples:artifact-consumer](#19-examplesartifact-consumer)
 3. [헥사고날 의존 규칙](#헥사고날-의존-규칙)
 4. [설정 파일 (settings.gradle)](#설정-파일)
 5. [관련 문서](#관련-문서)
@@ -49,7 +51,9 @@ Spring Boot 4 + Kotlin 기반 헥사고날 멀티모듈 아키텍처의 15개 �
 | **Support Logging** | `support:logging` | 로깅 설정 (logback-classic, logback-spring.xml, Reactor MDC) | `support:util`, `logback-classic`, `reactor-core`, `logstash-logback-encoder:8.0` |
 | **Support Web** | `support:web` | 공통 WebFlux 필터, API 응답 봉투, 전역 예외 처리 | `support:logging`, `support:util`, `webflux` |
 | **Support JWT** | `support:jwt` | JJWT 라이브러리 격리 및 토큰 발급/파싱 코덱 | `support:util`, `jjwt-api:0.12.6`, `jjwt-impl`(runtime), `jjwt-jackson`(runtime) |
+| **Platform BOM** | `platform:bom` | 멀티모듈 배포 아티팩트들의 일관된 버전 관리를 위한 BOM (java-platform) | `core:domain`, `gateway:*`, `storage:*`, `support:*` (constraints) |
 | **Examples Minimal App** | `examples:minimal-app` | 최소 소비자 레퍼런스 앱 (스토리지 스타터 자동 구성 및 포트 확장 실증) | `core:domain`, `support:web`, `storage:jpa`, `storage:mybatis`, `webflux` |
+| **Examples Artifact Consumer** | `examples:artifact-consumer` | 퍼블리시된 로컬 Maven 아티팩트 및 BOM 소비를 실증하는 독립 소비자 예제 (독립 빌드) | `backend-init-bom`(platform), `backend-init-domain`, `backend-init-support-web`, `backend-init-storage-jpa` |
 
 ---
 
@@ -1155,7 +1159,25 @@ dependencies {
 - **Fail-Fast 계약**: 필수 프로퍼티(`storage.persistence.provider`) 미지정 시 기동 단계에서 즉시 fail-fast 실패.
 - **소비자 오버라이드 확장**: 소비자가 `SampleRepositoryPort` 빈을 직접 등록 시, Spring Boot 기본 `allow-bean-definition-overriding=false` 상태에서도 스타터의 기본 자동 구성 어댑터가 물러나고(@ConditionalOnMissingBean) 사용자 빈이 우선 등록됨을 실증.
 
-상세 사용법은 [docs/STORAGE_STARTER.md](./STORAGE_STARTER.md)를 참조하세요.
+---
+
+### 18. platform:bom
+**책임**: 멀티모듈 산출물 간의 호환 버전 일괄 제어를 위한 Bill of Materials (BOM) 모듈 (`java-platform`).
+
+**특징**:
+- 프레임워크 내 11개 퍼블리시 모듈에 대한 dependency constraint를 선언.
+- 외부 소비자는 `implementation(platform("cc.midolog:backend-init-bom:<version>"))` 선언만으로 세부 모듈의 버전을 생략할 수 있음.
+
+---
+
+### 19. examples:artifact-consumer
+**책임**: 퍼블리시된 로컬 Maven 아티팩트 및 BOM 소비를 실증하는 독립 소비자 예제 애플리케이션 (독립 빌드).
+
+**특징 및 계약 실증**:
+- **독립 빌드**: 루트 `settings.gradle`에 포함되지 않으며 자체 `settings.gradle` 및 `build.gradle`을 보유.
+- **BOM 기반 무버전 의존성 해석**: `backend-init-bom` 플랫폼을 통해 `backend-init-domain`, `backend-init-support-web`, `backend-init-storage-jpa`를 버전 없이 안전하게 해석.
+- **로컬 Maven 저장소 연동**: `$rootDir/../../build/repo` 또는 `-PbackendInitRepo`를 통한 아티팩트 소비 및 계약 검증.
+- 상세 내용은 [docs/PUBLISHING.md](./PUBLISHING.md)를 참조하세요.
 
 ---
 
@@ -1266,6 +1288,7 @@ Gradle은 자동으로 의존도를 계산하여 올바른 순서로 빌드합�
 ## 관련 문서
 
 - [./ARCHITECTURE.md](./ARCHITECTURE.md) — 전체 아키텍처, 통신 흐름, 배포
+- [./PUBLISHING.md](./PUBLISHING.md) — 라이브러리 퍼블리싱 규칙, BOM 및 독립 소비자 검증 가이드
 - [./GATEWAY.md](./GATEWAY.md) — 게이트웨이 상세 가이드 (필터, 라우팅, 모니터링)
 - [./FUTURE.md](./FUTURE.md) — 향후 확장 계획 (Config Server, 마이크로서비스 분리 등)
 - [../storage/jpa/README.md](../storage/jpa/README.md) — JPA DSL 상세 명세 및 PostgreSQL 스모크 테스트 가이드
