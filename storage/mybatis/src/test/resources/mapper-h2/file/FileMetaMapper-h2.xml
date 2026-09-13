@@ -19,7 +19,7 @@
     </select>
 
     <insert id="upsert">
-        INSERT INTO file_meta (
+        MERGE INTO file_meta (
             id,
             owner_id,
             storage_key,
@@ -29,7 +29,7 @@
             status,
             created_at,
             updated_at
-        ) VALUES (
+        ) KEY (id) VALUES (
             #{id},
             #{ownerId},
             #{storageKey},
@@ -40,14 +40,6 @@
             #{createdAt},
             #{updatedAt}
         )
-        ON CONFLICT (id) DO UPDATE SET
-            owner_id = EXCLUDED.owner_id,
-            storage_key = EXCLUDED.storage_key,
-            size_bytes = EXCLUDED.size_bytes,
-            content_type = EXCLUDED.content_type,
-            checksum = EXCLUDED.checksum,
-            status = EXCLUDED.status,
-            updated_at = EXCLUDED.updated_at
     </insert>
 
     <update id="updateStatus">

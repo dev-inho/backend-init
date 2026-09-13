@@ -9,10 +9,7 @@
     </select>
 
     <insert id="upsert">
-        INSERT INTO app_user (id, email, display_name)
-        VALUES (#{id}, #{email}, #{displayName})
-        ON CONFLICT (id) DO UPDATE SET
-            email = EXCLUDED.email,
-            display_name = EXCLUDED.display_name
+        MERGE INTO app_user (id, email, display_name)
+        KEY (id) VALUES (#{id}, #{email}, #{displayName})
     </insert>
 </mapper>

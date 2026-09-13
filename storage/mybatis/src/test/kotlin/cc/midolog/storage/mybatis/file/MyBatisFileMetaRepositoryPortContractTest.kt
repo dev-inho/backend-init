@@ -13,9 +13,9 @@ import java.time.Instant
 import java.time.ZoneId
 
 @MybatisTest
-@org.springframework.context.annotation.Import(cc.midolog.storage.mybatis.TestDatabaseIdProviderConfig::class)
 @AutoConfigureTestDatabase(replace = Replace.NONE)
 @TestPropertySource(properties = [
+    "mybatis.mapper-locations=classpath*:mapper-h2/**/*.xml",
     "spring.datasource.url=jdbc:h2:mem:testdb_filemeta;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH",
     "spring.datasource.driverClassName=org.h2.Driver",
     "spring.datasource.username=sa",

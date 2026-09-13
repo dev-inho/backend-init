@@ -7,8 +7,7 @@
     </select>
 
     <insert id="upsert">
-        INSERT INTO sample (id, name)
-        VALUES (#{id}, #{name})
-        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+        MERGE INTO sample (id, name)
+        KEY (id) VALUES (#{id}, #{name})
     </insert>
 </mapper>
