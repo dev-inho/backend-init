@@ -8,14 +8,18 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase.Replace
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.jdbc.Sql
+import cc.midolog.storage.mybatis.autoconfigure.MyBatisStorageAutoConfiguration
+import org.springframework.context.annotation.Import
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
 
 @MybatisTest
 @AutoConfigureTestDatabase(replace = Replace.NONE)
+@Import(MyBatisStorageAutoConfiguration::class)
 @TestPropertySource(properties = [
-    "mybatis.mapper-locations=classpath*:mapper-h2/**/*.xml",
+    "storage.persistence.provider=mybatis",
+    "mybatis.mapper-locations=classpath*:mapper/**/*.xml",
     "spring.datasource.url=jdbc:h2:mem:testdb_filemeta;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH",
     "spring.datasource.driverClassName=org.h2.Driver",
     "spring.datasource.username=sa",

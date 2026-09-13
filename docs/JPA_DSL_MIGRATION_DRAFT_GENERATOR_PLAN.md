@@ -21,7 +21,7 @@
 | FK 정보 | `JpaRelationSpec` | owning side = `type=="manyToOne"`: `joinColumn` → target table의 `referencedColumn` |
 | 현재 schema | `core/application/src/main/resources/db/migration/V1__create_storage_tables.sql` | 단일 migration. naming `V{n}__{desc}.sql` |
 | drift 감지 | `storage/jpa/.../LivePostgresJpaMappingSmokeTest.kt` (`ddl-auto=validate`) | reactive only. 사전 diff 태스크 없음 ← **채울 gap** |
-| 생성 태스크 | `JpaDslPlugin.kt` `generateJpaDslSources` | metadata를 이미 in-memory로 구축. SQL은 미생성 |
+| 생성 태스크 | `JpaDslPlugin.kt` (`generateJpaDslSources`, `generateMyBatisDynamicSqlSources`) | `cc.midolog.jpa-dsl` 플러그인은 공유 DSL을 기반으로 **JPA**(Entity, Repository, Mapper)와 **MyBatis**(Dynamic SQL Support) 두 대상의 소스를 모두 생성함 |
 
 ## Metadata → Expected Schema 규칙
 

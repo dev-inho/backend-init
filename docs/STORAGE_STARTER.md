@@ -56,6 +56,11 @@ java.lang.IllegalStateException: 알 수 없는 persistence provider입니다: f
 1. `mybatis.mapper-locations`: `classpath*:mapper/**/*.xml`
 2. `mybatis.configuration.map-underscore-to-camel-case`: `true`
 
+### Dynamic SQL 전환과 mapper-locations 기본값 근거
+- **Dynamic SQL 2.x 중심 영속화**: 비즈니스 조회(`select`) 및 갱신(`update`)은 MyBatis Dynamic SQL 코틀린 지원 객체(`*DynamicSqlSupport`)를 통해 100% 코드로 수행되므로 매퍼 XML에 의존하지 않습니다.
+- **최소 Upsert XML 조각을 위한 mapper-locations 유지**: Dynamic SQL이 기본 제공하지 않는 방언별 원자적 Upsert(PostgreSQL `ON CONFLICT (id) DO UPDATE` 및 H2 `MERGE INTO`)를 `DatabaseIdProvider`로 분기 처리하기 위해 최소 XML 조각을 사용합니다. `mybatis.mapper-locations` 기본값은 이 최소 upsert XML 조각을 안정적으로 로드하기 위해 유지됩니다.
+- **XML 0개 전환 시 정리 근거**: 향후 Dynamic SQL 수준에서 dialect upsert DSL 확장을 도입하여 XML 파일이 완전히 0건이 되는 경우, `mybatis.mapper-locations` 기본값 주입 설정을 안전하게 폐기할 수 있습니다.
+
 ### 소비자 명시값 우선 원칙
 `EnvironmentPostProcessor`의 프로퍼티 소스는 최하위 순위(`addLast`)로 등록되므로, 소비자 애플리케이션이 `application.yml`이나 환경 변수에서 MyBatis 속성을 명시적으로 정의할 경우, **소비자가 지정한 설정이 기본값을 완벽히 덮어씁니다**. 기본 매퍼 위치(`classpath*:mapper/**/*.xml`)는 스타터 내부에서 완결되므로 소비자가 별도로 지정할 필요가 없습니다.
 

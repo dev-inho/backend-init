@@ -69,10 +69,11 @@
   - **문자열 JPQL 원천 차단 가드:** `storage/jpa/src/main` 내의 `createQuery(` 호출은 0건이며, `SelfContainedQueryDslGuardTest`(`storage/jpa/src/test/kotlin/cc/midolog/storage/jpa/sample/SelfContainedQueryDslGuardTest.kt`)가 `storage/jpa/src/main` 소스 전체에서 `createQuery(` 호출 0건과 6개 Q 클래스 파일(`QSampleJpaEntity.java`, `QUserJpaEntity.java`, `QFileMetaJpaEntity.java`, `QScalarSampleJpaEntity.java`, `QRelationParentJpaEntity.java`, `QRelationChildJpaEntity.java`)의 정확한 파일 경로 존재를 검증합니다.
 
 ### 2.2 MyBatis 결과 매핑 위험 (DEAD_CODE #12)
-* **파일:행:** `storage/mybatis/src/main/resources/mapper/file/FileMetaMapper.xml:6`
+* **과거 감사 시점 파일:행:** `storage/mybatis/src/main/resources/mapper/file/FileMetaMapper.xml:6`
 * **원문:** `    <select id="selectById" resultType="map">`
-* **판정:** 결함
-* **근거:** MyBatis는 `resultType="map"`과 수동 `toDomain` 별칭(`AS "ownerId"` 등)에 의존하여 매핑이 깨지기 쉽습니다. `DEAD_CODE_CANDIDATES.md` #12에서 지적된 바와 같이, 설정 중복 및 Map 자동 변환 한계를 내포합니다.
+* **판정:** 결함 (과거 감사 시점) -> **[해소됨]**
+* **근거 및 해소 내용:** (과거) MyBatis는 `resultType="map"`과 수동 `toDomain` 별칭(`AS "ownerId"` 등)에 의존하여 매핑이 깨지기 쉽고, `DEAD_CODE_CANDIDATES.md` #12에서 지적된 바와 같이 설정 중복 및 Map 자동 변환 한계를 내포했음.
+* **해소 현황:** MyBatis Dynamic SQL 2.x(`CommonSelectMapper`, `CommonUpdateMapper`, `*DynamicSqlSupport`)로 전면 전환하여, `storage/mybatis/src/main` 내의 `resultType="map"`, `Map<String, Any?>` 매퍼 반환, 그리고 `<select>`/`<update>` XML 구문이 **0건**으로 완전 해소되었습니다. `MyBatisDynamicSqlTransitionGuardTest`가 재유입을 원천 차단합니다.
 
 ## 3. Instant.now() 호출 일관성
 * **과거 감사 시점 파일:행:** `storage/jpa/src/main/kotlin/cc/midolog/storage/jpa/file/JpaFileMetaRepositoryAdapter.kt:43`
