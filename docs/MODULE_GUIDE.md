@@ -104,8 +104,8 @@ cc.midolog
 
 **제공 API**:
 - **인증**: `POST /api/auth/token`
-- **Sample**: `GET /api/sample/ping`, `GET /api/sample/{id}`, `POST /api/sample`
-- **User**: `POST /api/user`, `GET /api/user/{id}`
+- **Sample**: `GET /api/sample/ping`, `GET /api/sample/{id}`, `POST /api/sample` (`POST /api/sample` 등록 시 `HttpStatus.CREATED` 201)
+- **User**: `POST /api/user`, `GET /api/user/{id}` (`POST /api/user` 생성/갱신 시 `HttpStatus.CREATED` 201)
 - **File**:
   - `POST /api/files`: 멀티파트 파일 업로드 (`HttpStatus.CREATED` 201, `ApiResponse<FileResponse>`). 크기 초과 시 413 Payload Too Large, 허용되지 않는 미디어 타입 시 415 Unsupported Media Type.
   - `GET /api/files/{id}`: 파일 메타데이터 조회 (`ApiResponse<FileResponse>`).
