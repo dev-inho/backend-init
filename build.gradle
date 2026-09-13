@@ -81,7 +81,7 @@ tasks.register('verifyBom') {
         if (!pomFiles || pomFiles.length == 0) {
             throw new GradleException("BOM POM file not found in: ${bomDir.absolutePath}")
         }
-        def bomPom = pomFiles[0]
+        def bomPom = pomFiles.max { it.lastModified() }
 
         def pomXml = new XmlSlurper().parse(bomPom)
         def actualArtifacts = pomXml.dependencyManagement.dependencies.dependency.collect { it.artifactId.text() } as Set
