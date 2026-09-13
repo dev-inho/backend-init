@@ -1,6 +1,7 @@
 package cc.midolog.business.service
 
 import cc.midolog.sample.model.Sample
+import cc.midolog.sample.policy.SampleSavePolicy
 import cc.midolog.sample.port.cache.SampleCachePort
 import cc.midolog.sample.port.repository.SampleRepositoryPort
 import kotlinx.coroutines.async
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service
 class SampleService(
     private val sampleRepositoryPort: SampleRepositoryPort,
     private val sampleCachePort: SampleCachePort,
+    private val sampleSavePolicies: List<SampleSavePolicy> = emptyList(),
 ) {
     /**
      * 식별자로 샘플 엔티티를 캐시 우선(cache-aside) 방식으로 조회한다.
@@ -31,12 +33,16 @@ class SampleService(
     }
 
     /**
-     * 샘플 엔티티를 영속 저장소에 저장하고 캐시를 갱신(write-through)한다.
+     * 샘플 엔티티에 등록된 [SampleSavePolicy] 정책들을 [SampleSavePolicy.order] 오름차순으로 적용한 후
+     * 영속 저장소에 저장하고 캐시를 갱신(write-through)한다.
      *
      * 저장소에 데이터를 성공적으로 반영한 직후 캐시 포트에도 동일 객체를 적재하여 최신 상태를 유지한다.
      */
     suspend fun save(sample: Sample): Sample {
-        val saved = sampleRepositoryPort.save(sample)
+        val processed = sampleSavePolicies
+            .sortedBy { it.order }
+            .fold(sample) { acc, policy -> policy.beforeSave(acc) }
+        val saved = sampleRepositoryPort.save(processed)
         sampleCachePort.put(saved)
         return saved
     }
