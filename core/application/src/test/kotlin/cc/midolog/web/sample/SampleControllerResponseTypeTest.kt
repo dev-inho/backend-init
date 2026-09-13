@@ -21,7 +21,7 @@ import org.springframework.test.web.reactive.server.WebTestClient
 
 @WebFluxTest(controllers = [SampleController::class, UserController::class])
 @Import(GlobalExceptionHandler::class)
-class SampleControllerCreateStatusTest {
+class SampleControllerResponseTypeTest {
 
     @Autowired
     private lateinit var webTestClient: WebTestClient
