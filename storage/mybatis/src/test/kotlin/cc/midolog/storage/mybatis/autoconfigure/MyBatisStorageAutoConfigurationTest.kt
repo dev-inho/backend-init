@@ -152,4 +152,5 @@ class MyBatisStorageAutoConfigurationTest {
             assertThat(ex.message).contains("지원 벤더: postgresql, h2 — 감지: Oracle")
         }
     }
+
 }

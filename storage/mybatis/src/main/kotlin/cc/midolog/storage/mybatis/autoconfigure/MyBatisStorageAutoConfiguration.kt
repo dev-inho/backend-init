@@ -55,11 +55,20 @@ class MyBatisStorageAutoConfiguration {
         properties.setProperty("H2", "h2")
         provider.setProperties(properties)
         return DatabaseIdProvider { dataSource ->
-            try {
-                provider.getDatabaseId(dataSource) ?: "postgresql"
+            val databaseId = try {
+                provider.getDatabaseId(dataSource)
             } catch (e: Exception) {
-                "postgresql"
+                throw IllegalStateException("데이터베이스 식별 실패: ${e.message}", e)
             }
+            if (databaseId == null) {
+                val productName = try {
+                    dataSource.connection.use { it.metaData.databaseProductName }
+                } catch (e: Exception) {
+                    "알 수 없음"
+                }
+                throw IllegalStateException("지원 벤더: postgresql, h2 — 감지: $productName")
+            }
+            databaseId
         }
     }
 
