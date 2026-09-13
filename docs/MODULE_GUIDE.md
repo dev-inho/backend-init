@@ -595,24 +595,29 @@ dependencies {
 
 **MyBatis Dynamic SQL 2.x** 및 **build-logic** 생성기(`generateMyBatisDynamicSqlSources`)를 사용해 도메인 엔티티 선언을 공유 DSL(`gradle/domain-entities.gradle`)으로 관리합니다 (픽스처는 storage/jpa 전용).
 주요 의존성에 `org.mybatis.dynamic-sql:mybatis-dynamic-sql:2.0.0` 를 추가하고, `mybatisDynamicSql { configureDomainEntities(it) }` DSL 연동을 반영합니다.
-**책임**: MyBatis + PostgreSQL 저장소 구현. `*RepositoryAdapter` + `*Mapper` + SQL 매핑 (`resources/mapper/{context}/*Mapper.xml`).
+**책임**: MyBatis Dynamic SQL 2.x + PostgreSQL 저장소 구현. `*RepositoryAdapter` + `*DynamicSqlSupport` + `*Mapper` + 방언별 최소 Upsert XML 매핑 (`resources/mapper/{context}/*Mapper.xml`).
 
 **패키지 구조**:
 ```
 cc.midolog.storage.mybatis
-├── config
-│   └── MyBatisStorageConfig.kt
+├── autoconfigure
+│   ├── MyBatisDefaultPropertiesEnvironmentPostProcessor.kt
+│   ├── MyBatisProviderValidationAutoConfiguration.kt
+│   └── MyBatisStorageAutoConfiguration.kt
 ├── file
+│   ├── FileMetaDynamicSqlSupport.kt (생성 소스)
 │   ├── FileMetaMapper.kt
 │   └── MyBatisFileMetaRepositoryAdapter.kt
 ├── sample
 │   ├── MyBatisSampleRepositoryAdapter.kt
+│   ├── SampleDynamicSqlSupport.kt (생성 소스)
 │   └── SampleMapper.kt
 └── user
     ├── MyBatisUserRepositoryAdapter.kt
+    ├── UserDynamicSqlSupport.kt (생성 소스)
     └── UserMapper.kt
 
-resources/mapper/
+resources/mapper/ (방언별 최소 upsert XML 조각)
 ├── file
 │   └── FileMetaMapper.xml
 ├── sample
@@ -621,15 +626,17 @@ resources/mapper/
     └── UserMapper.xml
 ```
 
-**File 도메인 지원 및 설정 소유권**:
-- `MyBatisFileMetaRepositoryAdapter`: `core:domain`의 `FileMetaRepositoryPort` 구현체. V2 Flyway 마이그레이션(`V2__create_file_meta.sql`)으로 생성된 `file_meta` 테이블을 대상으로 `upsert`, `selectById`, `updateStatus`를 처리합니다.
+**Dynamic SQL 전환 및 설정 소유권**:
+- **Dynamic SQL 2.x 실사용**: 공유 DSL(`gradle/domain-entities.gradle`)로부터 생성된 `*DynamicSqlSupport` 클래스를 어댑터가 직접 사용하여 타입 안전한 `select`, `update` 쿼리를 구성합니다. XML 내 문자열 `<select>`/`<update>` 구문 및 `resultType="map"` 매핑은 완전히 제거되었습니다.
+- **방언별 원자적 Upsert 지원**: Dynamic SQL이 기본 지원하지 않는 upsert에 대해 PostgreSQL의 `ON CONFLICT (id) DO UPDATE` 및 H2의 `MERGE INTO` 구문을 `DatabaseIdProvider`(VendorDatabaseIdProvider) 빈으로 분기한 최소 XML 조각으로 안전하게 유지합니다.
+- `MyBatisFileMetaRepositoryAdapter`: `core:domain`의 `FileMetaRepositoryPort` 구현체. `file_meta` 테이블을 대상으로 Dynamic SQL 기반 `findById`, `updateStatus`, `findExpiredPending` 및 방언 분기 `upsert`를 처리합니다.
 - **cutoff+limit 계약 준수**: `findExpiredPending(cutoff, limit)` 메서드를 통해 PENDING 상태이면서 cutoff 시각 이전에 갱신된 만료 레코드를 `limit` 건수만큼 정렬 조회합니다.
 - **설정 소유권 및 자동 구성**: 매퍼 위치(`mybatis.mapper-locations`) 및 카멜케이스 변환(`map-underscore-to-camel-case`) 등 MyBatis 기본 설정은 `MyBatisDefaultPropertiesEnvironmentPostProcessor`가 환경 최하위 우선순위(`addLast`)로 자동 주입하며, 소비자가 지정한 설정이 우선합니다. Spring Boot 표준 starter 형태로 `AutoConfiguration.imports`를 통해 제공되며, `storage.persistence.provider=mybatis` 프로퍼티를 통해 활성화됩니다.
 - **H2 인메모리 실제 어댑터 계약 테스트**: `core:domain`의 testFixtures 계약(`FileMetaRepositoryPortContract`, `SampleRepositoryPortContract`, `UserRepositoryPortContract`)을 상속받아 `@MybatisTest` 환경에서 실제 H2 DB를 대상으로 어댑터 계약을 실증합니다.
 
 **주요 의존성**:
 - `implementation`: `core:domain`, `support:util`
-- **MyBatis**: `mybatis-spring-boot-starter:4.0.1`
+- **MyBatis**: `mybatis-spring-boot-starter:4.0.1`, `org.mybatis.dynamic-sql:mybatis-dynamic-sql:2.0.0`
 - **Database**: `org.postgresql:postgresql` (runtimeOnly)
 - **라이브러리**: `kotlinx-coroutines-core`, `tools.jackson.module:jackson-module-kotlin`
 - **Test**: `testFixtures(project(':core:domain'))`, `mybatis-spring-boot-starter-test`, `spring-boot-starter-test`, `com.h2database:h2`
@@ -641,6 +648,7 @@ dependencies {
     implementation project(':support:util')
 
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1'
+    implementation 'org.mybatis.dynamic-sql:mybatis-dynamic-sql:2.0.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
     runtimeOnly 'org.postgresql:postgresql'
     implementation 'tools.jackson.module:jackson-module-kotlin'
@@ -653,11 +661,13 @@ dependencies {
 ```
 
 - **이 모듈의 가드 및 계약 테스트**:
-  - `cc.midolog.storage.mybatis.config.MyBatisStorageConfigTest` (`@MapperScan`이 `sample`, `user`, `file` 패키지를 포함하는지 검증).
+  - `cc.midolog.storage.mybatis.MyBatisDynamicSqlTransitionGuardTest` (`storage/mybatis/src/main` 내 `resultType="map"`, `Map<String, Any?>` 매퍼 반환, `<select>`/`<update>` XML 0건 검증 가드).
+  - `cc.midolog.storage.mybatis.MyBatisDslGuardTest` (도메인 엔티티 DSL 및 생성 객체 무결성 가드).
+  - `cc.midolog.storage.mybatis.MyBatisStorageHasNoStereotypeTest` (스토리지 어댑터의 스프링 스테레오타입 미사용 가드).
   - `cc.midolog.storage.mybatis.sample.MyBatisSampleRepositoryPortContractTest` (Sample 포트 계약 H2 실증).
   - `cc.midolog.storage.mybatis.user.MyBatisUserRepositoryPortContractTest` (User 포트 계약 H2 실증).
   - `cc.midolog.storage.mybatis.file.MyBatisFileMetaRepositoryPortContractTest` (FileMeta 포트 계약 H2 실증).
-- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#12 `UserMapper.xml` SQL 별칭 중복).
+- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#12 해소됨 - MyBatis Dynamic SQL 전환으로 resultType="map" 완전 제거).
 
 ---
 

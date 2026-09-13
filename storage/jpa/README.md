@@ -12,8 +12,7 @@
 > **공유 도메인 엔티티**
 > `gradle/domain-entities.gradle`에 선언된 공통 도메인 엔티티 정의(Sample, User, FileMeta)가 `storage/jpa`와 `storage/mybatis` 양쪽에서 동일하게 사용됩니다. 단, 테스트 및 검증용 픽스처(ScalarSample, RelationParent, RelationChild)는 **storage/jpa 전용**으로 `storage/jpa/build.gradle`에서 단독 관리되며 공유 스크립트에 포함되지 않습니다.
 - `core:domain` 모델은 어노테이션 없이 plain data class로 유지한다.
-- `storage:jpa`는 `build-logic`의 `cc.midolog.jpa-dsl` 내부 Gradle plugin을 적용한다.
-- `storage:jpa/build.gradle`의 typed `jpaDsl { ... }` 선언이 JPA table/id/field/relation 매핑의 source다.
+- 공통 도메인 엔티티는 루트의 `gradle/domain-entities.gradle`에 선언하여 `storage:jpa`와 `storage:mybatis`가 공유하며, `storage/jpa` 전용 테스트 픽스처는 `storage/jpa/build.gradle`의 `jpaDsl { ... }` 블록에서 선언합니다.
 - `build-logic` plugin production code가 domain data class의 primary constructor를 읽어 `*JpaEntity`, `*JpaRepository`, `*JpaMapper`를 생성한다.
 - JPA DSL 자체의 generated source directory, sourceSets, 기본 compile task wiring은 plugin이 소유한다. 단, QueryDSL kapt 파이프라인과의 연동(`kaptGenerateStubsKotlin.dependsOn('generateJpaDslSources')`)은 `storage/jpa/build.gradle`의 `afterEvaluate`에서 모듈 수준으로 와이어링한다.
 - 빌드/컴파일 파이프라인의 태스크 체인은 다음과 같이 순차적으로 동작한다:
@@ -38,7 +37,7 @@
 ### Adding a Domain to JPA
 1. `core:domain`에 annotation 없는 primary-constructor `data class`를 추가한다.
 2. repository port는 `core:domain`에 두고 concrete JPA type은 import하지 않는다.
-3. `storage:jpa/build.gradle`의 `jpaDsl { ... }`에 `entity('<fqcn>')`를 추가하고 `table`, `id`, field/relation mapping을 선언한다.
+3. 공통 도메인 엔티티는 `gradle/domain-entities.gradle`의 `configureDomainEntities`에 `dsl.entity('<fqcn>')`를 추가(MyBatis와 공유)하고, JPA 전용 픽스처는 `storage:jpa/build.gradle`의 `jpaDsl { ... }`에 추가하여 `table`, `id`, field/relation mapping을 선언한다.
 4. provider(`storage.persistence.provider=jpa`) 기반 auto-configuration(`@ConditionalOnMissingBean`)에 등록할 adapter를 추가하고 domain port contract test를 재사용한다.
 5. `./gradlew :storage:jpa:clean :storage:jpa:test :core:domain:test`로 generated source와 domain purity를 확인한다.
 6. PostgreSQL-specific mapping confidence가 필요하면 live database를 띄우고 `:storage:jpa:livePostgresTest`를 실행한다.

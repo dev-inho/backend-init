@@ -17,6 +17,7 @@ Blocking 리스크는 없다.
 | Docker init SQL과 migration DDL 중복 | resolved | `docker/postgres/init.sql`은 bootstrap만 담당 |
 | JPA repository runtime scan 누락 | resolved | `JpaStorageConfig`가 `cc.midolog.storage.jpa` 전체를 scan |
 | domain purity | resolved | `core:domain`에는 JPA/Spring/MyBatis/KSP/custom persistence annotation을 두지 않음 |
+| dual target 생성기 동기화 | resolved | 공유 DSL(`gradle/domain-entities.gradle`)로부터 JPA 모델(`generateJpaDslSources`)과 MyBatis 모델(`generateMyBatisDynamicSqlSources`) 2개 대상을 동시에 생성하여 영속성 계층 간 일관성 보장 |
 
 ## Residual Risks
 
