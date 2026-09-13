@@ -48,7 +48,7 @@ class MinimalSampleControllerTest {
             .uri("/samples")
             .bodyValue(request)
             .exchange()
-            .expectStatus().isOk
+            .expectStatus().isCreated
             .expectBody()
             .jsonPath("$.success").isEqualTo(true)
             .jsonPath("$.data.id").isEqualTo("web-1")

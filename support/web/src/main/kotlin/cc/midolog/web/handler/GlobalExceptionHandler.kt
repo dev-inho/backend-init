@@ -59,7 +59,7 @@ class GlobalExceptionHandler {
      * 내부 시스템 오류 메시지나 스택트레이스는 응답 본문에 노출하지 않고 표준 안내 메시지만 반환한다.
      */
     @ExceptionHandler(Exception::class)
-    fun handleUnexpected(e: Exception): ResponseEntity<ApiResponse<Nothing>> =
+    fun handleUnexpected(e: Exception, exchange: org.springframework.web.server.ServerWebExchange? = null): ResponseEntity<ApiResponse<Nothing>> =
         ResponseEntity.status(ErrorCode.INTERNAL.status)
             .body(ApiResponse.error(ErrorCode.INTERNAL.name, ErrorCode.INTERNAL.defaultMessage))
 }
