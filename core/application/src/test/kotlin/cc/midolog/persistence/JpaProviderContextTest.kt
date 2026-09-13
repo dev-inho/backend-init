@@ -40,7 +40,7 @@ class JpaProviderContextTest {
 
     @Autowired
     private lateinit var context: ApplicationContext
-    
+
     @Autowired
     private lateinit var sampleRepositoryPort: SampleRepositoryPort
 
@@ -55,7 +55,7 @@ class JpaProviderContextTest {
         assertEquals(1, fileBeans.size)
 
         assertEquals("JpaFileMetaRepositoryAdapter", AopUtils.getTargetClass(fileBeans.first()).simpleName)
-        
+
         val result = sampleRepositoryPort.findById("coord-probe")
         assertNull(result)
     }

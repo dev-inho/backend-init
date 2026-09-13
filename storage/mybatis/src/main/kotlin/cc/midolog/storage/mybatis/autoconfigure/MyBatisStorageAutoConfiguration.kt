@@ -23,7 +23,7 @@ import org.springframework.core.type.AnnotationMetadata
 
 class MyBatisMapperScannerRegistrar : ImportBeanDefinitionRegistrar, ResourceLoaderAware {
     private lateinit var resourceLoader: ResourceLoader
-    
+
     override fun setResourceLoader(resourceLoader: ResourceLoader) {
         this.resourceLoader = resourceLoader
     }

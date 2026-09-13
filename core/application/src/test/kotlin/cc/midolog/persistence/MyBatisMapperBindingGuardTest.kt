@@ -18,7 +18,7 @@ import java.util.UUID
         "spring.datasource.url=jdbc:h2:mem:testdb_mybatis_guard;DB_CLOSE_DELAY=-1;MODE=PostgreSQL",
         "spring.flyway.enabled=false",
         "storage.file.provider=local",
-        "gateway.mode=embedded", 
+        "gateway.mode=embedded",
         "storage.persistence.provider=mybatis"
     ]
 )
