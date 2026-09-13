@@ -96,6 +96,74 @@ class GenerateMyBatisDynamicSqlSourcesTaskTest {
         }
     }
 
+    @Test
+    fun `generateMyBatisDynamicSqlSources fails when entity declares jpa converter`() {
+        val projectDir = Files.createTempDirectory("mybatis-dynamic-sql-converter-test")
+        writeSettings(projectDir)
+        writeFileMetaDomain(projectDir)
+        projectDir.resolve("build.gradle").writeText(
+            """
+            plugins {
+                id 'base'
+                id 'cc.midolog.jpa-dsl'
+            }
+
+            mybatisDynamicSql {
+                entity('cc.midolog.file.model.FileMeta') {
+                    table = 'file_meta'
+                    id = 'id'
+                    field('storageKey') {
+                        column = 'storage_key'
+                        converter = 'cc.midolog.storage.jpa.sample.ScalarSampleCodeJpaConverter'
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val result = gradle(projectDir, "generateMyBatisDynamicSqlSources").buildAndFail()
+
+        val output = result.output
+        assertTrue(
+            output.contains("converter") && output.contains("not support"),
+            "Expected failure message rejecting converter in MyBatis generator, but got:\n$output",
+        )
+    }
+
+    @Test
+    fun `generateMyBatisDynamicSqlSources fails when entity declares jpa relation`() {
+        val projectDir = Files.createTempDirectory("mybatis-dynamic-sql-relation-test")
+        writeSettings(projectDir)
+        writeFileMetaDomain(projectDir)
+        projectDir.resolve("build.gradle").writeText(
+            """
+            plugins {
+                id 'base'
+                id 'cc.midolog.jpa-dsl'
+            }
+
+            mybatisDynamicSql {
+                entity('cc.midolog.file.model.FileMeta') {
+                    table = 'file_meta'
+                    id = 'id'
+                    relation('children') {
+                        type = 'oneToMany'
+                        target = 'cc.midolog.file.model.FileMeta'
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val result = gradle(projectDir, "generateMyBatisDynamicSqlSources").buildAndFail()
+
+        val output = result.output
+        assertTrue(
+            output.contains("relation") && output.contains("not support"),
+            "Expected failure message rejecting relation in MyBatis generator, but got:\n$output",
+        )
+    }
+
     private fun gradle(projectDir: Path, vararg arguments: String): GradleRunner =
         GradleRunner.create()
             .withProjectDir(projectDir.toFile())
