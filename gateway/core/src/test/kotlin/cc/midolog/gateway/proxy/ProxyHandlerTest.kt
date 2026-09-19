@@ -1,5 +1,8 @@
 package cc.midolog.gateway.proxy
 
+import cc.midolog.gateway.circuitbreaker.CircuitBreakerRegistry
+import cc.midolog.gateway.circuitbreaker.CircuitBreakerState
+import cc.midolog.gateway.config.GatewayCircuitBreakerProperties
 import cc.midolog.gateway.config.GatewayRouteProperties
 import cc.midolog.gateway.config.GatewayRetryProperties
 import cc.midolog.gateway.route.GatewayRouteSelector
@@ -9,6 +12,7 @@ import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DefaultDataBufferFactory
@@ -28,7 +32,11 @@ import org.springframework.web.reactive.function.server.ServerResponse
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.net.URI
+import java.time.Clock
 import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.concurrent.TimeoutException
 import java.net.ConnectException
 
@@ -246,8 +254,13 @@ class ProxyHandlerTest {
         reqCount = 0
 
         // POST should not retry, just return 502
+        val postHandler = ProxyHandler(
+            client,
+            GatewayRouteSelector(cc.midolog.gateway.config.GatewayRouteProperties("http://application-a.internal", batchUrl = "http://batch.internal"), client, java.time.Clock.systemUTC(), null),
+            GatewayRetryProperties(maxAttempts = 3, backoff = java.time.Duration.ofMillis(1))
+        )
         val postExchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/retry"))
-        val postResponse = handler.proxy(serverRequest(postExchange.request)).block()
+        val postResponse = postHandler.proxy(serverRequest(postExchange.request)).block()
         postResponse!!.writeTo(postExchange, responseContext()).block()
         assertEquals(HttpStatus.BAD_GATEWAY, postExchange.response.statusCode)
         assertEquals(1, reqCount)
@@ -469,5 +482,307 @@ class ProxyHandlerTest {
         val t1 = selector.selectTarget("/api/retry")
         val t2 = selector.selectTarget("/api/retry")
         assertEquals(setOf("http://application-a.internal", "http://application-b.internal"), setOf(t1, t2))
+    }
+
+    private class MutableClock(private var current: Instant = Instant.parse("2026-09-19T00:00:00Z")) : Clock() {
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+        override fun withZone(zone: ZoneId?): Clock = this
+        override fun instant(): Instant = current
+        fun advance(duration: Duration) {
+            current = current.plus(duration)
+        }
+    }
+
+    @Test
+    fun `Circuit breaker trips to OPEN after threshold failures and short-circuits subsequent requests with 503`() {
+        var callCount = 0
+        val clock = MutableClock()
+        val breakerProps = GatewayCircuitBreakerProperties(failureThreshold = 2, openDuration = Duration.ofSeconds(5))
+        val registry = CircuitBreakerRegistry(breakerProps, clock)
+
+        val exchangeFunction = ExchangeFunction { _ ->
+            callCount++
+            Mono.error(ConnectException("Connection refused"))
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+        val selector = GatewayRouteSelector(
+            GatewayRouteProperties(applicationUrl = "http://application.internal", batchUrl = "http://batch.internal"),
+            client,
+            clock,
+            null
+        )
+        val handler = ProxyHandler(
+            client,
+            selector,
+            GatewayRetryProperties(maxAttempts = 1),
+            null,
+            registry
+        )
+
+        // 1st request -> fail -> 502, callCount=1
+        val ex1 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/test"))
+        val resp1 = handler.proxy(serverRequest(ex1.request)).block()!!
+        resp1.writeTo(ex1, responseContext()).block()
+        assertEquals(HttpStatus.BAD_GATEWAY, ex1.response.statusCode)
+        assertEquals(1, callCount)
+
+        // 2nd request -> fail -> 502, callCount=2 -> breaker trips to OPEN
+        val ex2 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/test"))
+        val resp2 = handler.proxy(serverRequest(ex2.request)).block()!!
+        resp2.writeTo(ex2, responseContext()).block()
+        assertEquals(HttpStatus.BAD_GATEWAY, ex2.response.statusCode)
+        assertEquals(2, callCount)
+        assertEquals(CircuitBreakerState.OPEN, registry.getOrCreate("http://application.internal").currentState())
+
+        // 3rd request -> circuit is OPEN -> short-circuit to 503 without calling downstream!
+        val ex3 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/test"))
+        val resp3 = handler.proxy(serverRequest(ex3.request)).block()!!
+        resp3.writeTo(ex3, responseContext()).block()
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex3.response.statusCode)
+        assertEquals(2, callCount, "Downstream must not be invoked when circuit is OPEN")
+    }
+
+    @Test
+    fun `Retry does not bypass open circuit and stops on breaker rejection with 503`() {
+        var callCount = 0
+        val clock = MutableClock()
+        val breakerProps = GatewayCircuitBreakerProperties(failureThreshold = 2, openDuration = Duration.ofSeconds(5))
+        val registry = CircuitBreakerRegistry(breakerProps, clock)
+
+        val exchangeFunction = ExchangeFunction { _ ->
+            callCount++
+            Mono.error(ConnectException("Downstream unavailable"))
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+        val selector = GatewayRouteSelector(
+            GatewayRouteProperties(applicationUrl = "http://application.internal", batchUrl = "http://batch.internal"),
+            client,
+            clock,
+            null
+        )
+        val handler = ProxyHandler(
+            client,
+            selector,
+            GatewayRetryProperties(maxAttempts = 3, backoff = Duration.ofMillis(1)),
+            null,
+            registry
+        )
+
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/retry-breaker"))
+        val response = handler.proxy(serverRequest(exchange.request)).block()!!
+        response.writeTo(exchange, responseContext()).block()
+
+        // Attempt 1: fail (callCount=1, streak=1)
+        // Attempt 2 (retry): fail (callCount=2, streak=2 -> trips to OPEN)
+        // Attempt 3 (retry): breaker rejects call immediately with 503, callCount remains 2!
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, exchange.response.statusCode)
+        assertEquals(2, callCount)
+        assertEquals(CircuitBreakerState.OPEN, registry.getOrCreate("http://application.internal").currentState())
+    }
+
+    @Test
+    fun `Probe in HALF_OPEN recovers circuit to CLOSED on successful response`() {
+        var callCount = 0
+        val clock = MutableClock()
+        val breakerProps = GatewayCircuitBreakerProperties(failureThreshold = 1, openDuration = Duration.ofSeconds(5))
+        val registry = CircuitBreakerRegistry(breakerProps, clock)
+
+        var returnSuccess = false
+        val exchangeFunction = ExchangeFunction { _ ->
+            callCount++
+            if (returnSuccess) {
+                Mono.just(ClientResponse.create(HttpStatus.OK).body("success").build())
+            } else {
+                Mono.error(ConnectException("downstream error"))
+            }
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+        val selector = GatewayRouteSelector(
+            GatewayRouteProperties(applicationUrl = "http://application.internal", batchUrl = "http://batch.internal"),
+            client,
+            clock,
+            null
+        )
+        val handler = ProxyHandler(client, selector, GatewayRetryProperties(maxAttempts = 1), null, registry)
+
+        // 1st request trips breaker
+        val ex1 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/probe"))
+        handler.proxy(serverRequest(ex1.request)).block()!!.writeTo(ex1, responseContext()).block()
+        assertEquals(CircuitBreakerState.OPEN, registry.getOrCreate("http://application.internal").currentState())
+
+        // Advance past openDuration -> HALF_OPEN
+        clock.advance(Duration.ofSeconds(6))
+        assertEquals(CircuitBreakerState.HALF_OPEN, registry.getOrCreate("http://application.internal").currentState())
+
+        // Downstream now healthy
+        returnSuccess = true
+        val ex2 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/probe"))
+        handler.proxy(serverRequest(ex2.request)).block()!!.writeTo(ex2, responseContext()).block()
+        assertEquals(HttpStatus.OK, ex2.response.statusCode)
+        assertEquals(CircuitBreakerState.CLOSED, registry.getOrCreate("http://application.internal").currentState())
+        assertEquals(0, registry.getOrCreate("http://application.internal").failureStreak())
+
+        // Subsequent requests continue to succeed
+        val ex3 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/probe"))
+        handler.proxy(serverRequest(ex3.request)).block()!!.writeTo(ex3, responseContext()).block()
+        assertEquals(HttpStatus.OK, ex3.response.statusCode)
+        assertEquals(CircuitBreakerState.CLOSED, registry.getOrCreate("http://application.internal").currentState())
+    }
+
+    @Test
+    fun `Probe in HALF_OPEN transitions back to OPEN on downstream error and rejects subsequent requests`() {
+        var callCount = 0
+        val clock = MutableClock()
+        val breakerProps = GatewayCircuitBreakerProperties(failureThreshold = 1, openDuration = Duration.ofSeconds(5))
+        val registry = CircuitBreakerRegistry(breakerProps, clock)
+
+        val exchangeFunction = ExchangeFunction { _ ->
+            callCount++
+            Mono.error(ConnectException("downstream error"))
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+        val selector = GatewayRouteSelector(
+            GatewayRouteProperties(applicationUrl = "http://application.internal", batchUrl = "http://batch.internal"),
+            client,
+            clock,
+            null
+        )
+        val handler = ProxyHandler(client, selector, GatewayRetryProperties(maxAttempts = 1), null, registry)
+
+        // Trip breaker to OPEN
+        val ex1 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/probe-fail"))
+        handler.proxy(serverRequest(ex1.request)).block()!!.writeTo(ex1, responseContext()).block()
+        assertEquals(CircuitBreakerState.OPEN, registry.getOrCreate("http://application.internal").currentState())
+        assertEquals(1, callCount)
+
+        // Advance to HALF_OPEN
+        clock.advance(Duration.ofSeconds(6))
+        assertEquals(CircuitBreakerState.HALF_OPEN, registry.getOrCreate("http://application.internal").currentState())
+
+        // Probe fails -> transitions back to OPEN
+        val ex2 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/probe-fail"))
+        handler.proxy(serverRequest(ex2.request)).block()!!.writeTo(ex2, responseContext()).block()
+        assertEquals(HttpStatus.BAD_GATEWAY, ex2.response.statusCode)
+        assertEquals(2, callCount)
+        assertEquals(CircuitBreakerState.OPEN, registry.getOrCreate("http://application.internal").currentState())
+
+        // Immediate next call is short-circuited (503) without calling downstream
+        val ex3 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/probe-fail"))
+        handler.proxy(serverRequest(ex3.request)).block()!!.writeTo(ex3, responseContext()).block()
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex3.response.statusCode)
+        assertEquals(2, callCount)
+    }
+
+    @Test
+    fun `Concurrency limit in CLOSED rejects excess requests with 503`() {
+        val clock = MutableClock()
+        val breakerProps = GatewayCircuitBreakerProperties(maxConcurrentCalls = 1)
+        val registry = CircuitBreakerRegistry(breakerProps, clock)
+
+        val blocker = reactor.core.publisher.Sinks.empty<Void>()
+        val exchangeFunction = ExchangeFunction { _ ->
+            blocker.asMono().then(Mono.just(ClientResponse.create(HttpStatus.OK).body("delayed").build()))
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+        val selector = GatewayRouteSelector(
+            GatewayRouteProperties(applicationUrl = "http://application.internal", batchUrl = "http://batch.internal"),
+            client,
+            clock,
+            null
+        )
+        val handler = ProxyHandler(client, selector, GatewayRetryProperties(maxAttempts = 1), null, registry)
+
+        // 1st request starts and holds the permit
+        val ex1 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/concurrent"))
+        val sub1 = handler.proxy(serverRequest(ex1.request)).subscribe()
+
+        val breaker = registry.getOrCreate("http://application.internal")
+        assertEquals(1, breaker.inFlightCount())
+
+        // 2nd concurrent request exceeds limit -> 503
+        val ex2 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/concurrent"))
+        val resp2 = handler.proxy(serverRequest(ex2.request)).block()!!
+        resp2.writeTo(ex2, responseContext()).block()
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex2.response.statusCode)
+
+        // Finish 1st request
+        blocker.tryEmitEmpty()
+        sub1.dispose()
+
+        assertEquals(0, breaker.inFlightCount())
+    }
+
+    @Test
+    fun `Cancellation releases permit cleanly in ProxyHandler chain`() {
+        val clock = MutableClock()
+        val breakerProps = GatewayCircuitBreakerProperties(maxConcurrentCalls = 1)
+        val registry = CircuitBreakerRegistry(breakerProps, clock)
+
+        val exchangeFunction = ExchangeFunction { _ ->
+            Mono.never<ClientResponse>()
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+        val selector = GatewayRouteSelector(
+            GatewayRouteProperties(applicationUrl = "http://application.internal", batchUrl = "http://batch.internal"),
+            client,
+            clock,
+            null
+        )
+        val handler = ProxyHandler(client, selector, GatewayRetryProperties(maxAttempts = 1), null, registry)
+
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/cancel"))
+        val sub = handler.proxy(serverRequest(exchange.request)).subscribe()
+
+        val breaker = registry.getOrCreate("http://application.internal")
+        assertEquals(1, breaker.inFlightCount())
+
+        // Cancel
+        sub.dispose()
+
+        assertEquals(0, breaker.inFlightCount())
+    }
+
+    @Test
+    fun `Target isolation preserves independent circuit breaker states across targets`() {
+        val clock = MutableClock()
+        val breakerProps = GatewayCircuitBreakerProperties(failureThreshold = 1)
+        val registry = CircuitBreakerRegistry(breakerProps, clock)
+
+        val exchangeFunction = ExchangeFunction { request ->
+            if (request.url().toString().startsWith("http://application-a.internal")) {
+                Mono.error(ConnectException("Target A down"))
+            } else {
+                Mono.just(ClientResponse.create(HttpStatus.OK).body("Target B ok").build())
+            }
+        }
+        val client = WebClient.builder().exchangeFunction(exchangeFunction).build()
+        val selector = GatewayRouteSelector(
+            GatewayRouteProperties(
+                applicationUrls = listOf("http://application-a.internal", "http://application-b.internal"),
+                batchUrl = "http://batch.internal"
+            ),
+            client,
+            clock,
+            null
+        )
+        val handler = ProxyHandler(client, selector, GatewayRetryProperties(maxAttempts = 1), null, registry)
+
+        // 1st request goes to application-a -> fails -> trips target A breaker & marks unhealthy in selector
+        val ex1 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/target"))
+        val resp1 = handler.proxy(serverRequest(ex1.request)).block()!!
+        resp1.writeTo(ex1, responseContext()).block()
+        assertEquals(HttpStatus.BAD_GATEWAY, ex1.response.statusCode)
+
+        val breakerA = registry.getOrCreate("http://application-a.internal")
+        val breakerB = registry.getOrCreate("http://application-b.internal")
+        assertEquals(CircuitBreakerState.OPEN, breakerA.currentState())
+        assertEquals(CircuitBreakerState.CLOSED, breakerB.currentState())
+
+        // Next request is routed to application-b -> succeeds (200 OK)
+        val ex2 = MockServerWebExchange.from(MockServerHttpRequest.get("/api/target"))
+        val resp2 = handler.proxy(serverRequest(ex2.request)).block()!!
+        resp2.writeTo(ex2, responseContext()).block()
+        assertEquals(HttpStatus.OK, ex2.response.statusCode)
+        assertEquals(CircuitBreakerState.CLOSED, breakerB.currentState())
     }
 }

@@ -1,5 +1,7 @@
 package cc.midolog.gateway.autoconfigure
 
+import cc.midolog.gateway.circuitbreaker.CircuitBreakerRegistry
+import cc.midolog.gateway.config.GatewayCircuitBreakerProperties
 import cc.midolog.gateway.config.GatewayClockConfig
 import cc.midolog.gateway.config.GatewayRouteProperties
 import cc.midolog.gateway.config.GatewayRetryProperties
@@ -76,7 +78,7 @@ class GatewayAutoConfiguration {
 
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnExpression("'\${gateway.mode:}' == 'standalone' || '\${gateway.mode:}' == 'remote'")
-    @EnableConfigurationProperties(GatewayRouteProperties::class, GatewayRetryProperties::class)
+    @EnableConfigurationProperties(GatewayRouteProperties::class, GatewayRetryProperties::class, GatewayCircuitBreakerProperties::class)
     @Import(WebClientConfig::class, RouteConfig::class)
     class ProxyConfiguration {
         @Bean
@@ -84,12 +86,23 @@ class GatewayAutoConfiguration {
             GatewayRouteSelector(properties, proxyWebClient, clock, meterRegistryProvider.ifAvailable)
 
         @Bean
+        fun circuitBreakerRegistry(properties: GatewayCircuitBreakerProperties, clock: Clock): CircuitBreakerRegistry =
+            CircuitBreakerRegistry(properties, clock)
+
+        @Bean
         fun proxyHandler(
             proxyWebClient: WebClient,
             routeSelector: GatewayRouteSelector,
             retryProperties: GatewayRetryProperties,
-            meterRegistryProvider: ObjectProvider<MeterRegistry>
-        ): ProxyHandler = ProxyHandler(proxyWebClient, routeSelector, retryProperties, meterRegistryProvider.ifAvailable)
+            meterRegistryProvider: ObjectProvider<MeterRegistry>,
+            circuitBreakerRegistry: CircuitBreakerRegistry
+        ): ProxyHandler = ProxyHandler(
+            proxyWebClient,
+            routeSelector,
+            retryProperties,
+            meterRegistryProvider.ifAvailable,
+            circuitBreakerRegistry
+        )
 
         @Bean
         fun jwtAuthFilter(env: Environment): JwtAuthFilter {
