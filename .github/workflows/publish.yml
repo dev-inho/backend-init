@@ -1,0 +1,63 @@
+name: Publish to GitHub Packages
+
+on:
+  push:
+    tags:
+      - 'backend-init-v*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Publish and Verify Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate release tag and extract version
+        id: parse-version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # 태그명 형식 엄격 검증 및 쉘 주입 방지
+          if [[ ! "$REF_NAME" =~ ^backend-init-v([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            echo "::error::태그명이 유효한 릴리스 형식(backend-init-vX.Y.Z)이 아닙니다: $REF_NAME"
+            exit 1
+          fi
+
+          VERSION="${BASH_REMATCH[1]}"
+          echo "Extracted valid semantic version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Run baseline verification
+        run: |
+          ./gradlew -p build-logic test
+          ./gradlew verifyBom
+
+      - name: Publish all modules to GitHub Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          ./gradlew publishAllToGithubPackages -PbackendInitVersion="${{ steps.parse-version.outputs.version }}"
+
+      - name: Verify remote artifacts with external consumer
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          ./gradlew -p examples/artifact-consumer test \
+            -PbackendInitRepoUrl="https://maven.pkg.github.com/${{ github.repository }}" \
+            -PbackendInitVersion="${{ steps.parse-version.outputs.version }}"

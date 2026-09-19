@@ -1,4 +1,5 @@
 import groovy.xml.XmlSlurper
+import org.gradle.api.publish.PublishingExtension
 
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '2.2.21' apply false
@@ -8,6 +9,14 @@ plugins {
     id 'org.springframework.boot' version '4.0.6' apply false
     id 'io.spring.dependency-management' version '1.1.7' apply false
 }
+
+def defaultBackendInitVersion = '0.0.1-SNAPSHOT'
+def resolvedVersion = providers
+    .gradleProperty('backendInitVersion')
+    .orElse(providers.gradleProperty('version'))
+    .orElse(providers.environmentVariable('BACKEND_INIT_VERSION'))
+    .orElse(defaultBackendInitVersion)
+    .get()
 
 def rootPathHasNonAscii = rootDir.absolutePath.any { it > '\u007F' }
 def defaultExternalBuildRoot = new File(
@@ -20,7 +29,7 @@ def externalBuildRoot = providers
 
 allprojects {
     group = 'cc.midolog'
-    version = '0.0.1-SNAPSHOT'
+    version = resolvedVersion
 
     if (rootPathHasNonAscii) {
         def safeProjectName = path == ':' ? 'root' : path.substring(1).replace(':', '-')
@@ -64,7 +73,7 @@ subprojects {
 
 tasks.register('verifyBom') {
     group = 'verification'
-    description = 'Verifies that the published BOM contains dependency constraints for all 11 target modules.'
+    description = 'Verifies that the published BOM contains dependency constraints for all publishing-enabled modules.'
     dependsOn('publishAllToLocalRepo')
 
     doLast {
@@ -72,7 +81,8 @@ tasks.register('verifyBom') {
             file(project.property('backendInitRepo')) :
             file('build/repo')
 
-        def bomDir = new File(repoBaseDir, 'cc/midolog/backend-init-bom/0.0.1-SNAPSHOT')
+        def targetVersion = project.version.toString()
+        def bomDir = new File(repoBaseDir, "cc/midolog/backend-init-bom/${targetVersion}")
         if (!bomDir.exists()) {
             throw new GradleException("BOM publication directory not found at: ${bomDir.absolutePath}")
         }
@@ -86,19 +96,12 @@ tasks.register('verifyBom') {
         def pomXml = new XmlSlurper().parse(bomPom)
         def actualArtifacts = pomXml.dependencyManagement.dependencies.dependency.collect { it.artifactId.text() } as Set
 
-        def expectedArtifacts = [
-            'backend-init-domain',
-            'backend-init-support-util',
-            'backend-init-support-logging',
-            'backend-init-support-web',
-            'backend-init-support-jwt',
-            'backend-init-storage-jpa',
-            'backend-init-storage-mybatis',
-            'backend-init-storage-file-local',
-            'backend-init-gateway-core',
-            'backend-init-gateway-autoconfigure',
-            'backend-init-gateway-starter'
-        ] as Set
+        def expectedArtifacts = subprojects.findAll { sp ->
+            sp.path != ':platform:bom' && sp.plugins.hasPlugin('cc.midolog.publishing')
+        }.collect { sp ->
+            def pub = sp.extensions.findByType(PublishingExtension)?.publications?.findByName('mavenJava')
+            pub?.artifactId ?: "backend-init-${sp.name}"
+        } as Set
 
         if (actualArtifacts != expectedArtifacts) {
             def missing = expectedArtifacts - actualArtifacts
@@ -120,5 +123,21 @@ tasks.register('verifyArtifacts', Exec) {
     if (project.hasProperty('backendInitRepo')) {
         execArgs += ["-PbackendInitRepo=${project.property('backendInitRepo')}"]
     }
+    execArgs += ["-PbackendInitVersion=${project.version}"]
+    commandLine execArgs
+}
+
+tasks.register('verifyRemoteArtifacts', Exec) {
+    group = 'verification'
+    description = 'Executes consumer test suite against remote GitHub Packages Maven repository.'
+    workingDir = rootDir
+    def remoteRepoUrl = project.findProperty('backendInitRepoUrl') ?:
+        System.getenv('BACKEND_INIT_REPO_URL') ?:
+        'https://maven.pkg.github.com/dev-inho/backend-init'
+    def execArgs = [
+        './gradlew', '-p', 'examples/artifact-consumer', 'test',
+        "-PbackendInitRepoUrl=${remoteRepoUrl}",
+        "-PbackendInitVersion=${project.version}"
+    ]
     commandLine execArgs
 }

@@ -260,4 +260,90 @@ class PublishingConventionPluginTest {
             "BOM POM must contain backend-init-storage-jpa constraint"
         )
     }
+
+    @Test
+    fun `remote publishing fails fast when credentials are missing`() {
+        val rootDir = Files.createTempDirectory("remote-fail-test")
+        rootDir.resolve("settings.gradle.kts").writeText(
+            """
+            rootProject.name = "fixture-root"
+            include("storage:jpa")
+            """.trimIndent()
+        )
+        rootDir.resolve("build.gradle.kts").writeText(
+            """
+            allprojects {
+                group = "cc.midolog"
+                version = "0.0.1-SNAPSHOT"
+            }
+            """.trimIndent()
+        )
+        val jpaDir = rootDir.resolve("storage/jpa").createDirectories()
+        jpaDir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                `java-library`
+                id("cc.midolog.publishing")
+            }
+            """.trimIndent()
+        )
+
+        val result = GradleRunner.create()
+            .withProjectDir(rootDir.toFile())
+            .withPluginClasspath()
+            .withArguments("publishAllToGithubPackages")
+            .buildAndFail()
+
+        assertTrue(
+            result.output.contains("GitHub Packages credentials missing"),
+            "Build failure output must clearly state missing credentials. Actual output:\n${result.output}"
+        )
+    }
+
+    @Test
+    fun `remote publishing configures github repository and publishes when credentials and target repo provided`() {
+        val rootDir = Files.createTempDirectory("remote-success-test")
+        val mockRemoteRepoDir = rootDir.resolve("mock-remote-repo").createDirectories()
+
+        rootDir.resolve("settings.gradle.kts").writeText(
+            """
+            rootProject.name = "fixture-root"
+            include("storage:jpa")
+            """.trimIndent()
+        )
+        rootDir.resolve("build.gradle.kts").writeText(
+            """
+            allprojects {
+                group = "cc.midolog"
+                version = "0.0.1-SNAPSHOT"
+            }
+            """.trimIndent()
+        )
+        val jpaDir = rootDir.resolve("storage/jpa").createDirectories()
+        jpaDir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                `java-library`
+                id("cc.midolog.publishing")
+            }
+            """.trimIndent()
+        )
+        val jpaSrc = jpaDir.resolve("src/main/java/sample").createDirectories()
+        jpaSrc.resolve("JpaSample.java").writeText("package sample; public class JpaSample {}")
+
+        val result = GradleRunner.create()
+            .withProjectDir(rootDir.toFile())
+            .withPluginClasspath()
+            .withArguments(
+                "publishAllToGithubPackages",
+                "-PbackendInitGithubRepoUrl=${mockRemoteRepoDir.toUri()}",
+                "-Pgpr.user=test-user",
+                "-Pgpr.key=dummy-token"
+            )
+            .build()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":publishAllToGithubPackages")?.outcome)
+        val jpaGroupDir = mockRemoteRepoDir.resolve("cc/midolog/backend-init-storage-jpa/0.0.1-SNAPSHOT")
+        assertTrue(jpaGroupDir.exists(), "Remote repo directory must contain published artifact")
+    }
 }

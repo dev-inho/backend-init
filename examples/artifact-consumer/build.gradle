@@ -8,6 +8,8 @@ plugins {
 group = 'cc.midolog.examples'
 version = '0.0.1-SNAPSHOT'
 
+def backendInitVersion = project.findProperty('backendInitVersion') ?: '0.0.1-SNAPSHOT'
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
@@ -21,22 +23,44 @@ kotlin {
 }
 
 repositories {
-    def localRepoDir = project.findProperty('backendInitRepo') ?
-        file(project.property('backendInitRepo')) :
-        file("$rootDir/../../build/repo")
-    maven {
-        url = localRepoDir.toURI()
+    if (project.hasProperty('backendInitRepoUrl')) {
+        // 원격 저장소가 명시적으로 지정된 경우: 로컬 build/repo fallback을 완전히 차단하고 원격 레지스트리만 등록
+        maven {
+            url = uri(project.property('backendInitRepoUrl'))
+            def scheme = url.scheme
+            if (scheme != null && scheme.toLowerCase().startsWith('http')) {
+                credentials {
+                    username = project.findProperty('gpr.user') ?:
+                        System.getenv('GITHUB_ACTOR') ?:
+                        System.getenv('GITHUB_USERNAME') ?:
+                        'dev-inho'
+                    password = project.findProperty('gpr.key') ?:
+                        System.getenv('GITHUB_TOKEN') ?:
+                        System.getenv('GH_TOKEN') ?:
+                        ''
+                }
+            }
+        }
+    } else {
+        // 로컬 저장소 모드: build/repo 경로를 명시적으로 등록
+        def localRepoDir = project.findProperty('backendInitRepo') ?
+            file(project.property('backendInitRepo')) :
+            file("$rootDir/../../build/repo")
+        maven {
+            url = localRepoDir.toURI()
+        }
     }
     mavenCentral()
     maven { url = 'https://repo.spring.io/milestone' }
 }
 
 dependencies {
-    implementation(platform("cc.midolog:backend-init-bom:0.0.1-SNAPSHOT"))
+    implementation(platform("cc.midolog:backend-init-bom:${backendInitVersion}"))
 
     implementation("cc.midolog:backend-init-domain")
     implementation("cc.midolog:backend-init-support-web")
     runtimeOnly("cc.midolog:backend-init-storage-jpa")
+    runtimeOnly("cc.midolog:backend-init-storage-mybatis")
 
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.jetbrains.kotlin:kotlin-reflect'
