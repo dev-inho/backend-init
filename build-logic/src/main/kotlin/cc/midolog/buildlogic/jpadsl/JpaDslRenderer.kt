@@ -40,7 +40,7 @@ class JpaDslRenderer {
                 renderCustomerAdapter(generatedPackage, adapterClassName, domainClass, domainSimpleName, repositoryClassName, mapperClassName, idProperty),
             )
             File(generatedDir, "$autoConfigClassName.kt").writeText(
-                renderCustomerAutoConfiguration(generatedPackage, autoConfigClassName, domainClass, domainSimpleName, repositoryClassName, adapterClassName, idProperty),
+                renderCustomerAutoConfiguration(generatedPackage, autoConfigClassName, domainClass, domainSimpleName, repositoryClassName, adapterClassName, entityClassName, idProperty),
             )
         }
     }
@@ -303,9 +303,12 @@ class $adapterClassName(
         domainSimpleName: String,
         repositoryClassName: String,
         adapterClassName: String,
+        entityClassName: String,
         idProperty: DomainProperty,
     ): String {
         val instanceValName = domainSimpleName.replaceFirstChar { it.lowercase() }
+        val domainPackage = domainClass.substringBeforeLast('.')
+        val customerName = domainPackage.substringAfter(".customers.").substringBefore('.')
         return """package $generatedPackage
 
 import cc.midolog.customer.port.repository.CustomerRepositoryPort
@@ -314,15 +317,27 @@ import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.boot.persistence.autoconfigure.EntityScan
 import org.springframework.context.annotation.Bean
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.transaction.support.TransactionOperations
 
+/**
+ * $domainSimpleName 도메인 엔티티를 위한 JPA 고객 저장소 자동 구성 클래스.
+ *
+ * $domainSimpleName 클래스가 클래스패스에 존재하고 storage.persistence.provider가 jpa이며,
+ * 활성화된 고객(app.customer)이 $customerName 일 때만 조건부 로드된다.
+ * 클래스 레벨에서 조건을 검사하여 고객 부재 환경에서의 클래스 로딩 실패를 방지한다.
+ */
 @AutoConfiguration
+@ConditionalOnClass(name = ["$domainClass"])
 @ConditionalOnProperty(prefix = "storage.persistence", name = ["provider"], havingValue = "jpa")
+@ConditionalOnProperty(name = ["app.customer"], havingValue = "$customerName")
+@EntityScan(basePackageClasses = [$entityClassName::class])
+@EnableJpaRepositories(basePackageClasses = [$repositoryClassName::class])
 class $autoConfigClassName {
 
     @Bean
-    @ConditionalOnClass($domainSimpleName::class)
     @ConditionalOnMissingBean(name = ["${instanceValName}CustomerRepositoryPort"])
     fun ${instanceValName}CustomerRepositoryPort(
         repository: $repositoryClassName,

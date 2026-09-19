@@ -4,8 +4,7 @@ import cc.midolog.customer.port.repository.CustomerRepositoryPort
 import cc.midolog.customer.port.repository.CustomerRepositoryPortContract
 import cc.midolog.customers.acme.model.AcmeOrderNote
 import cc.midolog.storage.mybatis.autoconfigure.MyBatisStorageAutoConfiguration
-import cc.midolog.storage.mybatis.customers.acme.AcmeOrderNoteMapper
-import cc.midolog.storage.mybatis.customers.acme.AcmeOrderNoteMyBatisCustomerRepositoryAdapter
+import cc.midolog.storage.mybatis.customers.acme.AcmeOrderNoteMyBatisAutoConfiguration
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
@@ -19,9 +18,10 @@ import java.util.UUID
 
 @MybatisTest
 @AutoConfigureTestDatabase(replace = Replace.NONE)
-@Import(MyBatisStorageAutoConfiguration::class)
+@Import(MyBatisStorageAutoConfiguration::class, AcmeOrderNoteMyBatisAutoConfiguration::class)
 @TestPropertySource(properties = [
     "storage.persistence.provider=mybatis",
+    "app.customer=acme",
     "mybatis.mapper-locations=classpath*:mapper/**/*.xml",
     "spring.datasource.url=jdbc:h2:mem:testdb_mybatis_acme;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH",
     "spring.datasource.driverClassName=org.h2.Driver",
@@ -35,11 +35,9 @@ import java.util.UUID
 class AcmeMyBatisCustomerRepositoryPortContractTest : CustomerRepositoryPortContract<AcmeOrderNote, String>() {
 
     @Autowired
-    private lateinit var mapper: AcmeOrderNoteMapper
+    private lateinit var customerRepositoryPort: CustomerRepositoryPort<AcmeOrderNote, String>
 
-    override fun port(): CustomerRepositoryPort<AcmeOrderNote, String> {
-        return AcmeOrderNoteMyBatisCustomerRepositoryAdapter(mapper)
-    }
+    override fun port(): CustomerRepositoryPort<AcmeOrderNote, String> = customerRepositoryPort
 
     override fun sampleEntity(id: String): AcmeOrderNote =
         AcmeOrderNote(

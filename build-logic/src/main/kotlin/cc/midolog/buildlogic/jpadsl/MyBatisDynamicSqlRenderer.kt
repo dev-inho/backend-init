@@ -25,12 +25,16 @@ class MyBatisDynamicSqlRenderer {
 
         if (domainClass.contains(".customers.")) {
             val mapperClassName = "${domainSimpleName}Mapper"
+            val providerClassName = "${domainSimpleName}SqlProvider"
             val adapterClassName = "${domainSimpleName}MyBatisCustomerRepositoryAdapter"
             val autoConfigClassName = "${domainSimpleName}MyBatisAutoConfiguration"
             val idProperty = properties.firstOrNull { it.name == spec.id } ?: properties.first()
 
+            File(generatedDir, "$providerClassName.kt").writeText(
+                renderSqlProvider(generatedPackage, providerClassName, spec, properties, idProperty),
+            )
             File(generatedDir, "$mapperClassName.kt").writeText(
-                renderMapper(generatedPackage, mapperClassName),
+                renderMapper(generatedPackage, mapperClassName, providerClassName, domainClass, domainSimpleName),
             )
             File(generatedDir, "$adapterClassName.kt").writeText(
                 renderCustomerAdapter(generatedPackage, adapterClassName, domainClass, domainSimpleName, mapperClassName, supportClassName, spec, properties, idProperty),
@@ -100,8 +104,62 @@ ${tableColumns.joinToString("\n")}
 """
     }
 
-    private fun renderMapper(generatedPackage: String, mapperClassName: String): String = """package $generatedPackage
+    private fun renderSqlProvider(
+        generatedPackage: String,
+        providerClassName: String,
+        spec: JpaEntitySpec,
+        properties: List<DomainProperty>,
+        idProperty: DomainProperty,
+    ): String {
+        val persistentProperties = properties.filter { property ->
+            val fieldSpec = spec.fields[property.name] ?: JpaFieldSpec()
+            fieldSpec.relation == null && spec.relations[property.name] == null
+        }
+        val columnNames = persistentProperties.map { spec.fields[it.name]?.column ?: it.name }
+        val propertyNames = persistentProperties.map { it.name }
+        val idColumnName = spec.fields[idProperty.name]?.column ?: idProperty.name
+        val nonIdProperties = persistentProperties.filter { it.name != idProperty.name }
 
+        val postgresUpdateSets = nonIdProperties.joinToString(", ") { prop ->
+            val col = spec.fields[prop.name]?.column ?: prop.name
+            "$col = EXCLUDED.$col"
+        }
+        val columnsJoined = columnNames.joinToString(", ")
+        val valuesJoined = propertyNames.joinToString(", ") { "#{$it}" }
+
+        return """package $generatedPackage
+
+import org.apache.ibatis.builder.annotation.ProviderContext
+
+/**
+ * ${spec.domainClass.simpleName()} 엔티티의 데이터베이스별 원자적 Upsert SQL을 제공하는 프로바이더.
+ *
+ * PostgreSQL과 H2의 원자적 방언(ON CONFLICT 및 MERGE INTO)을 지원하여
+ * 동시성 환경에서의 count-then-insert 경합(race condition)을 원천 방지한다.
+ */
+class $providerClassName {
+    fun upsert(context: ProviderContext): String {
+        val databaseId = context.databaseId?.lowercase() ?: ""
+        return if (databaseId == "postgresql") {
+            "INSERT INTO ${spec.table} ($columnsJoined) VALUES ($valuesJoined) ON CONFLICT ($idColumnName) DO UPDATE SET $postgresUpdateSets"
+        } else {
+            "MERGE INTO ${spec.table} ($columnsJoined) KEY ($idColumnName) VALUES ($valuesJoined)"
+        }
+    }
+}
+"""
+    }
+
+    private fun renderMapper(
+        generatedPackage: String,
+        mapperClassName: String,
+        providerClassName: String,
+        domainClass: String,
+        domainSimpleName: String,
+    ): String = """package $generatedPackage
+
+import $domainClass
+import org.apache.ibatis.annotations.InsertProvider
 import org.apache.ibatis.annotations.Mapper
 import org.mybatis.dynamic.sql.util.mybatis3.CommonCountMapper
 import org.mybatis.dynamic.sql.util.mybatis3.CommonDeleteMapper
@@ -110,7 +168,14 @@ import org.mybatis.dynamic.sql.util.mybatis3.CommonSelectMapper
 import org.mybatis.dynamic.sql.util.mybatis3.CommonUpdateMapper
 
 @Mapper
-interface $mapperClassName : CommonSelectMapper, CommonGeneralInsertMapper, CommonUpdateMapper, CommonDeleteMapper, CommonCountMapper
+interface $mapperClassName : CommonSelectMapper, CommonGeneralInsertMapper, CommonUpdateMapper, CommonDeleteMapper, CommonCountMapper {
+
+    /**
+     * 지원 데이터베이스 방언에 따라 원자적으로 엔티티를 저장 또는 갱신한다.
+     */
+    @InsertProvider(type = $providerClassName::class, method = "upsert")
+    fun upsert(entity: $domainSimpleName): Int
+}
 """
 
     private fun renderCustomerAdapter(
@@ -125,7 +190,6 @@ interface $mapperClassName : CommonSelectMapper, CommonGeneralInsertMapper, Comm
         idProperty: DomainProperty,
     ): String {
         val instanceValName = domainSimpleName.replaceFirstChar { it.lowercase() }
-        val nonIdProperties = properties.filter { it.name != idProperty.name }
 
         val propertyMappingExpressions = properties.joinToString(",\n") { prop ->
             val colName = spec.fields[prop.name]?.column ?: prop.name
@@ -155,14 +219,6 @@ interface $mapperClassName : CommonSelectMapper, CommonGeneralInsertMapper, Comm
             "            ${prop.name} = $expr"
         }
 
-        val updateSetStatements = nonIdProperties.joinToString("\n            ") { prop ->
-            "set($supportClassName.${prop.name}).equalTo(entity.${prop.name})"
-        }
-
-        val insertSetStatements = properties.joinToString("\n            ") { prop ->
-            "set($supportClassName.${prop.name}).toValue(entity.${prop.name})"
-        }
-
         val selectColumns = properties.joinToString(",\n            ") { "$supportClassName.${it.name}" }
 
         return """package $generatedPackage
@@ -171,11 +227,8 @@ import cc.midolog.customer.port.repository.CustomerRepositoryPort
 import $domainClass
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.mybatis.dynamic.sql.util.kotlin.mybatis3.countFrom
 import org.mybatis.dynamic.sql.util.kotlin.mybatis3.deleteFrom
-import org.mybatis.dynamic.sql.util.kotlin.mybatis3.insertInto
 import org.mybatis.dynamic.sql.util.kotlin.mybatis3.select
-import org.mybatis.dynamic.sql.util.kotlin.mybatis3.update
 
 class $adapterClassName(
     private val mapper: $mapperClassName,
@@ -195,18 +248,9 @@ $propertyMappingExpressions
     }
 
     override suspend fun save(entity: $domainSimpleName): $domainSimpleName = withContext(Dispatchers.IO) {
-        val exists = countFrom(mapper::count, $supportClassName.$instanceValName) {
-            where { $supportClassName.${idProperty.name} isEqualTo entity.${idProperty.name} }
-        } > 0
-        if (exists) {
-            update(mapper::update, $supportClassName.$instanceValName) {
-                $updateSetStatements
-                where { $supportClassName.${idProperty.name} isEqualTo entity.${idProperty.name} }
-            }
-        } else {
-            insertInto(mapper::generalInsert, $supportClassName.$instanceValName) {
-                $insertSetStatements
-            }
+        val affected = mapper.upsert(entity)
+        check(affected >= 1) {
+            "Expected to upsert one $domainSimpleName row but affected ${'$'}affected rows"
         }
         entity
     }
@@ -231,22 +275,34 @@ $propertyMappingExpressions
         idProperty: DomainProperty,
     ): String {
         val instanceValName = domainSimpleName.replaceFirstChar { it.lowercase() }
+        val domainPackage = domainClass.substringBeforeLast('.')
+        val customerName = domainPackage.substringAfter(".customers.").substringBefore('.')
         return """package $generatedPackage
 
 import cc.midolog.customer.port.repository.CustomerRepositoryPort
 import $domainClass
+import org.mybatis.spring.annotation.MapperScan
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 
+/**
+ * $domainSimpleName 도메인 엔티티를 위한 MyBatis 고객 저장소 자동 구성 클래스.
+ *
+ * $domainSimpleName 클래스가 클래스패스에 존재하고 storage.persistence.provider가 mybatis이며,
+ * 활성화된 고객(app.customer)이 $customerName 일 때만 조건부 로드된다.
+ * 클래스 레벨에서 조건을 검사하여 고객 부재 환경에서의 클래스 로딩 실패를 방지한다.
+ */
 @AutoConfiguration
+@ConditionalOnClass(name = ["$domainClass"])
 @ConditionalOnProperty(prefix = "storage.persistence", name = ["provider"], havingValue = "mybatis")
+@ConditionalOnProperty(name = ["app.customer"], havingValue = "$customerName")
+@MapperScan(basePackages = ["$generatedPackage"])
 class $autoConfigClassName {
 
     @Bean
-    @ConditionalOnClass($domainSimpleName::class)
     @ConditionalOnMissingBean(name = ["${instanceValName}CustomerRepositoryPort"])
     fun ${instanceValName}CustomerRepositoryPort(
         mapper: $mapperClassName,

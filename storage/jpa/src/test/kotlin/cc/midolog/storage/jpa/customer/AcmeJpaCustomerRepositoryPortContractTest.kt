@@ -3,43 +3,32 @@ package cc.midolog.storage.jpa.customer
 import cc.midolog.customer.port.repository.CustomerRepositoryPort
 import cc.midolog.customer.port.repository.CustomerRepositoryPortContract
 import cc.midolog.customers.acme.model.AcmeOrderNote
-import cc.midolog.storage.jpa.customers.acme.AcmeOrderNoteJpaMapper
-import cc.midolog.storage.jpa.customers.acme.AcmeOrderNoteJpaRepository
+import cc.midolog.storage.jpa.JpaTestApplication
+import cc.midolog.storage.jpa.customers.acme.AcmeOrderNoteJpaAutoConfiguration
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.boot.persistence.autoconfigure.EntityScan
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories
+import org.springframework.context.annotation.Import
 import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.context.TestPropertySource
-import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
-import cc.midolog.storage.jpa.JpaTestApplication
 
 @DataJpaTest(properties = ["spring.jpa.hibernate.ddl-auto=create-drop"])
 @ContextConfiguration(classes = [JpaTestApplication::class])
-@EntityScan(basePackages = ["cc.midolog.storage.jpa"])
-@EnableJpaRepositories(basePackages = ["cc.midolog.storage.jpa"])
+@Import(AcmeOrderNoteJpaAutoConfiguration::class)
 @TestPropertySource(properties = [
-    "spring.datasource.url=jdbc:h2:mem:testdb_jpa_acme;DB_CLOSE_DELAY=-1"
+    "spring.datasource.url=jdbc:h2:mem:testdb_jpa_acme;DB_CLOSE_DELAY=-1",
+    "storage.persistence.provider=jpa",
+    "app.customer=acme",
 ])
 class AcmeJpaCustomerRepositoryPortContractTest : CustomerRepositoryPortContract<AcmeOrderNote, String>() {
 
     @Autowired
-    private lateinit var repository: AcmeOrderNoteJpaRepository
-
-    @Autowired
-    private lateinit var transactionTemplate: TransactionTemplate
+    private lateinit var customerRepositoryPort: CustomerRepositoryPort<AcmeOrderNote, String>
 
     override fun port(): CustomerRepositoryPort<AcmeOrderNote, String> {
-        return JpaCustomerRepositoryAdapter(
-            jpaRepository = repository,
-            transactionOperations = transactionTemplate,
-            toDomain = AcmeOrderNoteJpaMapper::toDomain,
-            toEntity = AcmeOrderNoteJpaMapper::toEntity,
-            idOfDomain = { it.id },
-        )
+        return customerRepositoryPort
     }
 
     override fun sampleEntity(id: String): AcmeOrderNote =

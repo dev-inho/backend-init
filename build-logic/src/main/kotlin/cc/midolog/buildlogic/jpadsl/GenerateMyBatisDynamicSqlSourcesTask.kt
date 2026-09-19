@@ -21,6 +21,9 @@ abstract class GenerateMyBatisDynamicSqlSourcesTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    @get:OutputDirectory
+    abstract val resourcesOutputDir: DirectoryProperty
+
     @get:Input
     abstract val specsFingerprint: Property<String>
 
@@ -43,9 +46,15 @@ abstract class GenerateMyBatisDynamicSqlSourcesTask : DefaultTask() {
         outputRoot.deleteRecursively()
         outputRoot.mkdirs()
 
+        val resourcesRoot = resourcesOutputDir.get().asFile
+        resourcesRoot.deleteRecursively()
+        resourcesRoot.mkdirs()
+
         val parser = DomainSourceParser()
         val renderer = MyBatisDynamicSqlRenderer()
         val domainRoot = domainSourceDir.get().asFile
+
+        val customerAutoConfigs = mutableListOf<String>()
 
         specs.forEach { spec ->
             validateMyBatisEntitySpec(spec)
@@ -58,7 +67,22 @@ abstract class GenerateMyBatisDynamicSqlSourcesTask : DefaultTask() {
             if (resolvedFile != null && resolvedFile.isFile) {
                 val properties = parser.parse(spec.domainClass, resolvedFile)
                 renderer.render(spec, properties, outputRoot)
+
+                if (spec.domainClass.contains(".customers.")) {
+                    val domainPackage = spec.domainClass.substringBeforeLast('.')
+                    val domainSimpleName = spec.domainClass.simpleName()
+                    val contextPackage = domainPackage
+                        .removePrefix("cc.midolog.")
+                        .removeSuffix(".model")
+                    customerAutoConfigs.add("cc.midolog.storage.mybatis.$contextPackage.${domainSimpleName}MyBatisAutoConfiguration")
+                }
             }
+        }
+
+        if (customerAutoConfigs.isNotEmpty()) {
+            val importsFile = File(resourcesRoot, "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+            importsFile.parentFile.mkdirs()
+            importsFile.writeText(customerAutoConfigs.joinToString("\n") + "\n")
         }
     }
 }
