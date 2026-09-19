@@ -337,6 +337,9 @@ RFC 7230 §6.1 및 RFC 9110 §7.6.1 규격에 따라 단일 전송 레벨 연결
   - 제한된 탐색 호출 허용량(`gateway.proxy.circuit-breaker.half-open-permits`, 기본값 1)만큼의 probe 요청만 다운스트림으로 전달을 허용합니다. 허용량을 초과하는 동시 요청은 즉시 `503 Service Unavailable`로 거절됩니다.
   - **probe 성공 시**: 다운스트림이 정상 응답을 반환하면 회로는 즉시 `CLOSED` 상태로 복구되고 `failureStreak`는 0으로 리셋되어 전체 트래픽을 다시 정상 수용합니다.
   - **probe 실패 시**: probe 요청이 실패(ConnectException, Timeout, 502/503/504)하면 즉시 다시 `OPEN` 상태로 복귀하고 `openedAt = clock.instant()`로 새로운 대기 창을 시작합니다.
+- **세대(Generation) 기반 지연 응답 격리**:
+  - `CLOSED` 시점에 발급된 permit의 늦은 성공·실패 응답이 회로가 이미 `OPEN`, `HALF_OPEN` 또는 새로운 `CLOSED` 상태로 전이된 이후에 도착하더라도, 발급 세대 불일치로 폐기되어 현재 상태의 실패 횟수, 대기 시각(`openedAt`), probe 상태를 일절 변경하지 못하도록 상태 소유권을 엄격히 보장합니다.
+  - `HALF_OPEN` 상태의 탐색(probe) 호출 또한 지연 완료 또는 취소 시 이전 세대의 probe 완료가 새로운 상태나 다음 세대의 `halfOpenInFlight` 카운터를 오염시키지 않도록 격리됩니다.
 
 #### 2) 타깃별 격리 (Target-Specific Isolation)
 - `CircuitBreakerRegistry`는 타깃 URL(`targetUrl`, 예: `http://application-a.internal`, `http://application-b.internal`, `http://batch.internal`)별로 독립적인 `CircuitBreaker` 인스턴스를 유지 및 관리합니다.

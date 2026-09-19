@@ -31,6 +31,12 @@ interface CircuitBreakerPermit {
     fun release()
 }
 
+/**
+ * 타깃 URL별 연속 실패율 및 동시 실행량을 감시하여 다운스트림 장애를 격리하는 서킷 브레이커.
+ *
+ * CLOSED, OPEN, HALF_OPEN 3대 상태 모델과 세대(generation) 기반 상태 소유권을 제공하여,
+ * 이전 세대에서 지연된 응답이나 취소가 현재 회로의 실패 횟수, 대기 시각, 탐색 허가 상태를 오염시키지 않도록 방어한다.
+ */
 class CircuitBreaker(
     val targetUrl: String,
     private val properties: GatewayCircuitBreakerProperties,
@@ -47,6 +53,8 @@ class CircuitBreaker(
     @Volatile
     var openedAt: Instant = Instant.MIN
         private set
+
+    private var generation: Long = 0L
 
     private val inFlightCalls = AtomicInteger(0)
     private var halfOpenInFlight: Int = 0
@@ -77,7 +85,7 @@ class CircuitBreaker(
                         throw CircuitBreakerConcurrencyException(targetUrl)
                     }
                     inFlightCalls.incrementAndGet()
-                    ClosedPermit()
+                    ClosedPermit(generation)
                 }
                 CircuitBreakerState.OPEN -> {
                     throw CircuitBreakerOpenException(targetUrl, CircuitBreakerState.OPEN)
@@ -86,7 +94,7 @@ class CircuitBreaker(
                     if (halfOpenInFlight < properties.halfOpenPermits) {
                         halfOpenInFlight++
                         inFlightCalls.incrementAndGet()
-                        HalfOpenPermit()
+                        HalfOpenPermit(generation)
                     } else {
                         throw CircuitBreakerOpenException(targetUrl, CircuitBreakerState.HALF_OPEN)
                     }
@@ -101,6 +109,7 @@ class CircuitBreaker(
             if (elapsed >= properties.openDuration) {
                 state = CircuitBreakerState.HALF_OPEN
                 halfOpenInFlight = 0
+                generation++
             }
         }
     }
@@ -122,14 +131,18 @@ class CircuitBreaker(
                 }
         }
 
-    private inner class ClosedPermit : CircuitBreakerPermit {
+    private inner class ClosedPermit(
+        private val permitGeneration: Long
+    ) : CircuitBreakerPermit {
         private val recorded = AtomicBoolean(false)
         private val released = AtomicBoolean(false)
 
         override fun recordSuccess() {
             if (recorded.compareAndSet(false, true)) {
                 synchronized(lock) {
-                    failureStreak = 0
+                    if (state == CircuitBreakerState.CLOSED && generation == permitGeneration) {
+                        failureStreak = 0
+                    }
                 }
             }
         }
@@ -138,10 +151,13 @@ class CircuitBreaker(
             if (recorded.compareAndSet(false, true)) {
                 val now = clock.instant()
                 synchronized(lock) {
-                    failureStreak++
-                    if (failureStreak >= properties.failureThreshold) {
-                        state = CircuitBreakerState.OPEN
-                        openedAt = now
+                    if (state == CircuitBreakerState.CLOSED && generation == permitGeneration) {
+                        failureStreak++
+                        if (failureStreak >= properties.failureThreshold) {
+                            state = CircuitBreakerState.OPEN
+                            openedAt = now
+                            generation++
+                        }
                     }
                 }
             }
@@ -154,16 +170,21 @@ class CircuitBreaker(
         }
     }
 
-    private inner class HalfOpenPermit : CircuitBreakerPermit {
+    private inner class HalfOpenPermit(
+        private val permitGeneration: Long
+    ) : CircuitBreakerPermit {
         private val recorded = AtomicBoolean(false)
         private val released = AtomicBoolean(false)
 
         override fun recordSuccess() {
             if (recorded.compareAndSet(false, true)) {
                 synchronized(lock) {
-                    state = CircuitBreakerState.CLOSED
-                    failureStreak = 0
-                    halfOpenInFlight = 0
+                    if (state == CircuitBreakerState.HALF_OPEN && generation == permitGeneration) {
+                        state = CircuitBreakerState.CLOSED
+                        failureStreak = 0
+                        halfOpenInFlight = 0
+                        generation++
+                    }
                 }
             }
         }
@@ -172,9 +193,12 @@ class CircuitBreaker(
             if (recorded.compareAndSet(false, true)) {
                 val now = clock.instant()
                 synchronized(lock) {
-                    state = CircuitBreakerState.OPEN
-                    openedAt = now
-                    halfOpenInFlight = 0
+                    if (state == CircuitBreakerState.HALF_OPEN && generation == permitGeneration) {
+                        state = CircuitBreakerState.OPEN
+                        openedAt = now
+                        halfOpenInFlight = 0
+                        generation++
+                    }
                 }
             }
         }
@@ -182,7 +206,9 @@ class CircuitBreaker(
         override fun release() {
             if (released.compareAndSet(false, true)) {
                 synchronized(lock) {
-                    halfOpenInFlight = maxOf(0, halfOpenInFlight - 1)
+                    if (state == CircuitBreakerState.HALF_OPEN && generation == permitGeneration) {
+                        halfOpenInFlight = maxOf(0, halfOpenInFlight - 1)
+                    }
                 }
                 inFlightCalls.decrementAndGet()
             }
