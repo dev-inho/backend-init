@@ -30,10 +30,12 @@ dependencies {
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1'
     implementation 'org.mybatis.dynamic-sql:mybatis-dynamic-sql:2.0.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
+    compileOnly project(':customers:acme')
     runtimeOnly 'org.postgresql:postgresql'
     implementation 'tools.jackson.module:jackson-module-kotlin'
 
     testImplementation testFixtures(project(':core:domain'))
+    testImplementation project(':customers:acme')
     testImplementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter-test:4.0.1'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'com.h2database:h2'

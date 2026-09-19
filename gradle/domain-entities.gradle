@@ -25,4 +25,12 @@ ext.configureDomainEntities = { dsl ->
         field('createdAt') { column = 'created_at' }
         field('updatedAt') { column = 'updated_at' }
     }
+
+    dsl.entity('cc.midolog.customers.acme.model.AcmeOrderNote') {
+        table = 'acme_order_note'
+        id = 'id'
+        field('customerId') { column = 'customer_id' }
+        field('note') { column = 'note' }
+        field('createdAt') { column = 'created_at' }
+    }
 }

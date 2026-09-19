@@ -32,6 +32,17 @@ class JpaDslRenderer {
         File(generatedDir, "$mapperClassName.kt").writeText(
             renderMapper(generatedPackage, mapperClassName, entityClassName, spec, properties),
         )
+
+        if (domainClass.contains(".customers.")) {
+            val adapterClassName = "${domainSimpleName}JpaCustomerRepositoryAdapter"
+            val autoConfigClassName = "${domainSimpleName}JpaAutoConfiguration"
+            File(generatedDir, "$adapterClassName.kt").writeText(
+                renderCustomerAdapter(generatedPackage, adapterClassName, domainClass, domainSimpleName, repositoryClassName, mapperClassName, idProperty),
+            )
+            File(generatedDir, "$autoConfigClassName.kt").writeText(
+                renderCustomerAutoConfiguration(generatedPackage, autoConfigClassName, domainClass, domainSimpleName, repositoryClassName, adapterClassName, idProperty),
+            )
+        }
     }
 
     private fun renderEntity(
@@ -233,5 +244,93 @@ $toDomainAssignments
             return relationSpec.toDomain ?: "emptyList()"
         }
         return "entity.${property.name}"
+    }
+
+    private fun renderCustomerAdapter(
+        generatedPackage: String,
+        adapterClassName: String,
+        domainClass: String,
+        domainSimpleName: String,
+        repositoryClassName: String,
+        mapperClassName: String,
+        idProperty: DomainProperty,
+    ): String = """package $generatedPackage
+
+import cc.midolog.customer.port.repository.CustomerRepositoryPort
+import $domainClass
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.springframework.transaction.support.TransactionOperations
+
+class $adapterClassName(
+    private val repository: $repositoryClassName,
+    private val transactionOperations: TransactionOperations,
+) : CustomerRepositoryPort<$domainSimpleName, ${idProperty.type}> {
+
+    override suspend fun findById(id: ${idProperty.type}): $domainSimpleName? = withContext(Dispatchers.IO) {
+        transactionOperations.execute {
+            repository.findById(id)
+                .map($mapperClassName::toDomain)
+                .orElse(null)
+        }
+    }
+
+    override suspend fun save(entity: $domainSimpleName): $domainSimpleName = withContext(Dispatchers.IO) {
+        transactionOperations.execute {
+            val jpaEntity = $mapperClassName.toEntity(entity)
+            val saved = repository.save(jpaEntity)
+            $mapperClassName.toDomain(saved)
+        } ?: error("JPA customer entity save transaction returned no result for id: ${'$'}{entity.${idProperty.name}}")
+    }
+
+    override suspend fun deleteById(id: ${idProperty.type}): Boolean = withContext(Dispatchers.IO) {
+        transactionOperations.execute {
+            if (repository.existsById(id)) {
+                repository.deleteById(id)
+                true
+            } else {
+                false
+            }
+        } ?: false
+    }
+}
+"""
+
+    private fun renderCustomerAutoConfiguration(
+        generatedPackage: String,
+        autoConfigClassName: String,
+        domainClass: String,
+        domainSimpleName: String,
+        repositoryClassName: String,
+        adapterClassName: String,
+        idProperty: DomainProperty,
+    ): String {
+        val instanceValName = domainSimpleName.replaceFirstChar { it.lowercase() }
+        return """package $generatedPackage
+
+import cc.midolog.customer.port.repository.CustomerRepositoryPort
+import $domainClass
+import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.annotation.Bean
+import org.springframework.transaction.support.TransactionOperations
+
+@AutoConfiguration
+@ConditionalOnProperty(prefix = "storage.persistence", name = ["provider"], havingValue = "jpa")
+class $autoConfigClassName {
+
+    @Bean
+    @ConditionalOnClass($domainSimpleName::class)
+    @ConditionalOnMissingBean(name = ["${instanceValName}CustomerRepositoryPort"])
+    fun ${instanceValName}CustomerRepositoryPort(
+        repository: $repositoryClassName,
+        transactionOperations: TransactionOperations,
+    ): CustomerRepositoryPort<$domainSimpleName, ${idProperty.type}> {
+        return $adapterClassName(repository, transactionOperations)
+    }
+}
+"""
     }
 }

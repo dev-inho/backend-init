@@ -1,2 +1,3 @@
 cc.midolog.storage.jpa.autoconfigure.JpaProviderValidationAutoConfiguration
 cc.midolog.storage.jpa.autoconfigure.JpaStorageAutoConfiguration
+cc.midolog.storage.jpa.customer.JpaCustomerAutoConfiguration
