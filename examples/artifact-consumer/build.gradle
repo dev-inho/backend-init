@@ -25,11 +25,27 @@ kotlin {
 repositories {
     if (project.hasProperty('backendInitRepoUrl')) {
         def rawUrl = project.property('backendInitRepoUrl').toString()
-        def repoUri = uri(rawUrl)
+        URI repoUri
+        try {
+            repoUri = new URI(rawUrl)
+        } catch (Exception ignored) {
+            throw new GradleException("Invalid repository URL format for backendInitRepoUrl: malformed URI")
+        }
 
         def scheme = repoUri.scheme?.toLowerCase()
         def host = repoUri.host?.toLowerCase()
         def path = repoUri.path?.replaceAll('/+$', '')
+
+        // 시크릿 유출 차단: userInfo, query, fragment는 테스트 여부와 무관하게 전면 금지
+        if (repoUri.rawUserInfo != null || repoUri.userInfo != null) {
+            throw new GradleException("Security violation: backendInitRepoUrl must not contain user credentials (userInfo)")
+        }
+        if (repoUri.rawQuery != null || repoUri.query != null) {
+            throw new GradleException("Security violation: backendInitRepoUrl must not contain query parameters")
+        }
+        if (repoUri.rawFragment != null || repoUri.fragment != null) {
+            throw new GradleException("Security violation: backendInitRepoUrl must not contain fragment")
+        }
 
         def allowTest = project.hasProperty('allowInsecureTestUrl') &&
             Boolean.parseBoolean(project.property('allowInsecureTestUrl').toString()) &&
@@ -37,25 +53,16 @@ repositories {
 
         if (!allowTest) {
             if (scheme != 'https') {
-                throw new GradleException("Security violation: backendInitRepoUrl must use HTTPS scheme to prevent credential leakage. Got: $rawUrl")
+                throw new GradleException("Security violation: backendInitRepoUrl must use HTTPS scheme")
             }
             if (host != 'maven.pkg.github.com') {
-                throw new GradleException("Security violation: backendInitRepoUrl host must be maven.pkg.github.com to prevent token leakage. Got: $rawUrl")
-            }
-            if (repoUri.rawUserInfo != null || repoUri.userInfo != null) {
-                throw new GradleException("Security violation: backendInitRepoUrl must not contain user credentials (userInfo). Got: $rawUrl")
-            }
-            if (repoUri.rawQuery != null || repoUri.query != null) {
-                throw new GradleException("Security violation: backendInitRepoUrl must not contain query parameters. Got: $rawUrl")
-            }
-            if (repoUri.rawFragment != null || repoUri.fragment != null) {
-                throw new GradleException("Security violation: backendInitRepoUrl must not contain fragment. Got: $rawUrl")
+                throw new GradleException("Security violation: backendInitRepoUrl host must be maven.pkg.github.com")
             }
             if (repoUri.port != -1 && repoUri.port != 443) {
-                throw new GradleException("Security violation: backendInitRepoUrl must use standard HTTPS port (443). Got: $rawUrl")
+                throw new GradleException("Security violation: backendInitRepoUrl must use standard HTTPS port (443)")
             }
             if (path != '/dev-inho/backend-init') {
-                throw new GradleException("Security violation: backendInitRepoUrl repository path must be /dev-inho/backend-init. Got: $rawUrl")
+                throw new GradleException("Security violation: backendInitRepoUrl repository path must be /dev-inho/backend-init")
             }
         }
 

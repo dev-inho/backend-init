@@ -101,4 +101,93 @@ class GithubPackagesUrlValidatorTest {
         assertEquals("127.0.0.1", uri.host)
         assertEquals(9999, uri.port)
     }
+
+    @Test
+    fun `random secret in userInfo is rejected and secret is never leaked in message or cause`() {
+        val randomSecret = "SECRET_" + java.util.UUID.randomUUID().toString()
+        val url = "https://dummyUser:$randomSecret@maven.pkg.github.com/dev-inho/backend-init"
+
+        val ex = assertThrows(SecurityException::class.java) {
+            GithubPackagesUrlValidator.validate(url, configKey = "customRepoUrlKey")
+        }
+
+        val message = ex.message ?: ""
+        val causeMessage = ex.cause?.message ?: ""
+
+        // 비밀이 최상위 메시지와 원인(cause)에 절대 포함되지 않아야 함
+        org.junit.jupiter.api.Assertions.assertFalse(message.contains(randomSecret), "Secret must not appear in exception message")
+        org.junit.jupiter.api.Assertions.assertFalse(causeMessage.contains(randomSecret), "Secret must not appear in cause message")
+        org.junit.jupiter.api.Assertions.assertNull(ex.cause, "Cause should be null to avoid stacktrace leakage")
+
+        // 설정 키와 위반 종류만 기술되어야 함
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("customRepoUrlKey"), "Message must identify the config key")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("userInfo"), "Message must identify userInfo violation")
+    }
+
+    @Test
+    fun `random secret in query parameter is rejected and secret is never leaked in message or cause`() {
+        val randomSecret = "SECRET_QUERY_" + java.util.UUID.randomUUID().toString()
+        val url = "https://maven.pkg.github.com/dev-inho/backend-init?token=$randomSecret"
+
+        val ex = assertThrows(SecurityException::class.java) {
+            GithubPackagesUrlValidator.validate(url, configKey = "customRepoUrlKey")
+        }
+
+        val message = ex.message ?: ""
+        org.junit.jupiter.api.Assertions.assertFalse(message.contains(randomSecret), "Secret must not appear in exception message")
+        org.junit.jupiter.api.Assertions.assertNull(ex.cause, "Cause should be null to avoid stacktrace leakage")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("customRepoUrlKey"), "Message must identify the config key")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("query parameters"), "Message must identify query violation")
+    }
+
+    @Test
+    fun `random secret in fragment is rejected and secret is never leaked in message or cause`() {
+        val randomSecret = "SECRET_FRAG_" + java.util.UUID.randomUUID().toString()
+        val url = "https://maven.pkg.github.com/dev-inho/backend-init#$randomSecret"
+
+        val ex = assertThrows(SecurityException::class.java) {
+            GithubPackagesUrlValidator.validate(url, configKey = "customRepoUrlKey")
+        }
+
+        val message = ex.message ?: ""
+        org.junit.jupiter.api.Assertions.assertFalse(message.contains(randomSecret), "Secret must not appear in exception message")
+        org.junit.jupiter.api.Assertions.assertNull(ex.cause, "Cause should be null to avoid stacktrace leakage")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("customRepoUrlKey"), "Message must identify the config key")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("fragment"), "Message must identify fragment violation")
+    }
+
+    @Test
+    fun `random secret in path is rejected and secret is never leaked in message or cause`() {
+        val randomSecret = "SECRET_PATH_" + java.util.UUID.randomUUID().toString()
+        val url = "https://maven.pkg.github.com/dev-inho/backend-init/$randomSecret"
+
+        val ex = assertThrows(SecurityException::class.java) {
+            GithubPackagesUrlValidator.validate(url, configKey = "customRepoUrlKey")
+        }
+
+        val message = ex.message ?: ""
+        org.junit.jupiter.api.Assertions.assertFalse(message.contains(randomSecret), "Secret must not appear in exception message")
+        org.junit.jupiter.api.Assertions.assertNull(ex.cause, "Cause should be null to avoid stacktrace leakage")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("customRepoUrlKey"), "Message must identify the config key")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("/dev-inho/backend-init"), "Message must identify path violation")
+    }
+
+    @Test
+    fun `malformed url with random secret is rejected and secret is never leaked in message or cause`() {
+        val randomSecret = "SECRET_MALFORMED_" + java.util.UUID.randomUUID().toString()
+        val url = "https://user:$randomSecret@[invalid-host-bracket/dev-inho/backend-init"
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            GithubPackagesUrlValidator.validate(url, configKey = "customRepoUrlKey")
+        }
+
+        val message = ex.message ?: ""
+        val causeMessage = ex.cause?.message ?: ""
+
+        org.junit.jupiter.api.Assertions.assertFalse(message.contains(randomSecret), "Secret must not appear in exception message")
+        org.junit.jupiter.api.Assertions.assertFalse(causeMessage.contains(randomSecret), "Secret must not appear in cause message")
+        org.junit.jupiter.api.Assertions.assertNull(ex.cause, "Cause should be null to avoid URISyntaxException stacktrace leakage")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("customRepoUrlKey"), "Message must identify the config key")
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("malformed URI"), "Message must identify malformed URI violation")
+    }
 }

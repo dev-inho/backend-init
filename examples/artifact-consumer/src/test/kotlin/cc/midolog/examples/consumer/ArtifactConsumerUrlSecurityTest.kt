@@ -81,4 +81,67 @@ class ArtifactConsumerUrlSecurityTest {
             "Consumer build must fail when different repository path is provided. Actual output:\n$output"
         )
     }
+
+    @Test
+    fun `random secret in userInfo is never leaked in consumer gradle output`() {
+        val randomSecret = "CONSUMER_SEC_" + java.util.UUID.randomUUID().toString()
+        val (exitCode, output) = runConsumerGradle(
+            "help",
+            "--stacktrace",
+            "-PbackendInitRepoUrl=https://dummyUser:$randomSecret@maven.pkg.github.com/dev-inho/backend-init",
+            "-Pgpr.key=dummy-token"
+        )
+
+        assertTrue(exitCode != 0, "Build must fail on userInfo")
+        org.junit.jupiter.api.Assertions.assertFalse(
+            output.contains(randomSecret),
+            "Random secret must not appear anywhere in consumer gradle output or stacktrace"
+        )
+        assertTrue(
+            output.contains("Security violation: backendInitRepoUrl must not contain user credentials (userInfo)"),
+            "Output must state the violation and configuration key without leaking URL"
+        )
+    }
+
+    @Test
+    fun `random secret in query parameter is never leaked in consumer gradle output`() {
+        val randomSecret = "CONSUMER_QUERY_SEC_" + java.util.UUID.randomUUID().toString()
+        val (exitCode, output) = runConsumerGradle(
+            "help",
+            "--stacktrace",
+            "-PbackendInitRepoUrl=https://maven.pkg.github.com/dev-inho/backend-init?token=$randomSecret",
+            "-Pgpr.key=dummy-token"
+        )
+
+        assertTrue(exitCode != 0, "Build must fail on query parameters")
+        org.junit.jupiter.api.Assertions.assertFalse(
+            output.contains(randomSecret),
+            "Random secret must not appear anywhere in consumer gradle output or stacktrace"
+        )
+        assertTrue(
+            output.contains("Security violation: backendInitRepoUrl must not contain query parameters"),
+            "Output must state the violation and configuration key without leaking URL"
+        )
+    }
+
+    @Test
+    fun `random secret in malformed url is never leaked in consumer gradle output`() {
+        val randomSecret = "CONSUMER_MALFORMED_SEC_" + java.util.UUID.randomUUID().toString()
+        val (exitCode, output) = runConsumerGradle(
+            "help",
+            "--stacktrace",
+            "-PbackendInitRepoUrl=https://dummyUser:$randomSecret@[malformed-bracket/dev-inho/backend-init",
+            "-Pgpr.key=dummy-token"
+        )
+
+        assertTrue(exitCode != 0, "Build must fail on malformed URI")
+        org.junit.jupiter.api.Assertions.assertFalse(
+            output.contains(randomSecret),
+            "Random secret must not appear anywhere in consumer gradle output or stacktrace for malformed URI"
+        )
+        assertTrue(
+            output.contains("Invalid repository URL format for backendInitRepoUrl: malformed URI"),
+            "Output must state the malformed format and configuration key without leaking URL"
+        )
+    }
 }

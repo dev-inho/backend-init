@@ -59,7 +59,7 @@ GitHub Packages는 소유자(`dev-inho`)와 저장소(`backend-init`)에 바인�
   - 임의의 외부 공격자 서버로 인증 토큰(GITHUB_TOKEN)이 유출되는 것을 차단하기 위해, URL을 엄격히 검증합니다.
   - **허용 기준**: HTTPS 스킴 필수, 호스트는 반드시 `maven.pkg.github.com`, 경로는 반드시 `/dev-inho/backend-init`.
   - **차단 기준**: HTTP 평문 스킴, 외부 호스트(`attacker.com` 등), userInfo(`user:pass@`), 쿼리 파라미터(`?token=`), 프래그먼트(`#frag`), 비표준 포트, 타 저장소 경로.
-  - 위반 시 `SecurityException`을 즉각 발생시켜 빌드를 차단하고 자격 증명이 네트워크로 전송되지 않도록 보호합니다.
+  - 위반 시 `SecurityException`을 즉각 발생시켜 빌드를 차단하고 자격 증명이 네트워크로 전송되지 않도록 보호합니다. 예외 메시지 및 원인(cause)에 원본 URL이나 시크릿이 남지 않도록 설정 키와 위반 종류만 명시합니다.
 - **사전 존재 여부 검사 (`preflightCheckRemoteArtifacts`)**:
   - 업로드를 시작하기 전에 모든 publishing 모듈(15개) 및 BOM의 해당 버전 POM 파일 원격 존재 여부를 선제적으로 확인합니다.
   - 이미 존재하는 경우(`200 OK`) 어떠한 모듈도 업로드하지 않고 즉시 빌드를 중단하여 부분 배포 실패 및 덮어쓰기를 방지합니다.
@@ -157,7 +157,7 @@ GitHub Actions 환경에서는 워크플로우 레벨에서 `permissions: conten
 ### 4.2 기존 릴리스 비덮어쓰기 (Non-overwriting Release Policy)
 
 - **릴리스 버전의 불변성**: 릴리스 버전(non-SNAPSHOT)은 한 번 배포되면 절대 수정되거나 덮어쓰여져서는 안 됩니다. GitHub Packages 역시 동일한 릴리스 버전의 덮어쓰기를 허용하지 않고 오류를 반환합니다.
-- **릴리스 가드**: 릴리스 버전을 원격에 게시할 때는 새로운 고유 버전을 지정해야 하며, 실수로 기존 릴리스를 덮어쓰려 하는 작업을 방지합니다. 명시적인 강제 재배포 플래그(`-PallowReleaseOverwrite=true`)가 없는 한 릴리스의 불변성이 엄격히 보장됩니다.
+- **릴리스 가드**: 릴리스 버전을 원격에 게시할 때는 새로운 고유 버전을 지정해야 하며, 배포 시작 전 `preflightCheckRemoteArtifacts`를 통해 모든 대상 아티팩트의 원격 존재 여부를 선제 검증하여 덮어쓰기를 원천 차단합니다. 릴리스 비덮어쓰기 원칙은 어떠한 옵션으로도 우회할 수 없으며 불변성이 엄격히 보장됩니다.
 
 ---
 

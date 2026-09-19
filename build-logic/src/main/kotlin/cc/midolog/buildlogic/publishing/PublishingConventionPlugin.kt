@@ -88,10 +88,8 @@ class PublishingConventionPlugin : Plugin<Project> {
                         )
                     }
 
-                    val allowOverwrite = project.findProperty("allowReleaseOverwrite")?.toString()?.toBoolean() ?: false
-                    if (allowOverwrite) {
-                        project.logger.warn("Release overwrite guard is bypassed via allowReleaseOverwrite=true")
-                        return@doFirst
+                    if (project.hasProperty("allowReleaseOverwrite")) {
+                        project.logger.warn("Option 'allowReleaseOverwrite' is not supported and has no effect; release overwrite prevention cannot be bypassed.")
                     }
 
                     // cc.midolog.publishing 플러그인이 적용된 모든 하위 모듈 수집

@@ -17,67 +17,64 @@ object GithubPackagesUrlValidator {
     /**
      * 지정된 URL 문자열이 안전한 GitHub Packages Maven 저장소인지 엄격하게 검증한다.
      * 안전하지 않은 스킴, 외부 호스트, userInfo, query, fragment, 비표준 포트, 타 저장소 경로가 감지되면 예외를 발생시킨다.
+     * 예외 메시지와 원인(cause)에 원본 URL 및 자격 증명이 절대 노출되지 않도록 설정 키와 위반 종류만 명시한다.
      */
-    fun validate(url: String, allowInsecureTestUrl: Boolean = false): URI {
+    fun validate(
+        url: String,
+        allowInsecureTestUrl: Boolean = false,
+        configKey: String = "backendInitGithubRepoUrl",
+    ): URI {
         val uri = try {
-            URI.create(url)
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Invalid repository URL format: $url", e)
+            URI(url)
+        } catch (_: Exception) {
+            // 원본 URL 및 파싱 예외의 내부 메시지(비밀 포함 가능)를 숨기기 위해 cause 없이 설정 키와 위반 종류만 명시
+            throw IllegalArgumentException("Invalid repository URL format for '$configKey': malformed URI")
+        }
+
+        // 1. UserInfo 차단: user:pass@host 형태 금지 (시크릿 유출 방지, 테스트 여부와 무관하게 차단)
+        if (uri.rawUserInfo != null || uri.userInfo != null) {
+            throw SecurityException("Security violation for '$configKey': repository URL must not contain user credentials (userInfo)")
+        }
+
+        // 2. Query 문자열 차단: ?param=val 형태 금지 (시크릿 유출 방지, 테스트 여부와 무관하게 차단)
+        if (uri.rawQuery != null || uri.query != null) {
+            throw SecurityException("Security violation for '$configKey': repository URL must not contain query parameters")
+        }
+
+        // 3. Fragment 차단: #hash 형태 금지 (시크릿 유출 방지, 테스트 여부와 무관하게 차단)
+        if (uri.rawFragment != null || uri.fragment != null) {
+            throw SecurityException("Security violation for '$configKey': repository URL must not contain fragment")
         }
 
         // 테스트 목적의 로컬 루프백 모의 서버 허용 분기 (명시적 테스트 플래그 활성화 시에만 적용)
         if (allowInsecureTestUrl) {
             val testHost = uri.host?.lowercase() ?: ""
             if (testHost == "127.0.0.1" || testHost == "localhost") {
-                if (uri.rawUserInfo != null || uri.userInfo != null) {
-                    throw SecurityException("Repository URL must not contain userInfo: $url")
-                }
-                if (uri.rawQuery != null || uri.query != null) {
-                    throw SecurityException("Repository URL must not contain query parameters: $url")
-                }
-                if (uri.rawFragment != null || uri.fragment != null) {
-                    throw SecurityException("Repository URL must not contain fragment: $url")
-                }
                 return uri
             }
         }
 
-        // 1. 스킴 검증: 반드시 HTTPS만 허용
+        // 4. 스킴 검증: 반드시 HTTPS만 허용
         val scheme = uri.scheme?.lowercase()
         if (scheme != "https") {
             throw SecurityException(
-                "GitHub Packages URL must use HTTPS scheme to prevent credential leakage. Got scheme: '$scheme' in URL: $url"
+                "Security violation for '$configKey': repository URL must use HTTPS scheme"
             )
         }
 
-        // 2. 호스트 검증: 반드시 maven.pkg.github.com만 허용
+        // 5. 호스트 검증: 반드시 maven.pkg.github.com만 허용
         val host = uri.host?.lowercase()
         if (host != ALLOWED_HOST) {
             throw SecurityException(
-                "GitHub Packages URL host must be '$ALLOWED_HOST' to prevent arbitrary token forwarding. Got host: '$host' in URL: $url"
+                "Security violation for '$configKey': repository URL host must be '$ALLOWED_HOST'"
             )
-        }
-
-        // 3. UserInfo 차단: user:pass@host 형태 금지
-        if (uri.rawUserInfo != null || uri.userInfo != null) {
-            throw SecurityException("GitHub Packages URL must not contain user credentials (userInfo): $url")
-        }
-
-        // 4. Query 문자열 차단: ?param=val 형태 금지
-        if (uri.rawQuery != null || uri.query != null) {
-            throw SecurityException("GitHub Packages URL must not contain query parameters: $url")
-        }
-
-        // 5. Fragment 차단: #hash 형태 금지
-        if (uri.rawFragment != null || uri.fragment != null) {
-            throw SecurityException("GitHub Packages URL must not contain fragment: $url")
         }
 
         // 6. 포트 검증: 기본 포트(443) 또는 미지정(-1)만 허용
         val port = uri.port
         if (port != -1 && port != 443) {
             throw SecurityException(
-                "GitHub Packages URL must use standard HTTPS port (443 or default). Got port: $port in URL: $url"
+                "Security violation for '$configKey': repository URL must use standard HTTPS port (443 or default)"
             )
         }
 
@@ -85,7 +82,7 @@ object GithubPackagesUrlValidator {
         val path = uri.path?.trimEnd('/') ?: ""
         if (path != ALLOWED_PATH_PREFIX) {
             throw SecurityException(
-                "GitHub Packages repository path must be '$ALLOWED_PATH_PREFIX' to prevent publishing to untrusted repositories. Got path: '$path' in URL: $url"
+                "Security violation for '$configKey': repository path must be '$ALLOWED_PATH_PREFIX'"
             )
         }
 

@@ -512,4 +512,172 @@ class PublishingConventionPluginTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun `preflight existence check cannot be bypassed even if allowReleaseOverwrite is set to true`() {
+        val rootDir = Files.createTempDirectory("preflight-overwrite-guard-test")
+
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(0), 0)
+        val port = server.address.port
+        server.createContext("/") { exchange ->
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        server.start()
+
+        try {
+            rootDir.resolve("settings.gradle.kts").writeText(
+                """
+                rootProject.name = "fixture-root"
+                include("storage:jpa")
+                """.trimIndent()
+            )
+            rootDir.resolve("build.gradle.kts").writeText(
+                """
+                allprojects {
+                    group = "cc.midolog"
+                    version = "1.0.0"
+                }
+                """.trimIndent()
+            )
+            val jpaDir = rootDir.resolve("storage/jpa").createDirectories()
+            jpaDir.resolve("build.gradle.kts").writeText(
+                """
+                plugins {
+                    `java-library`
+                    id("cc.midolog.publishing")
+                }
+                """.trimIndent()
+            )
+
+            // allowReleaseOverwrite=true를 주더라도 사전검사가 우회되지 않고 충돌 실패해야 함
+            val result = GradleRunner.create()
+                .withProjectDir(rootDir.toFile())
+                .withPluginClasspath()
+                .withArguments(
+                    "publishAllToGithubPackages",
+                    "-PbackendInitGithubRepoUrl=http://127.0.0.1:$port/dev-inho/backend-init",
+                    "-Pcc.midolog.allowInsecureTestUrl=true",
+                    "-PallowReleaseOverwrite=true",
+                    "-Pgpr.user=test-user",
+                    "-Pgpr.key=dummy-token"
+                )
+                .buildAndFail()
+
+            assertTrue(
+                result.output.contains("Remote release artifact already exists"),
+                "Preflight check must fail even when allowReleaseOverwrite=true is provided. Actual output:\n${result.output}"
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `secret embedded in repo url is never leaked in gradle output or stacktrace`() {
+        val rootDir = Files.createTempDirectory("secret-leak-test")
+
+        rootDir.resolve("settings.gradle.kts").writeText(
+            """
+            rootProject.name = "fixture-root"
+            include("storage:jpa")
+            """.trimIndent()
+        )
+        rootDir.resolve("build.gradle.kts").writeText(
+            """
+            allprojects {
+                group = "cc.midolog"
+                version = "1.0.0"
+            }
+            """.trimIndent()
+        )
+        val jpaDir = rootDir.resolve("storage/jpa").createDirectories()
+        jpaDir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                `java-library`
+                id("cc.midolog.publishing")
+            }
+            """.trimIndent()
+        )
+
+        val randomSecret = "SEC_" + java.util.UUID.randomUUID().toString()
+
+        val result = GradleRunner.create()
+            .withProjectDir(rootDir.toFile())
+            .withPluginClasspath()
+            .withArguments(
+                "tasks",
+                "--stacktrace",
+                "-PbackendInitGithubRepoUrl=https://dummyUser:$randomSecret@maven.pkg.github.com/dev-inho/backend-init",
+                "-Pgpr.key=dummy-token"
+            )
+            .buildAndFail()
+
+        // Gradle 출력 및 --stacktrace에 비밀이 절대 포함되지 않아야 함
+        org.junit.jupiter.api.Assertions.assertFalse(
+            result.output.contains(randomSecret),
+            "Random secret must not appear anywhere in gradle output or stacktrace"
+        )
+        assertTrue(
+            result.output.contains("Security violation for 'backendInitGithubRepoUrl'"),
+            "Error output should identify the configuration key"
+        )
+        assertTrue(
+            result.output.contains("userInfo"),
+            "Error output should identify userInfo violation"
+        )
+    }
+
+    @Test
+    fun `malformed repo url with secret is never leaked in gradle output or stacktrace`() {
+        val rootDir = Files.createTempDirectory("malformed-secret-leak-test")
+
+        rootDir.resolve("settings.gradle.kts").writeText(
+            """
+            rootProject.name = "fixture-root"
+            include("storage:jpa")
+            """.trimIndent()
+        )
+        rootDir.resolve("build.gradle.kts").writeText(
+            """
+            allprojects {
+                group = "cc.midolog"
+                version = "1.0.0"
+            }
+            """.trimIndent()
+        )
+        val jpaDir = rootDir.resolve("storage/jpa").createDirectories()
+        jpaDir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                `java-library`
+                id("cc.midolog.publishing")
+            }
+            """.trimIndent()
+        )
+
+        val randomSecret = "MALFORMED_SEC_" + java.util.UUID.randomUUID().toString()
+
+        val result = GradleRunner.create()
+            .withProjectDir(rootDir.toFile())
+            .withPluginClasspath()
+            .withArguments(
+                "tasks",
+                "--stacktrace",
+                "-PbackendInitGithubRepoUrl=https://dummyUser:$randomSecret@[malformed-bracket/dev-inho/backend-init",
+                "-Pgpr.key=dummy-token"
+            )
+            .buildAndFail()
+
+        // Gradle 출력 및 --stacktrace에 비밀이 절대 포함되지 않아야 함
+        org.junit.jupiter.api.Assertions.assertFalse(
+            result.output.contains(randomSecret),
+            "Random secret must not appear anywhere in gradle output or stacktrace for malformed URI"
+        )
+        assertTrue(
+            result.output.contains("Invalid repository URL format for 'backendInitGithubRepoUrl'"),
+            "Error output should identify the configuration key for malformed URI"
+        )
+    }
 }
