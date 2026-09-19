@@ -43,6 +43,18 @@ class GatewayProfileConfigTest {
         assertTrue(baseConfig.contains("capacity: 200"))
     }
 
+    @Test
+    fun `gateway logback config provides console appender for default and local profiles`() {
+        val logbackConfig = resourceText("logback-spring.xml")
+
+        assertTrue(
+            logbackConfig.contains("""<springProfile name="default | local">"""),
+            "logback-spring.xml must activate CONSOLE appender for default profile when no profile is set"
+        )
+        assertTrue(logbackConfig.contains("""<appender name="CONSOLE""""))
+        assertTrue(logbackConfig.contains("""<root level="INFO">"""))
+    }
+
     private fun resourceText(path: String): String =
         ClassPathResource(path).inputStream.bufferedReader().use { it.readText() }
 }
