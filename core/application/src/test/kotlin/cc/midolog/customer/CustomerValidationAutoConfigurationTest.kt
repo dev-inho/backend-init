@@ -3,10 +3,13 @@ package cc.midolog.customer
 import cc.midolog.customer.autoconfigure.CustomerAutoConfiguration
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.support.BeanDefinitionBuilder
+import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.mock.env.MockEnvironment
 
 class CustomerValidationAutoConfigurationTest {
 
@@ -16,12 +19,14 @@ class CustomerValidationAutoConfigurationTest {
     @Configuration
     class AcmeDescriptorConfig {
         @Bean
+        @CustomerDescriptorMetadata(name = "acme")
         fun customerDescriptor(): CustomerDescriptor = CustomerDescriptor(name = "acme")
     }
 
     @Configuration
     class BetaDescriptorConfig {
         @Bean
+        @CustomerDescriptorMetadata(name = "beta")
         fun customerDescriptor(): CustomerDescriptor = CustomerDescriptor(name = "beta")
     }
 
@@ -101,5 +106,26 @@ class CustomerValidationAutoConfigurationTest {
                 assertThat(causes.any { it.message?.contains("app.customer") == true && it.message?.contains("acme") == true })
                     .isTrue()
             }
+    }
+
+    @Test
+    fun `BFPP 검증 시 CustomerDescriptor 인스턴스를 조기 획득하지 않는다`() {
+        val beanFactory = DefaultListableBeanFactory()
+        val environment = MockEnvironment()
+        environment.setProperty("app.customer", "acme")
+
+        val beanDefinition = BeanDefinitionBuilder
+            .rootBeanDefinition(CustomerDescriptor::class.java)
+            .addConstructorArgValue("acme")
+            .beanDefinition
+        beanDefinition.setAttribute("customerName", "acme")
+        beanFactory.registerBeanDefinition("customerDescriptor", beanDefinition)
+
+        val bfpp = CustomerAutoConfiguration.customerValidationBeanFactoryPostProcessor(environment)
+        bfpp.postProcessBeanFactory(beanFactory)
+
+        assertThat(beanFactory.containsSingleton("customerDescriptor"))
+            .`as`("BFPP 실행 후에도 CustomerDescriptor 싱글톤 인스턴스가 생성되지 않아야 한다")
+            .isFalse()
     }
 }

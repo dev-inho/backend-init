@@ -1,1 +1,2 @@
 cc.midolog.customer.autoconfigure.CustomerAutoConfiguration
+cc.midolog.infra.cache.SampleCacheAutoConfiguration

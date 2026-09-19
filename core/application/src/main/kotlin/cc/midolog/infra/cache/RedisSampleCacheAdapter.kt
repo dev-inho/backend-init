@@ -4,7 +4,6 @@ import cc.midolog.sample.model.Sample
 import cc.midolog.sample.port.cache.SampleCachePort
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate
-import org.springframework.stereotype.Component
 import java.time.Duration
 
 /**
@@ -12,9 +11,9 @@ import java.time.Duration
  *
  * 특정 외부 인프라스트럭처(Redis)에 의존하는 어댑터 클래스이므로 S3 아키텍처 규칙에 따라 `core/application` 내의 `infra/cache` 패키지에 위치한다.
  * 캐시 엔트리는 10분([Duration.ofMinutes(10)])의 고정 TTL을 가지며, 저장 데이터는 단순 파이프 문자열(`id|name`)로 결합되어 직렬화된다.
- * 고객 전용 모듈에서 자체 [SampleCachePort] 빈을 등록할 경우 본 어댑터가 물러나도록 [@ConditionalOnMissingBean]을 적용한다.
+ * 컴포넌트 스캔 대상이 아니며 [SampleCacheAutoConfiguration]에 의해 등록된다.
+ * 고객 전용 모듈에서 자체 [SampleCachePort] 빈을 등록할 경우 본 어댑터가 물러나도록 조건부 구성된다.
  */
-@Component
 class RedisSampleCacheAdapter(
     private val redis: ReactiveStringRedisTemplate,
 ) : SampleCachePort {
