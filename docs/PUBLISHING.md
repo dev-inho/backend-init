@@ -8,7 +8,7 @@
 
 모든 퍼블리시 대상 아티팩트는 그룹 `cc.midolog`를 공통으로 사용하며, `PublishingConventionPlugin`을 통해 kebab-case 명명 규칙(`backend-init-<module-path>`)이 일관되게 적용됩니다.
 
-### 1.1 대상 아티팩트 목록 (현재 12개)
+### 1.1 대상 아티팩트 목록 (현재 15개)
 
 | No | 아티팩트 ID (artifactId) | 소스 모듈 경로 | 설명 |
 |:---|:---|:---|:---|
@@ -17,26 +17,30 @@
 | 3 | `backend-init-gateway-autoconfigure` | `gateway:autoconfigure` | 게이트웨이 라우팅 및 필터 Spring Boot 자동 설정 모듈 |
 | 4 | `backend-init-gateway-core` | `gateway:core` | 게이트웨이 라우팅, 프록시 및 필터 핵심 컴포넌트 |
 | 5 | `backend-init-gateway-starter` | `gateway:starter` | 게이트웨이 원스톱 탑재용 스타터 라이브러리 |
-| 6 | `backend-init-storage-file-local` | `storage:file-local` | 로컬 파일 시스템 저장소 어댑터 및 자동 설정 |
-| 7 | `backend-init-storage-jpa` | `storage:jpa` | Spring Data JPA 영속성 어댑터 및 자동 설정 |
-| 8 | `backend-init-storage-mybatis` | `storage:mybatis` | MyBatis 영속성 어댑터 및 자동 설정 |
-| 9 | `backend-init-support-jwt` | `support:jwt` | JJWT 라이브러리 격리 및 JWT 토큰 코덱 유틸 |
-| 10 | `backend-init-support-logging` | `support:logging` | Logback 및 Reactor MDC 로깅 지원 모듈 |
-| 11 | `backend-init-support-util` | `support:util` | 순수 Kotlin 공통 유틸리티 |
-| 12 | `backend-init-support-web` | `support:web` | WebFlux 필터, 공통 응답 봉투 및 전역 예외 처리 |
+| 6 | `backend-init-storage-file-autoconfigure` | `storage:file-autoconfigure` | 파일 스토리지 공통 프로퍼티 및 Fail-fast 검증 자동 설정 |
+| 7 | `backend-init-storage-file-local` | `storage:file-local` | 로컬 파일 시스템 저장소 어댑터 및 자동 설정 |
+| 8 | `backend-init-storage-file-s3` | `storage:file-s3` | AWS SDK v2 Netty Async 기반 S3 스토리지 및 서명 어댑터 |
+| 9 | `backend-init-storage-file-starter-local` | `storage:file-starter-local` | 로컬 파일 스토리지 원스톱 탑재 스타터 |
+| 10 | `backend-init-storage-file-starter-s3` | `storage:file-starter-s3` | S3 파일 스토리지 원스톱 탑재 스타터 |
+| 11 | `backend-init-storage-jpa` | `storage:jpa` | Spring Data JPA 영속성 어댑터 및 자동 설정 |
+| 12 | `backend-init-storage-mybatis` | `storage:mybatis` | MyBatis 영속성 어댑터 및 자동 설정 |
+| 13 | `backend-init-support-jwt` | `support:jwt` | JJWT 라이브러리 격리 및 JWT 토큰 코덱 유틸 |
+| 14 | `backend-init-support-logging` | `support:logging` | Logback 및 Reactor MDC 로깅 지원 모듈 |
+| 15 | `backend-init-support-util` | `support:util` | 순수 Kotlin 공통 유틸리티 |
+| 16 | `backend-init-support-web` | `support:web` | WebFlux 필터, 공통 응답 봉투 및 전역 예외 처리 |
 
 > **비퍼블리시 모듈**: `core:application`, `core:batch`, `gateway:app`, `client:storage-file`, `examples:*` 모듈은 배포 대상에서 제외됩니다.
 
 ### 1.2 동적 BOM 제약 구성 및 검증 원리
 
-- **BOM 제약 동적 추가**: `platform/bom/build.gradle`은 하드코딩된 목록 대신, 루트 프로젝트의 서브프로젝트 중 `cc.midolog.publishing` 플러그인이 적용된 프로젝트를 자동으로 탐색하여 `dependencies.constraints.add('api', sp)`로 의존성 제약에 등록합니다. 따라서 향후 S3 저장소 모듈(`storage:file-s3` 등)이 추가되더라도 BOM 코드를 수정할 필요 없이 자동으로 포함됩니다.
-- **`verifyBom` 동적 검증**: `build.gradle`의 `verifyBom` 태스크 역시 하드코딩 목록을 배제하고, 현재 빌드에서 `cc.midolog.publishing` 플러그인이 적용된 모듈의 `mavenJava` publication artifactId 목록을 동적으로 수집하여 실제 생성된 BOM pom.xml의 `dependencyManagement` 항목과 1:1 대조합니다.
+- **BOM 제약 동적 추가**: `platform/bom/build.gradle`은 하드코딩된 목록 대신, 루트 프로젝트의 서브프로젝트 중 `cc.midolog.publishing` 플러그인이 적용된 프로젝트를 자동으로 탐색하여 `dependencies.constraints.add('api', sp)`로 의존성 제약에 등록합니다. 따라서 S3 저장소 모듈(`storage:file-s3`, `storage:file-autoconfigure` 등)이 추가되더라도 BOM 코드를 수정할 필요 없이 자동으로 포함됩니다.
+- **`verifyBom` 동적 검증**: `build.gradle`의 `verifyBom` 태스크 역시 하드코딩 목록을 배제하고, 현재 빌드에서 `cc.midolog.publishing` 플러그인이 적용된 모듈의 `mavenJava` publication artifactId 목록을 동적으로 수집하여 실제 생성된 BOM pom.xml의 `dependencyManagement` 항목과 1:1 대조합니다 (현재 15개 타겟 모듈 일치 검증).
 
 ---
 
-## 2. 저장소 (Maven Repositories)
+## 2. 저장소 (Maven Repositories) 및 보안 규약
 
-`PublishingConventionPlugin`은 로컬 파일 시스템 저장소와 원격 GitHub Packages Maven 레지스트리를 모두 지원합니다.
+`PublishingConventionPlugin`은 로컬 파일 시스템 저장소와 원격 GitHub Packages Maven 레지스트리를 모두 지원하며, 자격 증명 유출을 원천 방지하기 위해 엄격한 URL 보안 검증을 수행합니다.
 
 ### 2.1 로컬 저장소 (Local Maven Repository)
 
@@ -46,12 +50,21 @@
 - **저장소 경로 오버라이드**: `-PbackendInitRepo=/absolute/path/to/repo` 프로퍼티를 통해 유연하게 변경할 수 있습니다.
 - **배포 태스크**: `./gradlew publishAllToLocalRepo`
 
-### 2.2 원격 저장소 (GitHub Packages Maven Registry)
+### 2.2 원격 저장소 (GitHub Packages Maven Registry) 및 엄격한 URL 검증
 
 GitHub Packages는 소유자(`dev-inho`)와 저장소(`backend-init`)에 바인딩된 Maven 패키지 레지스트리입니다.
 
-- **저장소 URL**: `https://maven.pkg.github.com/dev-inho/backend-init`
-- **URL 오버라이드**: `-PbackendInitGithubRepoUrl=https://...` 프로퍼티 또는 `BACKEND_INIT_GITHUB_REPO_URL` 환경 변수를 통해 커스텀 레지스트리로 변경할 수 있습니다.
+- **공식 저장소 URL**: `https://maven.pkg.github.com/dev-inho/backend-init`
+- **엄격한 URL 보안 검증 (`GithubPackagesUrlValidator`)**:
+  - 임의의 외부 공격자 서버로 인증 토큰(GITHUB_TOKEN)이 유출되는 것을 차단하기 위해, URL을 엄격히 검증합니다.
+  - **허용 기준**: HTTPS 스킴 필수, 호스트는 반드시 `maven.pkg.github.com`, 경로는 반드시 `/dev-inho/backend-init`.
+  - **차단 기준**: HTTP 평문 스킴, 외부 호스트(`attacker.com` 등), userInfo(`user:pass@`), 쿼리 파라미터(`?token=`), 프래그먼트(`#frag`), 비표준 포트, 타 저장소 경로.
+  - 위반 시 `SecurityException`을 즉각 발생시켜 빌드를 차단하고 자격 증명이 네트워크로 전송되지 않도록 보호합니다.
+- **사전 존재 여부 검사 (`preflightCheckRemoteArtifacts`)**:
+  - 업로드를 시작하기 전에 모든 publishing 모듈(15개) 및 BOM의 해당 버전 POM 파일 원격 존재 여부를 선제적으로 확인합니다.
+  - 이미 존재하는 경우(`200 OK`) 어떠한 모듈도 업로드하지 않고 즉시 빌드를 중단하여 부분 배포 실패 및 덮어쓰기를 방지합니다.
+  - `401`/`403`/네트워크/서버 오류를 `404`(미존재)로 오인하지 않고 안전하게 즉시 실패 처리합니다.
+  - HTTP 리다이렉트 자동 추적을 차단(`Redirect.NEVER`)하여 리다이렉트를 통한 토큰 유출을 원천 방지합니다.
 - **배포 태스크**: `./gradlew publishAllToGithubPackages`
 
 ---

@@ -301,9 +301,8 @@ class PublishingConventionPluginTest {
     }
 
     @Test
-    fun `remote publishing configures github repository and publishes when credentials and target repo provided`() {
-        val rootDir = Files.createTempDirectory("remote-success-test")
-        val mockRemoteRepoDir = rootDir.resolve("mock-remote-repo").createDirectories()
+    fun `arbitrary insecure url override fails fast with security exception preventing credential leak`() {
+        val rootDir = Files.createTempDirectory("insecure-url-test")
 
         rootDir.resolve("settings.gradle.kts").writeText(
             """
@@ -328,22 +327,189 @@ class PublishingConventionPluginTest {
             }
             """.trimIndent()
         )
-        val jpaSrc = jpaDir.resolve("src/main/java/sample").createDirectories()
-        jpaSrc.resolve("JpaSample.java").writeText("package sample; public class JpaSample {}")
 
         val result = GradleRunner.create()
             .withProjectDir(rootDir.toFile())
             .withPluginClasspath()
             .withArguments(
-                "publishAllToGithubPackages",
-                "-PbackendInitGithubRepoUrl=${mockRemoteRepoDir.toUri()}",
-                "-Pgpr.user=test-user",
-                "-Pgpr.key=dummy-token"
+                "tasks",
+                "-PbackendInitGithubRepoUrl=http://attacker.com/dev-inho/backend-init",
+                "-Pgpr.key=secret-token"
             )
-            .build()
+            .buildAndFail()
 
-        assertEquals(TaskOutcome.SUCCESS, result.task(":publishAllToGithubPackages")?.outcome)
-        val jpaGroupDir = mockRemoteRepoDir.resolve("cc/midolog/backend-init-storage-jpa/0.0.1-SNAPSHOT")
-        assertTrue(jpaGroupDir.exists(), "Remote repo directory must contain published artifact")
+        assertTrue(
+            result.output.contains("SecurityException") || result.output.contains("HTTPS scheme"),
+            "Build must fail immediately on insecure HTTP scheme. Actual output:\n${result.output}"
+        )
+    }
+
+    @Test
+    fun `arbitrary external host override fails fast with security exception`() {
+        val rootDir = Files.createTempDirectory("external-host-test")
+
+        rootDir.resolve("settings.gradle.kts").writeText(
+            """
+            rootProject.name = "fixture-root"
+            include("storage:jpa")
+            """.trimIndent()
+        )
+        rootDir.resolve("build.gradle.kts").writeText(
+            """
+            allprojects {
+                group = "cc.midolog"
+                version = "0.0.1-SNAPSHOT"
+            }
+            """.trimIndent()
+        )
+        val jpaDir = rootDir.resolve("storage/jpa").createDirectories()
+        jpaDir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                `java-library`
+                id("cc.midolog.publishing")
+            }
+            """.trimIndent()
+        )
+
+        val result = GradleRunner.create()
+            .withProjectDir(rootDir.toFile())
+            .withPluginClasspath()
+            .withArguments(
+                "tasks",
+                "-PbackendInitGithubRepoUrl=https://evil.com/dev-inho/backend-init",
+                "-Pgpr.key=secret-token"
+            )
+            .buildAndFail()
+
+        assertTrue(
+            result.output.contains("SecurityException") || result.output.contains("maven.pkg.github.com"),
+            "Build must fail immediately on non-github host. Actual output:\n${result.output}"
+        )
+    }
+
+    @Test
+    fun `preflight existence check blocks publishing when remote artifact already exists`() {
+        val rootDir = Files.createTempDirectory("preflight-conflict-test")
+
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(0), 0)
+        val port = server.address.port
+        server.createContext("/") { exchange ->
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        server.start()
+
+        try {
+            rootDir.resolve("settings.gradle.kts").writeText(
+                """
+                rootProject.name = "fixture-root"
+                include("storage:jpa")
+                """.trimIndent()
+            )
+            rootDir.resolve("build.gradle.kts").writeText(
+                """
+                allprojects {
+                    group = "cc.midolog"
+                    version = "1.0.0"
+                }
+                """.trimIndent()
+            )
+            val jpaDir = rootDir.resolve("storage/jpa").createDirectories()
+            jpaDir.resolve("build.gradle.kts").writeText(
+                """
+                plugins {
+                    `java-library`
+                    id("cc.midolog.publishing")
+                }
+                """.trimIndent()
+            )
+
+            val result = GradleRunner.create()
+                .withProjectDir(rootDir.toFile())
+                .withPluginClasspath()
+                .withArguments(
+                    "publishAllToGithubPackages",
+                    "-PbackendInitGithubRepoUrl=http://127.0.0.1:$port/dev-inho/backend-init",
+                    "-Pcc.midolog.allowInsecureTestUrl=true",
+                    "-Pgpr.user=test-user",
+                    "-Pgpr.key=dummy-token"
+                )
+                .buildAndFail()
+
+            assertTrue(
+                result.output.contains("Remote release artifact already exists"),
+                "Preflight check must fail when artifact already exists. Actual output:\n${result.output}"
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `preflight check passes and proceeds when remote artifact does not exist (404)`() {
+        val rootDir = Files.createTempDirectory("preflight-pass-test")
+
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress(0), 0)
+        val port = server.address.port
+        server.createContext("/") { exchange ->
+            if (exchange.requestMethod.equals("HEAD", ignoreCase = true)) {
+                exchange.sendResponseHeaders(404, -1)
+            } else {
+                // PUT or other upload methods: consume body completely
+                exchange.requestBody.readAllBytes()
+                exchange.sendResponseHeaders(200, -1)
+            }
+            exchange.close()
+        }
+        server.start()
+
+        try {
+            rootDir.resolve("settings.gradle.kts").writeText(
+                """
+                rootProject.name = "fixture-root"
+                include("storage:jpa")
+                """.trimIndent()
+            )
+            rootDir.resolve("build.gradle.kts").writeText(
+                """
+                allprojects {
+                    group = "cc.midolog"
+                    version = "1.0.0"
+                }
+                """.trimIndent()
+            )
+            val jpaDir = rootDir.resolve("storage/jpa").createDirectories()
+            jpaDir.resolve("build.gradle.kts").writeText(
+                """
+                plugins {
+                    `java-library`
+                    id("cc.midolog.publishing")
+                }
+                """.trimIndent()
+            )
+            val jpaSrc = jpaDir.resolve("src/main/java/sample").createDirectories()
+            jpaSrc.resolve("JpaSample.java").writeText("package sample; public class JpaSample {}")
+
+            val result = GradleRunner.create()
+                .withProjectDir(rootDir.toFile())
+                .withPluginClasspath()
+                .withArguments(
+                    "preflightCheckRemoteArtifacts",
+                    "-PbackendInitGithubRepoUrl=http://127.0.0.1:$port/dev-inho/backend-init",
+                    "-Pcc.midolog.allowInsecureTestUrl=true",
+                    "-Pgpr.user=test-user",
+                    "-Pgpr.key=dummy-token"
+                )
+                .build()
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":preflightCheckRemoteArtifacts")?.outcome)
+            assertTrue(
+                result.output.contains("Preflight check passed"),
+                "Preflight check should log success message. Actual output:\n${result.output}"
+            )
+        } finally {
+            server.stop(0)
+        }
     }
 }

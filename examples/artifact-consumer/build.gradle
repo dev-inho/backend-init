@@ -24,21 +24,53 @@ kotlin {
 
 repositories {
     if (project.hasProperty('backendInitRepoUrl')) {
+        def rawUrl = project.property('backendInitRepoUrl').toString()
+        def repoUri = uri(rawUrl)
+
+        def scheme = repoUri.scheme?.toLowerCase()
+        def host = repoUri.host?.toLowerCase()
+        def path = repoUri.path?.replaceAll('/+$', '')
+
+        def allowTest = project.hasProperty('allowInsecureTestUrl') &&
+            Boolean.parseBoolean(project.property('allowInsecureTestUrl').toString()) &&
+            (host == '127.0.0.1' || host == 'localhost')
+
+        if (!allowTest) {
+            if (scheme != 'https') {
+                throw new GradleException("Security violation: backendInitRepoUrl must use HTTPS scheme to prevent credential leakage. Got: $rawUrl")
+            }
+            if (host != 'maven.pkg.github.com') {
+                throw new GradleException("Security violation: backendInitRepoUrl host must be maven.pkg.github.com to prevent token leakage. Got: $rawUrl")
+            }
+            if (repoUri.rawUserInfo != null || repoUri.userInfo != null) {
+                throw new GradleException("Security violation: backendInitRepoUrl must not contain user credentials (userInfo). Got: $rawUrl")
+            }
+            if (repoUri.rawQuery != null || repoUri.query != null) {
+                throw new GradleException("Security violation: backendInitRepoUrl must not contain query parameters. Got: $rawUrl")
+            }
+            if (repoUri.rawFragment != null || repoUri.fragment != null) {
+                throw new GradleException("Security violation: backendInitRepoUrl must not contain fragment. Got: $rawUrl")
+            }
+            if (repoUri.port != -1 && repoUri.port != 443) {
+                throw new GradleException("Security violation: backendInitRepoUrl must use standard HTTPS port (443). Got: $rawUrl")
+            }
+            if (path != '/dev-inho/backend-init') {
+                throw new GradleException("Security violation: backendInitRepoUrl repository path must be /dev-inho/backend-init. Got: $rawUrl")
+            }
+        }
+
         // 원격 저장소가 명시적으로 지정된 경우: 로컬 build/repo fallback을 완전히 차단하고 원격 레지스트리만 등록
         maven {
-            url = uri(project.property('backendInitRepoUrl'))
-            def scheme = url.scheme
-            if (scheme != null && scheme.toLowerCase().startsWith('http')) {
-                credentials {
-                    username = project.findProperty('gpr.user') ?:
-                        System.getenv('GITHUB_ACTOR') ?:
-                        System.getenv('GITHUB_USERNAME') ?:
-                        'dev-inho'
-                    password = project.findProperty('gpr.key') ?:
-                        System.getenv('GITHUB_TOKEN') ?:
-                        System.getenv('GH_TOKEN') ?:
-                        ''
-                }
+            url = repoUri
+            credentials {
+                username = project.findProperty('gpr.user') ?:
+                    System.getenv('GITHUB_ACTOR') ?:
+                    System.getenv('GITHUB_USERNAME') ?:
+                    'dev-inho'
+                password = project.findProperty('gpr.key') ?:
+                    System.getenv('GITHUB_TOKEN') ?:
+                    System.getenv('GH_TOKEN') ?:
+                    ''
             }
         }
     } else {
