@@ -1,5 +1,6 @@
 package cc.midolog.file.port.storage
 
+import cc.midolog.file.model.FileMetadata
 import cc.midolog.file.model.StoredFile
 
 /**
@@ -39,4 +40,10 @@ interface FileStoragePort {
      * 스토리지 내에 지정된 키의 객체가 존재하는지 확인하여 여부를 반환한다.
      */
     suspend fun exists(key: String): Boolean
+
+    /**
+     * 지정된 키의 객체 메타데이터(크기, 콘텐츠 타입, 체크섬 등)를 반환한다.
+     * 대상 객체가 스토리지에 존재하지 않으면 null을 반환한다.
+     */
+    suspend fun head(key: String): FileMetadata? = null
 }

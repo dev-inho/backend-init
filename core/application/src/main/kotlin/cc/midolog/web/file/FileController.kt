@@ -3,6 +3,8 @@ package cc.midolog.web.file
 import cc.midolog.business.service.FileService
 import cc.midolog.web.exception.ApiException
 import cc.midolog.web.file.dto.FileResponse
+import cc.midolog.web.file.dto.PresignUploadRequest
+import cc.midolog.web.file.dto.PresignUploadResponse
 import cc.midolog.web.response.ApiResponse
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -36,6 +39,56 @@ class FileController(
     @Value("\${storage.file.max-size-bytes:10485760}") private val maxSizeBytes: Long,
     @Value("\${storage.file.allowed-content-types:}") private val allowedContentTypes: List<String>
 ) {
+
+    @PostMapping("/presign")
+    suspend fun presign(
+        @RequestBody request: PresignUploadRequest,
+        authentication: Authentication,
+    ): ApiResponse<PresignUploadResponse> {
+        val ownerId = authentication.name
+        val contentType = request.contentType
+
+        if (allowedContentTypes.isNotEmpty() && !allowedContentTypes.contains(contentType)) {
+            throw org.springframework.web.server.ResponseStatusException(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                "Content type $contentType is not allowed"
+            )
+        }
+
+        if (request.expectedSize != null && request.expectedSize > maxSizeBytes) {
+            throw org.springframework.web.server.ResponseStatusException(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "File size exceeds maximum allowed limit"
+            )
+        }
+
+        val (fileMeta, presignedRequest) = fileService.presignUpload(
+            ownerId = ownerId,
+            contentType = contentType,
+            expectedSize = request.expectedSize,
+            expectedChecksum = request.expectedChecksum,
+        )
+
+        return ApiResponse.ok(
+            PresignUploadResponse(
+                fileId = fileMeta.id,
+                uploadUrl = presignedRequest.url,
+                method = presignedRequest.method,
+                expirationSeconds = presignedRequest.expirationSeconds,
+                requiredHeaders = presignedRequest.requiredHeaders,
+            )
+        )
+    }
+
+    @PostMapping("/{id}/finalize")
+    suspend fun finalize(
+        @PathVariable id: String,
+        authentication: Authentication,
+    ): ApiResponse<FileResponse> {
+        val ownerId = authentication.name
+        val finalizedMeta = fileService.finalizeUpload(id, ownerId, maxSizeBytes)
+        return ApiResponse.ok(FileResponse.from(finalizedMeta))
+    }
 
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     @ResponseStatus(HttpStatus.CREATED)

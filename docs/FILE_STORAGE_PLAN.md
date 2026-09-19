@@ -295,8 +295,22 @@ jpaDsl {
   - `FileUploadInterruptionTest`: in-memory fake 포트(`FileMetaRepositoryPort`, `FileStoragePort`)로 PENDING 저장 직후 `OutOfMemoryError` 중단 경계를 시뮬레이션하여, 스트림 도중 비정상 중단으로 남은 PENDING 레코드가 TTL 만료 후 고아 정리에 의해 `FAILED`로 회수되는 서비스 수준 통합 가드 검증.
   - `FileServiceTest`: 업로드 실패 시 `FAILED` 전이, `deleteFile` 시 스토리지 물리 삭제 성공 후 `DELETED` 전이 및 false 반환(IllegalStateException)/예외 전파 시 메타 상태(삭제 전 기존 상태) 불변 보존 가드, 타 소유자 파일 접근 차단 검증.
 
-### Phase 4: S3 프로바이더 통합, Finalize 사후 검증 및 Testcontainers 연동 (난이도: pro)
-- **내용**: `storage/file-s3` 모듈 및 `file-starter-s3`를 신설하고, AWS SDK Java v2 (Netty Async) 기반의 S3 어댑터 및 `S3FilePresignAdapter.kt`를 구현합니다. Presigned 직접 업로드/다운로드를 전면 활성화하여 게이트웨이 OOM을 근본적으로 해소합니다. Local provider와 달리 브라우저 직접 Presigned 업로드가 도입됨에 따라, 클라이언트의 업로드 완료를 수신하는 Finalize 콜백 API(`FileFinalizeController`, `FileFinalizeService`)가 이 단계에서 구현됩니다. 서버는 클라이언트가 전달한 메타데이터를 맹신하지 않고 S3 HEAD 조회를 통해 실제 파일 크기와 체크섬 무결성을 사후 검증한 후 일치 시 `READY`, 불일치 시 `FAILED`로 전이합니다. (주의: S3 모듈과 Finalize 기능은 현재 구현되지 않았으며 Phase 4 계획입니다.)
-- **파일 경계**: `storage/file-s3/build.gradle`, `S3FileStorageAdapter.kt`, `S3FilePresignAdapter.kt`, `FileFinalizeController.kt`, `FileFinalizeService.kt`, `MinIOTestcontainersConfig.kt`.
+### Phase 4: S3 프로바이더 통합, Presigned PUT 직접 업로드 및 Finalize 사후 검증 (✅ 완료)
+- **내용**:
+  - **5모듈 세분화 아키텍처 완성**: `storage/file-s3`, `storage/file-autoconfigure`, `storage/file-starter-s3`, `storage/file-starter-local`, `storage/file-local` 모듈을 신설 및 재배치했습니다. `build-logic`의 `cc.midolog.publishing` 및 `platform:bom` 자동 수집과 연동되어 독립 배포 아티팩트로 관리됩니다.
+  - **순환 의존성 원천 차단 및 100% 하위 호환성 보장**: `file-autoconfigure`는 공통 프로퍼티(`FileStorageProperties`, `FileStoragePropertiesValidator`)만 관리하고 하위 어댑터에 의존하지 않으며, `file-local`과 `file-s3`가 각각 `file-autoconfigure`를 `api` 의존성으로 전파합니다. 기존 `storage:file-local` 단독 소비자(`core:application`)도 설정이나 의존성 변경 없이 완벽히 동작합니다.
+  - **AWS SDK Java v2 Netty Async 기반 비동기 논블로킹 I/O**: `S3FileStorageAdapter`와 `S3FilePresignAdapter`를 구현하여 비동기 논블로킹 방식으로 S3와 통신하며, `CompletableFuture.await()` 확장 함수를 통해 WebFlux 코루틴 취소 시그널을 SDK 비동기 요청 취소(`cancel(true)`)로 안전하게 전파합니다.
+  - **HEAD 기반 Finalize 사후 검증 및 위변조 방어**: 클라이언트의 크기나 체크섬 주장을 맹신하지 않고, S3 `HEAD` 조회를 통해 실제 스토리지 객체의 `contentLength`와 `metadata.sha256`을 대조합니다. 검증 일치 시 `READY`로 안전하게 전이하며, 불일치 시 `FAILED`로 마킹함과 동시에 `fileStoragePort.delete(storageKey)`로 비정상 객체를 즉시 정리합니다.
+  - **멱등성 및 보안 정책**: 이미 `READY` 상태인 파일에 대한 중복 Finalize 요청은 멱등하게 200 OK를 반환하며, 타 소유자의 파일 접근 시 404 차단, 스토리지 키의 UUID 형식 검증 및 Path Traversal 방어(`SecurityException`)를 적용했습니다. 아울러 `PresignUploadResponse.toString()`에서 서명 URL을 마스킹(`[PROTECTED_SIGNATURE_URL]`)하여 보안 유출을 원천 방지합니다.
+  - **MinIO 실물 검증 테스트 분리 (`liveS3Test`)**: PM의 Docker 실물 검증 환경(Docker MinIO)을 위해 `MinIOLiveS3IntegrationTest.kt`를 구현했습니다. `@Tag("live-s3")`로 격리되어 일반 단위 빌드에서는 무음 제외되며, 환경 부재 시 조용히 skip(무음 통과)하지 않고 실제 네트워크 I/O(Presigned PUT 직접 업로드, S3 HEAD 사후 검증, 크기·체크섬 불일치 감지 및 정리)를 엄격히 검증합니다.
+- **파일 경계**:
+  - `storage/file-s3/build.gradle`, `S3FileStorageAdapter.kt`, `S3FilePresignAdapter.kt`, `S3FileStorageAutoConfiguration.kt`, `MinIOLiveS3IntegrationTest.kt`
+  - `storage/file-autoconfigure/build.gradle`, `FileStorageProperties.kt`, `FileStoragePropertiesValidator.kt`, `FileStorageAutoConfiguration.kt`
+  - `storage/file-starter-s3/build.gradle`, `storage/file-starter-local/build.gradle`
+  - `storage/file-local/build.gradle`, `LocalFileStorageAdapter.kt`, `LocalFileStorageAutoConfiguration.kt`
+  - `core/domain/src/main/kotlin/cc/midolog/file/model/FileMetadata.kt`, `FileStoragePort.kt`, `FilePresignPort.kt`
+  - `core/application/src/main/kotlin/cc/midolog/business/service/FileService.kt`, `FileController.kt`, `PresignUploadRequest.kt`, `PresignUploadResponse.kt`
 - **선행 조건**: Phase 3 완료.
-- **가드 테스트**: **MinIO Testcontainers**를 도입하여 별도의 `liveS3Test` 환경에서 Presigned URL 발급, 파일 직접 업로드, Finalize 사후 검증(HEAD 크기·체크섬 일치 시 READY, 불일치 시 FAILED) 통합 시나리오 100% 검증.
+- **가드 테스트**:
+  - `:storage:file-s3:test`, `:storage:file-autoconfigure:test`, `:core:application:test` (Check 0) 100% 통과.
+  - MinIO 실물 검증 태스크 `./gradlew liveS3Test` (Check 1) 구성 완료.

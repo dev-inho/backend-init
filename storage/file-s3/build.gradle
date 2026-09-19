@@ -1,0 +1,47 @@
+plugins {
+    id 'cc.midolog.publishing'
+    id 'org.jetbrains.kotlin.plugin.spring'
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.6"
+        mavenBom "software.amazon.awssdk:bom:2.29.38"
+    }
+}
+
+dependencies {
+    api platform("software.amazon.awssdk:bom:2.29.38")
+    implementation project(':core:domain')
+    api project(':storage:file-autoconfigure')
+    implementation project(':support:util')
+
+    api 'software.amazon.awssdk:s3'
+    implementation 'software.amazon.awssdk:netty-nio-client'
+    implementation 'org.springframework.boot:spring-boot-autoconfigure'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-reactive'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'live-s3'
+    }
+}
+
+tasks.register('liveS3Test', Test) {
+    group = 'verification'
+    description = 'Runs live S3 / MinIO integration tests.'
+
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    shouldRunAfter tasks.named('test')
+
+    useJUnitPlatform {
+        includeTags 'live-s3'
+    }
+}

@@ -1,7 +1,5 @@
 package cc.midolog.storage.file.autoconfigure
 
-import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
@@ -43,14 +41,13 @@ class FileStorageAutoConfigurationTest {
     }
 
     @Test
-    fun `정상 절대 경로가 주어지면 validator와 adapter 빈이 생성되고 기본값이 적용된다`() {
+    fun `정상 절대 경로가 주어지면 validator 빈이 생성되고 기본값이 적용된다`() {
         contextRunner.withPropertyValues(
             "storage.file.provider=local",
             "storage.file.local.root-dir=${System.getProperty("user.dir")}/build/files"
         ).run { context ->
             org.assertj.core.api.Assertions.assertThat(context).hasNotFailed()
             org.assertj.core.api.Assertions.assertThat(context).hasSingleBean(FileStoragePropertiesValidator::class.java)
-            org.assertj.core.api.Assertions.assertThat(context).hasSingleBean(cc.midolog.storage.file.local.LocalFileStorageAdapter::class.java)
 
             val props = context.getBean(FileStorageProperties::class.java)
             org.assertj.core.api.Assertions.assertThat(props.maxSizeBytes).isEqualTo(10 * 1024 * 1024L)
@@ -65,24 +62,6 @@ class FileStorageAutoConfigurationTest {
         val content = url!!.readText().trim()
         org.assertj.core.api.Assertions.assertThat(content).isEqualTo("cc.midolog.storage.file.autoconfigure.FileStorageAutoConfiguration")
     }
-
-
-    @org.springframework.context.annotation.Configuration
-    @org.springframework.context.annotation.ComponentScan("cc.midolog.storage.file")
-    class TestScanConfig
-
-    @Test
-    fun `컴포넌트 스캔과 자동 설정이 겹쳐도 FileStoragePort 빈은 하나만 생성된다`() {
-        contextRunner.withUserConfiguration(TestScanConfig::class.java)
-            .withPropertyValues(
-                "storage.file.provider=local",
-                "storage.file.local.root-dir=${System.getProperty("user.dir")}/build/files"
-            ).run { context ->
-                org.assertj.core.api.Assertions.assertThat(context).hasNotFailed()
-                org.assertj.core.api.Assertions.assertThat(context.getBeansOfType(cc.midolog.file.port.storage.FileStoragePort::class.java)).hasSize(1)
-            }
-    }
-
 
     @Test
     fun `maxSizeBytes가 0 이하이면 기동 실패해야 한다`() {
@@ -108,21 +87,44 @@ class FileStorageAutoConfigurationTest {
         }
     }
 
-    class ExistingLegacyComponentConfig {
-        @org.springframework.context.annotation.Bean("localFileStorageAdapter")
-        fun localFileStorageAdapter(): String = "legacyComponent"
+    @Test
+    fun `provider가 s3이고 필수 설정이 주어지면 validator 빈이 정상 생성된다`() {
+        contextRunner.withPropertyValues(
+            "storage.file.provider=s3",
+            "storage.file.s3.bucket=my-test-bucket",
+            "storage.file.s3.region=us-east-1",
+            "storage.file.s3.access-key=dummy-access",
+            "storage.file.s3.secret-key=dummy-secret"
+        ).run { context ->
+            org.assertj.core.api.Assertions.assertThat(context).hasNotFailed()
+            org.assertj.core.api.Assertions.assertThat(context).hasSingleBean(FileStoragePropertiesValidator::class.java)
+        }
     }
 
     @Test
-    fun `옛 component와 동일한 bean 이름 localFileStorageAdapter가 존재해도 충돌 없이 컨텍스트가 로드된다`() {
-        contextRunner.withUserConfiguration(ExistingLegacyComponentConfig::class.java)
-            .withPropertyValues(
-                "storage.file.provider=local",
-                "storage.file.local.root-dir=${System.getProperty("user.dir")}/build/files"
-            ).run { context ->
-                org.assertj.core.api.Assertions.assertThat(context).hasNotFailed()
-                org.assertj.core.api.Assertions.assertThat(context).hasBean("fileLocalStorageAdapter")
-                org.assertj.core.api.Assertions.assertThat(context).hasBean("localFileStorageAdapter")
-            }
+    fun `provider가 s3인데 bucket이 누락되면 기동 실패해야 한다`() {
+        contextRunner.withPropertyValues(
+            "storage.file.provider=s3",
+            "storage.file.s3.region=us-east-1",
+            "storage.file.s3.access-key=dummy-access",
+            "storage.file.s3.secret-key=dummy-secret"
+        ).run { context ->
+            org.assertj.core.api.Assertions.assertThat(context).hasFailed()
+            org.assertj.core.api.Assertions.assertThat(context.startupFailure)
+                .hasMessageContaining("storage.file.s3.bucket 속성은 필수")
+        }
+    }
+
+    @Test
+    fun `provider가 s3인데 accessKey 또는 secretKey가 누락되면 기동 실패해야 한다`() {
+        contextRunner.withPropertyValues(
+            "storage.file.provider=s3",
+            "storage.file.s3.bucket=my-bucket",
+            "storage.file.s3.region=us-east-1"
+        ).run { context ->
+            org.assertj.core.api.Assertions.assertThat(context).hasFailed()
+            org.assertj.core.api.Assertions.assertThat(context.startupFailure)
+                .hasMessageContaining("storage.file.s3.access-key 속성은 필수")
+        }
     }
 }
