@@ -29,6 +29,11 @@ class JpaFileMetaRepositoryPortContractTest : FileMetaRepositoryPortContract() {
 
     private var testClock: Clock = Clock.fixed(Instant.parse("2024-01-01T00:00:00Z"), ZoneId.of("UTC"))
 
+    @org.junit.jupiter.api.BeforeEach
+    fun setUp() {
+        repository.deleteAll()
+    }
+
     override fun port(): FileMetaRepositoryPort {
         // GUARD: Adapter is instantiated without Clock (current main behavior)
         return JpaFileMetaRepositoryAdapter(repository, transactionTemplate, com.querydsl.jpa.impl.JPAQueryFactory(entityManager), clock())

@@ -47,6 +47,7 @@ class S3FilePresignAdapterTest {
         assertEquals("PUT", result.method)
         assertEquals(300L, result.expirationSeconds)
         assertEquals("image/png", result.requiredHeaders["Content-Type"])
+        assertEquals("*", result.requiredHeaders["If-None-Match"])
         assertEquals("sample-sha256", result.requiredHeaders["x-amz-meta-sha256"])
     }
 

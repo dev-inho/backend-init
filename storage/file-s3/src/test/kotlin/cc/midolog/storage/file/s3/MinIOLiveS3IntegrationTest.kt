@@ -250,13 +250,13 @@ class MinIOLiveS3IntegrationTest {
 
     @Test
     @Order(2)
-    fun `크기 불일치 시 FileService finalizeUpload 실패 및 FAILED 상태 전이와 S3 객체 물리 삭제 검증`() = runBlocking {
+    fun `서명된 Content-Length와 불일치 시 S3 업로드 조기 거부 및 객체 미생성 검증`() = runBlocking {
         val ownerId = "user-${UUID.randomUUID()}"
         val actualBytes = "실제 30바이트 미만의 짧은 텍스트".toByteArray(Charsets.UTF_8)
         val actualChecksum = sha256Hex(actualBytes)
         val claimedSize = actualBytes.size.toLong() + 9999L // 클라이언트가 거짓 크기 주장
 
-        // 1. 거짓 크기로 FileService presignUpload 호출
+        // 1. 거짓 크기로 FileService presignUpload 호출 (URL 서명에 Content-Length 바인딩)
         val (pendingMeta, presignedUpload) = fileService.presignUpload(
             ownerId = ownerId,
             contentType = "application/octet-stream",
@@ -264,17 +264,52 @@ class MinIOLiveS3IntegrationTest {
             expectedChecksum = actualChecksum,
             expirationSeconds = 60,
         )
-        val fileId = pendingMeta.id
 
-        // 2. 실제 바이트로 S3 업로드
+        // 2. 실제 바이트로 S3 업로드 시도 -> 서명된 Content-Length 불일치로 S3 계층에서 조기 거부(4xx)
         val uploadResponse = uploadViaPresignedPut(presignedUpload, actualBytes)
-        assertTrue(uploadResponse.statusCode() in 200..299)
+        assertTrue(
+            uploadResponse.statusCode() in 400..499,
+            "서명된 Content-Length와 다른 크기의 업로드는 S3(MinIO) 계층에서 조기 거부(4xx)되어야 합니다. 실제 상태 코드: ${uploadResponse.statusCode()}",
+        )
+
+        // 3. 거부된 업로드 객체는 S3에 생성되지 않아야 함
+        assertFalse(s3StorageAdapter.exists(pendingMeta.storageKey), "조기 거부된 업로드 객체는 S3에 존재하지 않아야 합니다.")
+
+        // 4. DB 상태는 변경 없이 PENDING으로 안전하게 유지
+        val meta = fileMetaRepository.findById(pendingMeta.id)
+        assertNotNull(meta)
+        assertEquals(FileStatus.PENDING, meta!!.status)
+    }
+
+    @Test
+    @Order(3)
+    fun `Finalize 단계의 HEAD 크기 불일치 시 FileService finalizeUpload 실패 및 FAILED 상태 전이와 S3 객체 물리 삭제 검증`() = runBlocking {
+        val ownerId = "user-${UUID.randomUUID()}"
+        val actualBytes = "실제 정상 크기 데이터입니다.".toByteArray(Charsets.UTF_8)
+        val actualSize = actualBytes.size.toLong()
+        val actualChecksum = sha256Hex(actualBytes)
+
+        // 1. 정상 크기로 presignUpload 발급 및 실제 업로드 성공
+        val (pendingMeta, presignedUpload) = fileService.presignUpload(
+            ownerId = ownerId,
+            contentType = "application/octet-stream",
+            expectedSize = actualSize,
+            expectedChecksum = actualChecksum,
+            expirationSeconds = 60,
+        )
+        val uploadResponse = uploadViaPresignedPut(presignedUpload, actualBytes)
+        assertTrue(uploadResponse.statusCode() in 200..299, "최초 정상 업로드는 성공해야 합니다.")
+        assertTrue(s3StorageAdapter.exists(pendingMeta.storageKey), "S3에 객체가 생성되어야 합니다.")
+
+        // 2. DB FileMeta의 sizeBytes를 실제 업로드 크기와 다르게 변조하여 Finalize 시점의 HEAD 크기 불일치 조건(FileService 167행) 재현
+        val tamperedMeta = pendingMeta.copy(sizeBytes = actualSize + 1000L)
+        fileMetaRepository.save(tamperedMeta)
 
         // 3. FileService.finalizeUpload 호출 시 크기 불일치 감지 및 예외 발생 확인
         val ex = assertThrows(Exception::class.java) {
             runBlocking {
                 fileService.finalizeUpload(
-                    id = fileId,
+                    id = pendingMeta.id,
                     ownerId = ownerId,
                     maxSizeBytes = 10 * 1024 * 1024L,
                 )
@@ -283,16 +318,16 @@ class MinIOLiveS3IntegrationTest {
         assertTrue(ex.message?.contains("size") == true || ex.message?.contains("크기") == true)
 
         // 4. DB 상태가 FAILED로 전이되었는지 확인
-        val failedMeta = fileMetaRepository.findById(fileId)
+        val failedMeta = fileMetaRepository.findById(pendingMeta.id)
         assertNotNull(failedMeta)
         assertEquals(FileStatus.FAILED, failedMeta!!.status, "크기 불일치 시 DB 상태는 FAILED여야 합니다.")
 
         // 5. failAndCleanup에 의해 S3 객체가 즉시 물리 삭제되었는지 확인
-        assertFalse(s3StorageAdapter.exists(failedMeta.storageKey), "검증 실패한 객체는 S3에서 삭제되어야 합니다.")
+        assertFalse(s3StorageAdapter.exists(failedMeta.storageKey), "검증 실패한 객체는 S3에서 물리 삭제되어야 합니다.")
     }
 
     @Test
-    @Order(3)
+    @Order(4)
     fun `체크섬 불일치 시 FileService finalizeUpload 실패 및 FAILED 상태 전이와 S3 객체 물리 삭제 검증`() = runBlocking {
         val ownerId = "user-${UUID.randomUUID()}"
         val actualBytes = "체크섬 불일치 테스트 데이터".toByteArray(Charsets.UTF_8)
@@ -333,7 +368,7 @@ class MinIOLiveS3IntegrationTest {
     }
 
     @Test
-    @Order(4)
+    @Order(5)
     fun `미업로드 객체에 대한 FileService finalizeUpload 시 FAILED 전이 및 예외 발생 검증`() = runBlocking {
         val ownerId = "user-${UUID.randomUUID()}"
         val (pendingMeta, _) = fileService.presignUpload(
@@ -363,7 +398,7 @@ class MinIOLiveS3IntegrationTest {
     }
 
     @Test
-    @Order(5)
+    @Order(6)
     fun `타 소유자 파일에 대한 접근 시 인가 거부 검증`() = runBlocking {
         val owner1 = "user-alpha-${UUID.randomUUID()}"
         val owner2 = "user-beta-${UUID.randomUUID()}"
@@ -411,7 +446,7 @@ class MinIOLiveS3IntegrationTest {
     }
 
     @Test
-    @Order(6)
+    @Order(7)
     fun `READY 상태 파일에 대한 finalizeUpload 중복 호출 시 멱등 성공 검증`() = runBlocking {
         val ownerId = "user-${UUID.randomUUID()}"
         val bytes = "중복 finalize 멱등 테스트".toByteArray(Charsets.UTF_8)
@@ -443,7 +478,66 @@ class MinIOLiveS3IntegrationTest {
     }
 
     @Test
-    @Order(7)
+    @Order(8)
+    fun `동일 presigned URL 재사용 시 If-None-Match 조건에 의해 S3 객체 덮어쓰기 차단 검증 (expectedChecksum null 포함)`() = runBlocking {
+        val ownerId = "user-${UUID.randomUUID()}"
+        val initialData = "최초 업로드된 원본 데이터입니다.".toByteArray(Charsets.UTF_8)
+        val overwriteData = "악의적으로 덮어쓰려는 변조 데이터입니다.".toByteArray(Charsets.UTF_8)
+
+        // 1. expectedChecksum이 null인 상태에서 presigned URL 발급
+        val (pendingMeta, presignedUpload) = fileService.presignUpload(
+            ownerId = ownerId,
+            contentType = "text/plain",
+            expectedSize = initialData.size.toLong(),
+            expectedChecksum = null, // 체크섬이 null인 경로
+            expirationSeconds = 120,
+        )
+        val fileId = pendingMeta.id
+
+        // 2. 최초 정상 업로드 성공 (If-None-Match: * 헤더 포함)
+        val firstUploadResponse = uploadViaPresignedPut(presignedUpload, initialData)
+        assertTrue(firstUploadResponse.statusCode() in 200..299, "최초 업로드는 성공해야 합니다.")
+
+        // 3. finalizeUpload 성공 확인 (상태 READY)
+        val finalizedFile = fileService.finalizeUpload(
+            id = fileId,
+            ownerId = ownerId,
+            maxSizeBytes = 10 * 1024 * 1024L,
+        )
+        assertEquals(FileStatus.READY, finalizedFile.status)
+
+        // 4. 중복 finalizeUpload 멱등 성공 유지 확인
+        val idempotentFinalize = fileService.finalizeUpload(
+            id = fileId,
+            ownerId = ownerId,
+            maxSizeBytes = 10 * 1024 * 1024L,
+        )
+        assertEquals(FileStatus.READY, idempotentFinalize.status)
+
+        // 5. 동일한 presignedUpload URL로 다른 바이트(overwriteData) 덮어쓰기 재업로드 시도
+        // S3 네이티브 If-None-Match: * 조건에 의해 객체가 이미 존재하므로 412 Precondition Failed (또는 4xx)로 거부되어야 함
+        val overwriteResponse = uploadViaPresignedPut(presignedUpload, overwriteData)
+        assertTrue(
+            overwriteResponse.statusCode() in 400..499,
+            "이미 객체가 존재하는 상태에서 presigned URL 재업로드는 S3(MinIO)에서 조기 차단(4xx)되어야 합니다. HTTP 상태 코드: ${overwriteResponse.statusCode()}",
+        )
+
+        // 6. S3에 저장된 객체가 덮어써지지 않고 최초 initialData로 온전히 보존되어 있는지 검증
+        val presignedDownload = s3PresignAdapter.presignDownload(finalizedFile.storageKey, 60)
+        val downloadRequest = HttpRequest.newBuilder()
+            .uri(URI.create(presignedDownload.url))
+            .GET()
+            .build()
+        val downloadResponse = httpClient.send(downloadRequest, HttpResponse.BodyHandlers.ofByteArray())
+        assertEquals(200, downloadResponse.statusCode())
+        assertArrayEquals(initialData, downloadResponse.body(), "S3 객체는 덮어써지지 않고 최초 데이터로 보존되어야 합니다.")
+
+        // 7. 정리
+        fileService.deleteFile(id = fileId, ownerId = ownerId)
+    }
+
+    @Test
+    @Order(9)
     fun `동시 finalizeUpload와 deleteFile 경쟁 시 DELETED 상태 보장 및 READY 부활 차단 검증`() = runBlocking {
         val ownerId = "user-${UUID.randomUUID()}"
         val bytes = "동시 finalize/delete 경쟁 테스트 데이터".toByteArray(Charsets.UTF_8)
@@ -489,7 +583,7 @@ class MinIOLiveS3IntegrationTest {
     }
 
     @Test
-    @Order(8)
+    @Order(10)
     fun `S3FileStorageAdapter 스트리밍 store, load, delete 왕복 검증`() = runBlocking {
         val key = UUID.randomUUID().toString()
         val data = "Direct S3 Stream store/load test via S3FileStorageAdapter with disk spooling".toByteArray(Charsets.UTF_8)

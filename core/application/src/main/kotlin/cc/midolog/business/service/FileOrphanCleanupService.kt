@@ -56,7 +56,13 @@ class FileOrphanCleanupService(
                                 failedIds.add(orphan.id)
                             }
                         } else {
-                            log.info("Cleaned up stranded storage object for FAILED orphan, id: ${orphan.id}, storageKey: ${orphan.storageKey}")
+                            val updated = fileMetaRepositoryPort.updateStatus(orphan.id, FileStatus.DELETED)
+                            if (updated) {
+                                log.info("Cleaned up stranded storage object for FAILED orphan, id: ${orphan.id}, storageKey: ${orphan.storageKey}")
+                            } else {
+                                log.warn("Failed to update status to DELETED for FAILED orphan, id: ${orphan.id}")
+                                failedIds.add(orphan.id)
+                            }
                         }
                     } else {
                         log.warn("Failed to delete orphan storage (returned false), id: ${orphan.id}, storageKey: ${orphan.storageKey}")

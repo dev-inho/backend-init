@@ -194,4 +194,169 @@ abstract class FileMetaRepositoryPortContract {
         }
         assertTrue(thrownForNegative)
     }
+
+    @Test
+    fun `updateStatusConditionally succeeds and updates optional fields when current status matches expectedStatuses`() = runTestBlocking {
+        val now = clock().instant()
+        val file = FileMeta(
+            id = "file-cond-success-1",
+            ownerId = "owner-cond",
+            storageKey = "key-cond-1",
+            sizeBytes = 100L,
+            contentType = "text/plain",
+            checksum = "old-sha",
+            status = FileStatus.PENDING,
+            createdAt = now,
+            updatedAt = now,
+        )
+        port().save(file)
+
+        val updated = port().updateStatusConditionally(
+            id = "file-cond-success-1",
+            expectedStatuses = setOf(FileStatus.PENDING),
+            newStatus = FileStatus.READY,
+            sizeBytes = 2048L,
+            contentType = "application/json",
+            checksum = "new-sha256",
+        )
+        assertTrue(updated, "Conditional update must succeed when status matches expectedStatuses")
+
+        val loaded = port().findById("file-cond-success-1")
+        assertEquals(FileStatus.READY, loaded?.status)
+        assertEquals(2048L, loaded?.sizeBytes)
+        assertEquals("application/json", loaded?.contentType)
+        assertEquals("new-sha256", loaded?.checksum)
+    }
+
+    @Test
+    fun `updateStatusConditionally fails without modifying state when current status does not match expectedStatuses`() = runTestBlocking {
+        val now = clock().instant()
+        val file = FileMeta(
+            id = "file-cond-fail-1",
+            ownerId = "owner-cond",
+            storageKey = "key-cond-2",
+            sizeBytes = 100L,
+            contentType = "text/plain",
+            checksum = "sha-orig",
+            status = FileStatus.PENDING,
+            createdAt = now,
+            updatedAt = now,
+        )
+        port().save(file)
+
+        // 기대 상태가 READY인데 현재 상태는 PENDING이므로 실패해야 함 (경쟁 상태 시뮬레이션)
+        val updated = port().updateStatusConditionally(
+            id = "file-cond-fail-1",
+            expectedStatuses = setOf(FileStatus.READY),
+            newStatus = FileStatus.DELETED,
+        )
+        assertFalse(updated, "Conditional update must fail when status does not match expectedStatuses")
+
+        val loaded = port().findById("file-cond-fail-1")
+        assertEquals(FileStatus.PENDING, loaded?.status, "State must remain unchanged on CAS failure")
+        assertEquals(100L, loaded?.sizeBytes)
+        assertEquals("text/plain", loaded?.contentType)
+    }
+
+    @Test
+    fun `updateStatusConditionally preserves DELETED status against resurrection to READY`() = runTestBlocking {
+        val now = clock().instant()
+        val file = FileMeta(
+            id = "file-cond-deleted-1",
+            ownerId = "owner-cond",
+            storageKey = "key-cond-3",
+            sizeBytes = 500L,
+            contentType = "text/plain",
+            checksum = "sha-del",
+            status = FileStatus.DELETED,
+            createdAt = now,
+            updatedAt = now,
+        )
+        port().save(file)
+
+        // 이미 DELETED인 상태에서 늦은 finalize가 PENDING -> READY 전이를 시도해도 차단되어야 함
+        val updated = port().updateStatusConditionally(
+            id = "file-cond-deleted-1",
+            expectedStatuses = setOf(FileStatus.PENDING),
+            newStatus = FileStatus.READY,
+        )
+        assertFalse(updated, "DELETED file must not resurrect to READY on conditional update")
+
+        val loaded = port().findById("file-cond-deleted-1")
+        assertEquals(FileStatus.DELETED, loaded?.status, "DELETED status must be preserved")
+    }
+
+    @Test
+    fun `findExpiredOrphans returns both PENDING and FAILED orphans before cutoff, up to limit, ordered by updatedAt`() = runTestBlocking {
+        val now = clock().instant()
+        val cutoff = now.minusSeconds(1800)
+
+        val oldPending = FileMeta(
+            id = "orphan-old-pending",
+            ownerId = "owner-orphan",
+            storageKey = "key-p1",
+            sizeBytes = 10L, contentType = "text", checksum = "chk",
+            status = FileStatus.PENDING,
+            createdAt = now.minusSeconds(7200),
+            updatedAt = now.minusSeconds(7200), // earliest
+        )
+        val oldFailed = FileMeta(
+            id = "orphan-old-failed",
+            ownerId = "owner-orphan",
+            storageKey = "key-f1",
+            sizeBytes = 10L, contentType = "text", checksum = "chk",
+            status = FileStatus.FAILED,
+            createdAt = now.minusSeconds(3600),
+            updatedAt = now.minusSeconds(3600), // second earliest
+        )
+        val oldReady = FileMeta(
+            id = "orphan-old-ready",
+            ownerId = "owner-orphan",
+            storageKey = "key-r1",
+            sizeBytes = 10L, contentType = "text", checksum = "chk",
+            status = FileStatus.READY,
+            createdAt = now.minusSeconds(5000),
+            updatedAt = now.minusSeconds(5000), // must be excluded
+        )
+        val recentPending = FileMeta(
+            id = "orphan-recent-pending",
+            ownerId = "owner-orphan",
+            storageKey = "key-p2",
+            sizeBytes = 10L, contentType = "text", checksum = "chk",
+            status = FileStatus.PENDING,
+            createdAt = now,
+            updatedAt = now, // after cutoff, must be excluded
+        )
+
+        port().save(oldPending)
+        port().save(oldFailed)
+        port().save(oldReady)
+        port().save(recentPending)
+
+        // PENDING과 FAILED가 모두 회수 대상에 포함되어야 함
+        val orphans = port().findExpiredOrphans(
+            cutoff = cutoff,
+            limit = 10,
+            statuses = setOf(FileStatus.PENDING, FileStatus.FAILED),
+        )
+
+        val returnedIds = orphans.map { it.id }
+        assertTrue(returnedIds.contains("orphan-old-pending"), "Old PENDING orphan must be included")
+        assertTrue(returnedIds.contains("orphan-old-failed"), "Old FAILED orphan must be included")
+        assertFalse(returnedIds.contains("orphan-old-ready"), "READY file must be excluded")
+        assertFalse(returnedIds.contains("orphan-recent-pending"), "Recent file after cutoff must be excluded")
+
+        // updatedAt 오름차순 정렬 검증 (oldPending -> oldFailed)
+        assertEquals("orphan-old-pending", orphans[0].id)
+        assertEquals("orphan-old-failed", orphans[1].id)
+
+        // limit 적용 검증
+        val limited = port().findExpiredOrphans(
+            cutoff = cutoff,
+            limit = 1,
+            statuses = setOf(FileStatus.PENDING, FileStatus.FAILED),
+        )
+        assertEquals(1, limited.size)
+        assertEquals("orphan-old-pending", limited[0].id)
+    }
 }

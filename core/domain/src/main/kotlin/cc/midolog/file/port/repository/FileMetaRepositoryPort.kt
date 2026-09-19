@@ -40,7 +40,13 @@ interface FileMetaRepositoryPort {
         sizeBytes: Long? = null,
         contentType: String? = null,
         checksum: String? = null,
-    ): Boolean = updateStatus(id, newStatus)
+    ): Boolean {
+        val current = findById(id) ?: return false
+        if (current.status !in expectedStatuses) {
+            return false
+        }
+        return updateStatus(id, newStatus)
+    }
 
     /**
      * 업로드 대기(PENDING) 상태에서 지정된 시각(cutoff) 이전에 업데이트된 만료된 파일 메타데이터 목록을
@@ -52,10 +58,14 @@ interface FileMetaRepositoryPort {
      * 지정된 상태(statuses)이면서 지정된 시각(cutoff) 이전에 업데이트된 만료 파일 메타데이터 목록을
      * 최대 지정 건수(limit)만큼 updatedAt 오름차순으로 정렬하여 조회한다.
      * PENDING 상태의 미완료 파일뿐 아니라 삭제 실패로 남은 FAILED 고아 객체도 함께 회수할 수 있도록 지원한다.
+     * 실제 영속성 저장소 어댑터(JPA, MyBatis)는 status IN (:statuses) 단일 쿼리로 다중 상태 만료 객체를 일괄 조회한다.
      */
     suspend fun findExpiredOrphans(
         cutoff: Instant,
         limit: Int,
         statuses: Set<FileStatus> = setOf(FileStatus.PENDING, FileStatus.FAILED),
-    ): List<FileMeta> = findExpiredPending(cutoff, limit)
+    ): List<FileMeta> {
+        val pending = findExpiredPending(cutoff, limit)
+        return pending.filter { it.status in statuses }
+    }
 }

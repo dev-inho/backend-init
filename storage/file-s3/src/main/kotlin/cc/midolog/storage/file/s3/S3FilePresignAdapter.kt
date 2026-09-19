@@ -74,6 +74,7 @@ class S3FilePresignAdapter(
             .bucket(bucket)
             .key(key)
             .contentType(contentType)
+            .ifNoneMatch("*")
 
         if (expectedSize != null) {
             putRequestBuilder.contentLength(expectedSize)
@@ -103,6 +104,9 @@ class S3FilePresignAdapter(
         }
         if (!headers.containsKey("Content-Type")) {
             headers["Content-Type"] = contentType
+        }
+        if (!headers.containsKey("If-None-Match")) {
+            headers["If-None-Match"] = "*"
         }
         if (expectedChecksum != null) {
             val base64 = toBase64Checksum(expectedChecksum)
