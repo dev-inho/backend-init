@@ -11,14 +11,18 @@ import kotlinx.coroutines.withContext
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.services.s3.S3AsyncClient
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm
+import software.amazon.awssdk.services.s3.model.ChecksumMode
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
-import java.io.ByteArrayOutputStream
+import software.amazon.awssdk.services.s3.model.S3Exception
+import java.io.File
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -29,10 +33,8 @@ import kotlin.coroutines.resumeWithException
 /**
  * AWS SDK S3 비동기 클라이언트를 활용한 파일 저장소 어댑터.
  *
- * S3와의 모든 I/O를 논블로킹 비동기로 수행하며, 코루틴과의 상호운용 및 취소 전파를 지원한다.
- *
- * @param s3AsyncClient 비동기 S3 클라이언트
- * @param bucket 대상 S3 버킷 이름
+ * S3와의 모든 I/O를 논블로킹 비동기로 수행하며, 대용량 파일 스트리밍 시 임시 디스크 스풀링을 적용하여 힙 메모리 OOM을 방지한다.
+ * 네이티브 SHA-256 체크섬 검증과 안전한 예외 래핑을 지원한다.
  */
 class S3FileStorageAdapter(
     private val s3AsyncClient: S3AsyncClient,
@@ -50,6 +52,46 @@ class S3FileStorageAdapter(
         }
     }
 
+    private fun wrapStorageException(cause: Throwable, operation: String, key: String): Throwable {
+        val actual = if (cause is CompletionException) cause.cause ?: cause else cause
+        if (actual is IllegalArgumentException || actual is SecurityException || actual is IllegalStateException) {
+            return actual
+        }
+        val sanitizedMessage = actual.message?.replace(bucket, "***") ?: "Storage operation failed"
+        val statusCode = (actual as? S3Exception)?.statusCode()
+        val codeStr = if (statusCode != null) "[status=$statusCode] " else ""
+        return IllegalStateException("S3 $operation failed for key $key: $codeStr$sanitizedMessage", actual)
+    }
+
+    private fun toBase64Checksum(checksum: String): String {
+        return try {
+            if (checksum.length == 64 && checksum.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+                val bytes = ByteArray(32)
+                for (i in 0 until 32) {
+                    bytes[i] = checksum.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+                }
+                Base64.getEncoder().encodeToString(bytes)
+            } else {
+                checksum
+            }
+        } catch (_: Exception) {
+            checksum
+        }
+    }
+
+    private fun normalizeChecksumToHex(checksum: String): String {
+        return try {
+            if (checksum.length == 44 && (checksum.endsWith("=") || checksum.contains("/"))) {
+                val bytes = Base64.getDecoder().decode(checksum)
+                bytes.joinToString("") { "%02x".format(it) }
+            } else {
+                checksum
+            }
+        } catch (_: Exception) {
+            checksum
+        }
+    }
+
     override suspend fun store(
         key: String,
         reader: ChunkReader,
@@ -59,42 +101,56 @@ class S3FileStorageAdapter(
     ): StoredFile {
         validateKey(key)
 
+        val tempFile = withContext(Dispatchers.IO) {
+            File.createTempFile("s3-upload-$key-", ".tmp")
+        }
         val buffer = ByteArray(8192)
         val digest = MessageDigest.getInstance("SHA-256")
-        val byteOutput = ByteArrayOutputStream()
         var size = 0L
 
         try {
             withContext(Dispatchers.IO) {
-                while (true) {
-                    val read = reader.readChunk(buffer)
-                    if (read == -1) break
-                    byteOutput.write(buffer, 0, read)
-                    digest.update(buffer, 0, read)
-                    size += read
+                tempFile.outputStream().use { output ->
+                    while (true) {
+                        val read = reader.readChunk(buffer)
+                        if (read == -1) break
+                        output.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        size += read
+                    }
+                    output.flush()
                 }
             }
 
             val checksum = digest.digest().joinToString("") { "%02x".format(it) }
 
-            if (expectedChecksum != null && expectedChecksum != checksum) {
-                throw IllegalStateException("체크섬이 다릅니다")
+            if (expectedChecksum != null) {
+                val normalizedExpected = normalizeChecksumToHex(expectedChecksum)
+                if (!normalizedExpected.equals(checksum, ignoreCase = true)) {
+                    throw IllegalStateException("체크섬이 다릅니다")
+                }
             }
             if (knownSize != null && knownSize != size) {
                 throw IllegalStateException("크기가 다릅니다")
             }
 
+            val base64Checksum = toBase64Checksum(checksum)
             val metadataMap = mutableMapOf("sha256" to checksum)
             val putRequest = PutObjectRequest.builder()
                 .bucket(bucket)
                 .key(key)
                 .contentType(contentType)
                 .contentLength(size)
+                .checksumAlgorithm(ChecksumAlgorithm.SHA256)
+                .checksumSHA256(base64Checksum)
                 .metadata(metadataMap)
                 .build()
 
-            val bytes = byteOutput.toByteArray()
-            s3AsyncClient.putObject(putRequest, AsyncRequestBody.fromBytes(bytes)).await()
+            try {
+                s3AsyncClient.putObject(putRequest, AsyncRequestBody.fromFile(tempFile)).await()
+            } catch (e: Exception) {
+                throw wrapStorageException(e, "store", key)
+            }
 
             return StoredFile(
                 id = "",
@@ -107,8 +163,16 @@ class S3FileStorageAdapter(
             )
         } catch (e: Exception) {
             reader.cancel(e)
-            throw e
+            throw wrapStorageException(e, "store", key)
         } finally {
+            withContext(Dispatchers.IO) {
+                try {
+                    if (tempFile.exists()) {
+                        tempFile.delete()
+                    }
+                } catch (_: Exception) {
+                }
+            }
             reader.close()
         }
     }
@@ -126,10 +190,10 @@ class S3FileStorageAdapter(
             S3PublisherChunkReader(responsePublisher)
         } catch (e: Exception) {
             val actual = if (e is CompletionException) e.cause ?: e else e
-            if (actual is NoSuchKeyException || actual.message?.contains("NoSuchKey") == true) {
+            if (actual is NoSuchKeyException || actual.message?.contains("NoSuchKey") == true || actual.message?.contains("404") == true) {
                 null
             } else {
-                throw actual
+                throw wrapStorageException(actual, "load", key)
             }
         }
     }
@@ -146,10 +210,10 @@ class S3FileStorageAdapter(
             true
         } catch (e: Exception) {
             val actual = if (e is CompletionException) e.cause ?: e else e
-            if (actual is NoSuchKeyException) {
+            if (actual is NoSuchKeyException || actual.message?.contains("NoSuchKey") == true) {
                 true
             } else {
-                throw actual
+                throw wrapStorageException(actual, "delete", key)
             }
         }
     }
@@ -169,7 +233,7 @@ class S3FileStorageAdapter(
             if (actual is NoSuchKeyException || actual.message?.contains("NoSuchKey") == true || actual.message?.contains("404") == true) {
                 false
             } else {
-                throw actual
+                throw wrapStorageException(actual, "exists", key)
             }
         }
     }
@@ -179,15 +243,17 @@ class S3FileStorageAdapter(
         val headRequest = HeadObjectRequest.builder()
             .bucket(bucket)
             .key(key)
+            .checksumMode(ChecksumMode.ENABLED)
             .build()
 
         return try {
             val response = s3AsyncClient.headObject(headRequest).await()
-            val checksum = response.metadata()["sha256"] ?: response.checksumSHA256()
+            val rawChecksum = response.checksumSHA256() ?: response.metadata()["sha256"]
+            val normalizedChecksum = rawChecksum?.let { normalizeChecksumToHex(it) }
             FileMetadata(
                 sizeBytes = response.contentLength(),
                 contentType = response.contentType(),
-                checksum = checksum,
+                checksum = normalizedChecksum,
                 eTag = response.eTag()?.trim('"'),
             )
         } catch (e: Exception) {
@@ -195,7 +261,7 @@ class S3FileStorageAdapter(
             if (actual is NoSuchKeyException || actual.message?.contains("NoSuchKey") == true || actual.message?.contains("404") == true) {
                 null
             } else {
-                throw actual
+                throw wrapStorageException(actual, "head", key)
             }
         }
     }

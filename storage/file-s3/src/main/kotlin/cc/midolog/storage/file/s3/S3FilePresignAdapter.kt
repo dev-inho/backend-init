@@ -2,22 +2,21 @@ package cc.midolog.storage.file.s3
 
 import cc.midolog.file.model.PresignedRequest
 import cc.midolog.file.port.storage.FilePresignPort
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
 import java.time.Duration
+import java.util.Base64
 import java.util.UUID
 
 /**
  * AWS SDK S3 Presigner를 활용한 사전 서명 URL 발급 어댑터.
  *
  * 클라이언트가 S3 버킷에 직접 파일을 업로드(PUT)하거나 다운로드(GET)할 수 있는 서명된 요청 명세를 생성한다.
- * 서명 헤더에 Content-Type 및 체크섬 메타데이터를 바인딩하여 업로드 시 위변조를 방지한다.
- *
- * @param s3Presigner S3 사전 서명 생성기
- * @param bucket 대상 S3 버킷 이름
+ * 서명 헤더에 Content-Type 및 네이티브 SHA-256 체크섬을 바인딩하여 업로드 시 위변조를 방지한다.
  */
 class S3FilePresignAdapter(
     private val s3Presigner: S3Presigner,
@@ -34,6 +33,22 @@ class S3FilePresignAdapter(
         }
         if (key.contains("/") || key.contains("..") || key.contains("\\")) {
             throw SecurityException("Path traversal attempt in storage key: $key")
+        }
+    }
+
+    private fun toBase64Checksum(checksum: String): String {
+        return try {
+            if (checksum.length == 64 && checksum.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+                val bytes = ByteArray(32)
+                for (i in 0 until 32) {
+                    bytes[i] = checksum.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+                }
+                Base64.getEncoder().encodeToString(bytes)
+            } else {
+                checksum
+            }
+        } catch (_: Exception) {
+            checksum
         }
     }
 
@@ -65,6 +80,9 @@ class S3FilePresignAdapter(
         }
 
         if (expectedChecksum != null) {
+            val base64 = toBase64Checksum(expectedChecksum)
+            putRequestBuilder.checksumAlgorithm(ChecksumAlgorithm.SHA256)
+            putRequestBuilder.checksumSHA256(base64)
             putRequestBuilder.metadata(mapOf("sha256" to expectedChecksum))
         }
 
@@ -73,7 +91,11 @@ class S3FilePresignAdapter(
             .putObjectRequest(putRequestBuilder.build())
             .build()
 
-        val presigned = s3Presigner.presignPutObject(presignRequest)
+        val presigned = try {
+            s3Presigner.presignPutObject(presignRequest)
+        } catch (e: Exception) {
+            throw IllegalStateException("S3 presignUpload failed: ${e.message?.replace(bucket, "***") ?: "Unknown error"}", e)
+        }
 
         val headers = mutableMapOf<String, String>()
         presigned.httpRequest().headers().forEach { (k, v) ->
@@ -82,8 +104,14 @@ class S3FilePresignAdapter(
         if (!headers.containsKey("Content-Type")) {
             headers["Content-Type"] = contentType
         }
-        if (expectedChecksum != null && !headers.containsKey("x-amz-meta-sha256")) {
-            headers["x-amz-meta-sha256"] = expectedChecksum
+        if (expectedChecksum != null) {
+            val base64 = toBase64Checksum(expectedChecksum)
+            if (!headers.containsKey("x-amz-checksum-sha256")) {
+                headers["x-amz-checksum-sha256"] = base64
+            }
+            if (!headers.containsKey("x-amz-meta-sha256")) {
+                headers["x-amz-meta-sha256"] = expectedChecksum
+            }
         }
 
         return PresignedRequest(
@@ -110,7 +138,11 @@ class S3FilePresignAdapter(
             .getObjectRequest(getRequest)
             .build()
 
-        val presigned = s3Presigner.presignGetObject(presignRequest)
+        val presigned = try {
+            s3Presigner.presignGetObject(presignRequest)
+        } catch (e: Exception) {
+            throw IllegalStateException("S3 presignDownload failed: ${e.message?.replace(bucket, "***") ?: "Unknown error"}", e)
+        }
 
         val headers = mutableMapOf<String, String>()
         presigned.httpRequest().headers().forEach { (k, v) ->

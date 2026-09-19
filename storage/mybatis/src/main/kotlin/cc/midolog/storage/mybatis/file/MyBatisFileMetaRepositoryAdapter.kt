@@ -68,8 +68,52 @@ class MyBatisFileMetaRepositoryAdapter(
         mapper.update(updateStatement) > 0
     }
 
-    override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> = withContext(Dispatchers.IO) {
+    override suspend fun updateStatusConditionally(
+        id: String,
+        expectedStatuses: Set<FileStatus>,
+        newStatus: FileStatus,
+        sizeBytes: Long?,
+        contentType: String?,
+        checksum: String?,
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (expectedStatuses.isEmpty()) return@withContext false
+        val now = clock.instant()
+        val updateStatement = update(fileMeta) {
+            set(FileMetaDynamicSqlSupport.status).equalTo(newStatus)
+            set(FileMetaDynamicSqlSupport.updatedAt).equalTo(now)
+            if (sizeBytes != null) {
+                @Suppress("UNCHECKED_CAST")
+                val col = FileMetaDynamicSqlSupport.sizeBytes as org.mybatis.dynamic.sql.SqlColumn<Long>
+                set(col).equalTo(sizeBytes)
+            }
+            if (contentType != null) {
+                @Suppress("UNCHECKED_CAST")
+                val col = FileMetaDynamicSqlSupport.contentType as org.mybatis.dynamic.sql.SqlColumn<String>
+                set(col).equalTo(contentType)
+            }
+            if (checksum != null) {
+                @Suppress("UNCHECKED_CAST")
+                val col = FileMetaDynamicSqlSupport.checksum as org.mybatis.dynamic.sql.SqlColumn<String>
+                set(col).equalTo(checksum)
+            }
+            where {
+                FileMetaDynamicSqlSupport.id isEqualTo id
+                and { FileMetaDynamicSqlSupport.status isIn expectedStatuses.toList() }
+            }
+        }
+        mapper.update(updateStatement) > 0
+    }
+
+    override suspend fun findExpiredPending(cutoff: Instant, limit: Int): List<FileMeta> =
+        findExpiredOrphans(cutoff, limit, setOf(FileStatus.PENDING))
+
+    override suspend fun findExpiredOrphans(
+        cutoff: Instant,
+        limit: Int,
+        statuses: Set<FileStatus>,
+    ): List<FileMeta> = withContext(Dispatchers.IO) {
         require(limit > 0) { "limit must be positive" }
+        if (statuses.isEmpty()) return@withContext emptyList()
         val selectStatement = select(
             FileMetaDynamicSqlSupport.id,
             FileMetaDynamicSqlSupport.ownerId,
@@ -83,7 +127,7 @@ class MyBatisFileMetaRepositoryAdapter(
         ) {
             from(fileMeta)
             where {
-                FileMetaDynamicSqlSupport.status isEqualTo FileStatus.PENDING
+                FileMetaDynamicSqlSupport.status isIn statuses.toList()
                 and { FileMetaDynamicSqlSupport.updatedAt isLessThan cutoff }
             }
             orderBy(FileMetaDynamicSqlSupport.updatedAt)

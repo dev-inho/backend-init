@@ -8,6 +8,7 @@ import cc.midolog.file.port.storage.ChunkReader
 import cc.midolog.file.port.storage.FilePresignPort
 import cc.midolog.file.port.storage.FileStoragePort
 import cc.midolog.web.exception.ApiException
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.util.Optional
@@ -18,6 +19,7 @@ import java.util.UUID
  *
  * 서버 경유 스트리밍 업로드뿐만 아니라 S3 등 객체 스토리지를 위한 Presigned PUT 발급과
  * 업로드 완료 후 실제 스토리지의 HEAD 메타데이터를 직접 대조하여 정합성을 검증하는 사후 전이 로직을 제공한다.
+ * 동시 finalize/delete 경합 시 데이터베이스 수준의 원자적 상태 전이를 통해 DELETED 상태가 READY로 부활하지 않도록 보장한다.
  */
 @Service
 class FileService(
@@ -26,6 +28,7 @@ class FileService(
     private val fileMetaRepositoryPort: FileMetaRepositoryPort,
     filePresignPort: Optional<FilePresignPort> = Optional.empty(),
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
     private val presignPort: FilePresignPort? = filePresignPort.orElse(null)
 
     /**
@@ -122,9 +125,9 @@ class FileService(
     /**
      * 클라이언트가 사전 서명 URL로 업로드를 마친 뒤 호출하는 완료(Finalize) 콜백을 처리한다.
      *
-     * 클라이언트 주장을 배제하고 스토리지의 실제 HEAD 메타데이터(크기, 체크섬 등)를 직접 조회하여 검증하며,
-     * 성공 시 READY로 전이하고 실패 시 FAILED로 마킹 후 고아 객체를 물리 삭제한다.
-     * 이미 READY 상태인 경우 멱등성을 보장하여 성공 응답을 반환한다.
+     * 클라이언트 주장을 배제하고 스토리지의 실제 HEAD 메타데이터(크기, 네이티브 체크섬 등)를 직접 조회하여 검증하며,
+     * 성공 시 READY로 원자적 전이하고 실패 시 FAILED로 마킹 후 고아 객체를 물리 삭제한다.
+     * 동시 finalize/delete 경합 시 DELETED 상태의 파일이 READY로 부활하지 않도록 데이터베이스 원자적 상태 전이로 보장한다.
      */
     suspend fun finalizeUpload(
         id: String,
@@ -166,24 +169,66 @@ class FileService(
             throw ApiException.invalidInput("File size does not match expected size")
         }
 
-        if (file.checksum != null && metadata.checksum != null && file.checksum != metadata.checksum) {
-            failAndCleanup(id, file.storageKey)
-            throw ApiException.invalidInput("File checksum does not match expected checksum")
+        // 체크섬 검증: expectedChecksum이 지정되어 있으면 HEAD 메타데이터에 반드시 유효한 체크섬이 존재해야 하며 일치해야 함 (fail-open 방지)
+        if (file.checksum != null) {
+            if (metadata.checksum == null) {
+                failAndCleanup(id, file.storageKey)
+                throw ApiException.invalidInput("File checksum is missing in storage HEAD metadata")
+            }
+            if (!file.checksum.equals(metadata.checksum, ignoreCase = true)) {
+                failAndCleanup(id, file.storageKey)
+                throw ApiException.invalidInput("File checksum does not match expected checksum")
+            }
         }
 
-        val readyMeta = file.copy(
+        // 원자적 상태 전이: PENDING 상태인 경우에만 READY로 전이 (동시 delete 경합 시 DELETED 부활 차단)
+        val updated = fileMetaRepositoryPort.updateStatusConditionally(
+            id = id,
+            expectedStatuses = setOf(FileStatus.PENDING),
+            newStatus = FileStatus.READY,
             sizeBytes = metadata.sizeBytes,
             contentType = metadata.contentType ?: file.contentType,
             checksum = metadata.checksum ?: file.checksum,
-            status = FileStatus.READY,
-            updatedAt = clock.instant(),
         )
-        return fileMetaRepositoryPort.save(readyMeta)
+
+        if (!updated) {
+            val latest = fileMetaRepositoryPort.findById(id)
+            if (latest?.status == FileStatus.READY) {
+                return latest
+            }
+            if (latest?.status == FileStatus.DELETED) {
+                // 이미 삭제된 상태에서 finalize가 늦게 도달한 경우, 스토리지에 남아있을 수 있는 객체를 정리
+                try {
+                    fileStoragePort.delete(file.storageKey)
+                } catch (e: Exception) {
+                    log.error("Failed to cleanup storage for deleted file on late finalize, key: ${file.storageKey}", e)
+                }
+                throw ApiException.invalidInput("File is already deleted")
+            }
+            throw ApiException.invalidInput("File status changed concurrently, cannot finalize")
+        }
+
+        return fileMetaRepositoryPort.findById(id)
+            ?: file.copy(
+                sizeBytes = metadata.sizeBytes,
+                contentType = metadata.contentType ?: file.contentType,
+                checksum = metadata.checksum ?: file.checksum,
+                status = FileStatus.READY,
+                updatedAt = clock.instant(),
+            )
     }
 
     private suspend fun failAndCleanup(id: String, storageKey: String) {
-        fileMetaRepositoryPort.updateStatus(id, FileStatus.FAILED)
-        fileStoragePort.delete(storageKey)
+        fileMetaRepositoryPort.updateStatusConditionally(
+            id = id,
+            expectedStatuses = setOf(FileStatus.PENDING),
+            newStatus = FileStatus.FAILED,
+        )
+        try {
+            fileStoragePort.delete(storageKey)
+        } catch (e: Exception) {
+            log.error("Failed to delete storage object during finalize failure cleanup, key: $storageKey", e)
+        }
     }
 
     suspend fun getFile(id: String, ownerId: String): FileMeta {
@@ -203,11 +248,20 @@ class FileService(
 
     suspend fun deleteFile(id: String, ownerId: String) {
         val file = getFile(id, ownerId)
+        if (file.status == FileStatus.DELETED) {
+            return
+        }
+
         val deleted = fileStoragePort.delete(file.storageKey)
         if (!deleted) {
             throw IllegalStateException("Failed to delete file from storage")
         }
-        fileMetaRepositoryPort.updateStatus(id, FileStatus.DELETED)
+
+        fileMetaRepositoryPort.updateStatusConditionally(
+            id = id,
+            expectedStatuses = setOf(FileStatus.READY, FileStatus.PENDING, FileStatus.FAILED),
+            newStatus = FileStatus.DELETED,
+        )
     }
 
     suspend fun loadContent(id: String, ownerId: String): ChunkReader {

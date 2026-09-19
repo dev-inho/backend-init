@@ -25,6 +25,7 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test'
+    testImplementation project(':core:application')
 }
 
 tasks.named('test') {
