@@ -70,16 +70,18 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 
 ---
 
-## 2. core:domain 모듈 주석 및 문자열 금지 토큰
+## 2. core:domain 모듈 프레임워크 의존성 차단 규칙
 
 `core:domain` 모듈은 순수 도메인 로직과 포트 인터페이스만을 유지해야 하며, 특정 프레임워크나 ORM 라이브러리에 결합되지 않아야 합니다.
 
-- `DomainPurityTest`는 컴파일 검사뿐만 아니라 소스 파일 텍스트에 대해 `.contains(token)` 문자열 검사를 수행합니다.
-- 따라서 클래스/변수명뿐만 아니라 **주석(KDoc/인라인)이나 문자열 리터럴에도 아래 토큰을 작성하면 테스트가 실패**합니다.
+- `DomainPurityTest`는 Kotlin 소스 구조 기반 검사를 수행하여 주석(단일 줄 주석 및 Kotlin 중첩 블록 주석)과 문자열 리터럴(일반 및 여러 줄 문자열)을 구문 분석 단계에서 안전하게 분리합니다.
+- 따라서 주석이나 문자열 리터럴에 설명용 예시로 기술된 토큰(예: 라이브러리 명칭이나 어노테이션 예시)은 오탐(false positive) 없이 안전하게 허용됩니다.
+- 반면 실제 소스 코드에서 외부 프레임워크/ORM의 import(일반 import, 와일드카드 `.*`, 별칭 `as ...`)나 인라인 FQN 참조, 프레임워크 어노테이션 사용은 엄격히 탐지하여 차단합니다.
+- 패키지 접두사가 유사한 정상 식별자(예: `org.springframeworkfake`)는 오탐하지 않고 허용합니다.
 
-### 금지 토큰 목록
-- 패키지/라이브러리: `org.springframework`, `jakarta.persistence`, `javax.persistence`, `org.jetbrains.exposed`, `org.mybatis`, `com.google.devtools.ksp`
-- 어노테이션 형태: `@Entity`, `@Table`, `@Id`, `@Column`, `@MappedSuperclass`, `@Embeddable`, `@Repository`, `@Component`, `@Service`, `@DomainEntity`, `@GenerateJpa`
+### 금지 대상 목록
+- 금지 패키지 import 및 인라인 FQN: `org.springframework`, `jakarta.persistence`, `javax.persistence`, `org.mybatis`, `org.apache.ibatis`, `com.querydsl`, `com.mysema.query`, `org.jetbrains.exposed`, `com.google.devtools.ksp`, `org.hibernate`
+- 금지 프레임워크 어노테이션: `@Entity`, `@Table`, `@Id`, `@Column`, `@MappedSuperclass`, `@Embeddable`, `@Repository`, `@Component`, `@Service`, `@DomainEntity`, `@GenerateJpa`
 
 ---
 
@@ -164,7 +166,7 @@ fun issueToken(request: TokenRequest): ApiResponse<TokenResponse>
 아키텍처 규칙은 구두 합의에 그치지 않고 자동화된 테스트 가드로 강제합니다.
 
 1. **`DomainPurityTest`** (`core/domain/src/test/kotlin/cc/midolog/sample/DomainPurityTest.kt`)
-   - 지키는 것: `core:domain` 소스 전반에 프레임워크/ORM 어노테이션 및 패키지 참조 문자열이 유입되는 것을 원천 차단.
+   - 지키는 것: `core:domain` 소스에서 주석·문자열의 설명 예시 오탐을 방지하면서 Spring, JPA, MyBatis, QueryDSL 등 외부 프레임워크 import 및 어노테이션 유입을 원천 차단.
 2. **`GatewayPackageDependencyTest`** (`gateway/core/src/test/kotlin/cc/midolog/gateway/GatewayPackageDependencyTest.kt`)
    - 지키는 것: 게이트웨이 `config` 패키지가 하위 `handler`, `proxy`, `route` 패키지를 역참조하여 순환 참조를 형성하는 것을 차단.
 3. **`ControllerResponseTypeTest`** (`core/application/src/test/kotlin/cc/midolog/web/ControllerResponseTypeTest.kt`)

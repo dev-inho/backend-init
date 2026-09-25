@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
+import ch.qos.logback.classic.Logger
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
@@ -89,5 +91,14 @@ class GatewayAppIntegrationTest {
             applicationContext.getBean(RequestIdFilter::class.java),
             "RequestIdFilter must be registered via cc.midolog package scan"
         )
+    }
+
+    @Test
+    @DisplayName("활성 프로파일 없이도 유효한 logback root appender(CONSOLE)가 시작된 상태로 구성된다")
+    fun `default profile has valid logback appender`() {
+        val rootLogger = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as Logger
+        val consoleAppender = rootLogger.getAppender("CONSOLE")
+        assertNotNull(consoleAppender, "CONSOLE appender must exist on ROOT logger when no active profile is specified")
+        assertTrue(consoleAppender.isStarted, "CONSOLE appender must be started")
     }
 }
