@@ -8,7 +8,7 @@
 - **단일 진입점**: 모든 클라이언트 요청이 게이트웨이(포트 8080)를 통해 진입
 - **트랜잭션 ID 관리**: 요청 헤더에서 트랜잭션 ID를 추출하거나 생성하여 전체 요청 생명주기에서 추적 가능하게 관리
 - **라우팅·프록시**: path-prefix에 따라 비즈니스 서버(application, batch) 또는 자체 모니터링 엔드포인트로 분기
-- **회복성 및 헬스체크**: 멱등 요청(GET/HEAD/OPTIONS)에 대한 자동 재시도 및 다운스트림 비즈니스 서버 능동 헬스체크 기반 라운드로빈 분산/장애 격리(fail-open)
+- **회복성, 서킷 브레이커 및 헬스체크**: 타깃별 격리 서킷 브레이커(CLOSED, OPEN, HALF_OPEN)와 동시성 제어, 대기시간 경과 후 probe 복구, 멱등 요청(GET/HEAD/OPTIONS)에 대한 제한적 자동 재시도 및 다운스트림 비즈니스 서버 능동 헬스체크 기반 라운드로빈 분산/장애 격리(fail-open)
 - **메트릭 및 관측성**: Micrometer 연동 프록시 트래픽 계측(`gateway.proxy.requests`, `gateway.proxy.latency`, `gateway.routes.healthy`) 및 Spring Boot Actuator 기본 엔드포인트(`health,metrics`) 제공
 - **요청 로깅 및 모니터링**: MDC(Mapped Diagnostic Context) 연동으로 로그 추적성 확보
 
@@ -49,10 +49,12 @@
     ├─ /actuator/** (미노출 액추에이터 경로) → application(8081) 프록시 (프록시로 내려간 경우 다운스트림은 health 외 denyAll)
     └─ /internal/gateway/requests → gateway 자체 컨트롤러(8080)
     ↓
-HTTP 프록시 중계 및 메트릭 계측 (ProxyHandler)
-    ├─ 멱등 요청(GET/HEAD/OPTIONS) 실패 시 재시도 (최대 1..3회, 100ms 지수 backoff)
-    ├─ 연결 실패 시 즉시 unhealthy 마킹 (Timeout/503 제외)
-    └─ 메트릭 기록 (requests, latency, healthy gauge)
+HTTP 프록시 중계, 서킷 브레이커 및 메트릭 계측 (ProxyHandler)
+    ├─ 타깃별 Circuit Breaker 허가 획득 (CLOSED: 동시성 한도 점검 / OPEN: 503 즉시 차단 / HALF_OPEN: 제한 probe)
+    ├─ 다운스트림 WebClient 비동기 중계 (연결 실패 시 selector.markUnhealthy)
+    ├─ 장애 판정 시 streak 누적 및 threshold 도달 시 회로 OPEN 전이 (회로 거부 자체는 실패 창 미연장)
+    ├─ 멱등 요청(GET/HEAD/OPTIONS) 재시도 시에도 매 시도마다 회로 허가 검증 (회로 열림 우회 불가)
+    └─ 메트릭 기록 (requests, latency, healthy gauge) 및 취소 시 자원 해제
     ↓
 응답 + X-Request-Id 헤더 반환 (최외곽 로깅 기록 및 도달 요청에 대한 가시성 이벤트 저장 완료)
 ```
@@ -119,7 +121,11 @@ class RequestIdFilter : WebFilter {
 gateway/
 ├── core/
 │   └── src/main/kotlin/cc/midolog/gateway/
+│       ├── circuitbreaker/
+│       │   ├── CircuitBreaker.kt
+│       │   └── CircuitBreakerRegistry.kt
 │       ├── config/
+│       │   ├── GatewayCircuitBreakerProperties.kt
 │       │   ├── GatewayClockConfig.kt
 │       │   ├── GatewayRetryProperties.kt
 │       │   ├── GatewayRouteProperties.kt
@@ -304,8 +310,6 @@ class ProxyHandler(
 - **응답 타임아웃 (Response Timeout)**: 10초 (`responseTimeout(Duration.ofSeconds(10))`)
 - **소켓 읽기 타임아웃 (Read Timeout)**: 10초 (`ReadTimeoutHandler(10, TimeUnit.SECONDS)`)
 
-*(타임아웃 수치 3초/10초/10초는 초기 기본값입니다. 다운스트림 환경별 타임아웃 분리 및 서킷 브레이커 도입은 [`./FUTURE.md`](./FUTURE.md) 후보 과제입니다.)*
-
 #### hop-by-hop 헤더 제거 (`proxy/HeaderSanitizer.kt`)
 RFC 7230 §6.1 및 RFC 9110 §7.6.1 규격에 따라 단일 전송 레벨 연결에 국한된 헤더를 제거합니다:
 - `Connection`, `Keep-Alive`, `Proxy-Authenticate`, `Proxy-Authorization`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade` 및 클라이언트 `Connection` 헤더에 명시된 커스텀 홉 헤더 제거.
@@ -313,7 +317,77 @@ RFC 7230 §6.1 및 RFC 9110 §7.6.1 규격에 따라 단일 전송 레벨 연결
 - 프록시 중계 과정에서 바이트 수 불일치 왜곡을 방지하기 위해 `Content-Length` 헤더 제거 (클라이언트가 재계산하도록 유도).
 - 요청 중계 및 응답 반환 양방향으로 적용 (`ProxyHandlerTest`의 `forwards path query and sanitized headers to application route`로 검증).
 
-### 3.3 설정 파일 및 프로퍼티 (application.yml)
+### 3.3 Circuit Breaker (서킷 브레이커)
+**패키지**: `cc.midolog.gateway.circuitbreaker.CircuitBreaker`, `cc.midolog.gateway.circuitbreaker.CircuitBreakerRegistry` (`gateway:core`)
+
+외부 범용 프레임워크 의존성 없이 리액티브 파이프라인에 최적화된 경량 인메모리 서킷 브레이커를 제공합니다.
+
+#### 1) 3대 상태 모델 및 전이 규칙
+- **`CLOSED` (정상 통과)**:
+  - 모든 인입 요청을 정상적으로 다운스트림으로 중계합니다.
+  - 타깃별 최대 동시 호출 수(`gateway.proxy.circuit-breaker.max-concurrent-calls`, 기본값 50)를 초과하는 동시 요청은 `CircuitBreakerConcurrencyException`을 발생시켜 다운스트림 과부하를 방지하고 `503 Service Unavailable`로 조기 거절(fast-fail)합니다.
+  - 정상 응답(2xx, 3xx, 4xx 및 500) 수신 시 실패 카운터(`failureStreak`)는 즉시 0으로 리셋됩니다.
+  - 연속 실패 횟수가 임계값(`gateway.proxy.circuit-breaker.failure-threshold`, 기본값 3)에 도달하면 즉시 회로 상태를 `OPEN`으로 전환하고 현재 시각(`openedAt = clock.instant()`)을 기록합니다.
+- **`OPEN` (차단 및 fast-fail)**:
+  - 다운스트림 호출을 일절 시도하지 않고 즉시 `CircuitBreakerOpenException`을 발생시켜 `503 Service Unavailable` 응답으로 즉시 거절합니다.
+  - **실패 창 무한 연장 방지**: 회로가 열려 거부된 요청은 다운스트림 실패가 아니므로, 거부 자체로 인해 실패 카운터가 증가하거나 `openedAt` 타임스탬프가 갱신되지 않습니다. 따라서 대기 창(`openDuration`)이 무한히 연장되지 않고 설정된 시간에 정확히 만료됩니다.
+  - 차단 지속 시간(`gateway.proxy.circuit-breaker.open-duration`, 기본값 5초)이 경과하기 전까지 모든 요청은 다운스트림 네트워크 자원 소모 없이 즉각 차단됩니다.
+- **`HALF_OPEN` (탐색 및 복구)**:
+  - `openedAt`으로부터 `openDuration`이 지난 후 첫 요청이 인입되면 회로는 `HALF_OPEN` 상태로 전이합니다.
+  - 제한된 탐색 호출 허용량(`gateway.proxy.circuit-breaker.half-open-permits`, 기본값 1)만큼의 probe 요청만 다운스트림으로 전달을 허용합니다. 허용량을 초과하는 동시 요청은 즉시 `503 Service Unavailable`로 거절됩니다.
+  - **probe 성공 시**: 다운스트림이 정상 응답을 반환하면 회로는 즉시 `CLOSED` 상태로 복구되고 `failureStreak`는 0으로 리셋되어 전체 트래픽을 다시 정상 수용합니다.
+  - **probe 실패 시**: probe 요청이 실패(ConnectException, Timeout, 502/503/504)하면 즉시 다시 `OPEN` 상태로 복귀하고 `openedAt = clock.instant()`로 새로운 대기 창을 시작합니다.
+- **세대(Generation) 기반 지연 응답 격리**:
+  - `CLOSED` 시점에 발급된 permit의 늦은 성공·실패 응답이 회로가 이미 `OPEN`, `HALF_OPEN` 또는 새로운 `CLOSED` 상태로 전이된 이후에 도착하더라도, 발급 세대 불일치로 폐기되어 현재 상태의 실패 횟수, 대기 시각(`openedAt`), probe 상태를 일절 변경하지 못하도록 상태 소유권을 엄격히 보장합니다.
+  - `HALF_OPEN` 상태의 탐색(probe) 호출 또한 지연 완료 또는 취소 시 이전 세대의 probe 완료가 새로운 상태나 다음 세대의 `halfOpenInFlight` 카운터를 오염시키지 않도록 격리됩니다.
+
+#### 2) 타깃별 격리 (Target-Specific Isolation)
+- `CircuitBreakerRegistry`는 타깃 URL(`targetUrl`, 예: `http://application-a.internal`, `http://application-b.internal`, `http://batch.internal`)별로 독립적인 `CircuitBreaker` 인스턴스를 유지 및 관리합니다.
+- 특정 애플리케이션 인스턴스(A)의 장애로 회로가 `OPEN`되더라도, 정상 동작하는 다른 인스턴스(B)나 배치 서버로 향하는 요청의 회로 상태에는 일절 영향을 미치지 않습니다 (`ProxyHandlerTest`의 `Target isolation preserves independent circuit breaker states across targets`로 검증).
+
+#### 3) 실행 순서 및 헬스체크·재시도와의 상호작용
+게이트웨이 프록시 체인 내에서 헬스체크, 서킷 브레이커, 재시도의 실행 순서와 역할 분담은 다음과 같습니다:
+
+```
+[클라이언트 요청]
+      ↓
+1. GatewayRouteSelector (타깃 선택 및 라운드로빈)
+   - 정상(healthy) 타겟 풀에서 대상 URL 선택 (all-unhealthy 시 전체 fail-open)
+      ↓
+2. CircuitBreaker.acquire() (타깃별 회로 상태 점검 및 허가 획득)
+   - CLOSED: 동시 실행 한도(maxConcurrentCalls) 점검
+   - OPEN: 다운스트림 호출 없이 즉시 CircuitBreakerOpenException (503 반환)
+   - HALF_OPEN: 탐색 허용량(halfOpenPermits) 점검
+      ↓
+3. WebClient 다운스트림 비동기 호출
+   - ConnectException 등 연결 실패 시 → routeSelector.markUnhealthy(targetUrl) 즉시 호출
+      ↓
+4. 결과 감지 및 회로 상태 기록 (recordSuccess / recordFailure / release)
+   - 실패(ConnectException, Timeout, 502/503/504) 시 failureStreak 증가 (임계값 도달 시 OPEN)
+   - 성공(정상 응답) 시 failureStreak 리셋 (HALF_OPEN일 경우 CLOSED로 복구)
+   - 취소(cancel) 및 완료 시 doFinally에서 점유한 동시성 permit 즉시 반환
+      ↓
+5. retryWhen (멱등 요청 제한 재시도)
+   - GET/HEAD/OPTIONS 및 재시도 가능 에러(502/503/504, Timeout, ConnectException)만 재시도
+   - 중요 규칙: CircuitBreakerException은 isRetryableError에서 제외되어 재시도하지 않음
+   - 회로 열림 우회 방지: 재시도 시에도 매 시도(attempt)마다 Mono.defer를 통해 CircuitBreaker.acquire()를 거치므로, 재시도 도중 임계값에 도달해 회로가 열리면 후속 재시도는 즉시 503으로 차단되며 회로를 우회하지 못함
+      ↓
+6. gatewayError (최종 응답 변환)
+   - CircuitBreaker 예외 → 503 Service Unavailable
+   - TimeoutException → 504 Gateway Timeout
+   - 멱등 요청의 502/503/504 원본 상태 코드 보존 및 비멱등 502 변환
+```
+
+#### 4) 헬스체크와 서킷 브레이커의 역할 분담
+- **능동 헬스체크 (`GatewayRouteSelector`)**: 백그라운드에서 주기적으로 `${target}/actuator/health` 핑을 전송하여 라우팅 가능한 타깃 풀(healthy targets)을 선별하고 비정상 인스턴스를 사전에 제외합니다.
+- **수동 헬스체크 (`markUnhealthy`)**: 요청 중계 중 실제 연결 실패(`ConnectException`) 발생 시 헬스체크 주기를 기다리지 않고 해당 타깃을 즉각 비정상 처리합니다.
+- **서킷 브레이커 (`CircuitBreaker`)**: 요청 실행 단계에서 타깃별 연속 실패율 및 동시 실행량을 실시간 감시하여, 타깃 선택 이후 발생한 돌발 장애나 과부하 상황에서 다운스트림으로의 요청을 즉시 차단(fast-fail)하고 게이트웨이 커넥션/스레드 자원을 보호합니다. 타깃이 unhealthy 상태여도 전체 fail-open으로 선택되었을 때 회로가 열려있다면 즉시 503으로 차단됩니다.
+
+#### 5) 결정론적 테스트 원칙 (Clock 주입)
+- `CircuitBreaker` 및 `CircuitBreakerRegistry`는 전역 시스템 시계 대신 `java.time.Clock` 빈을 주입받아 동작합니다.
+- 테스트 환경에서는 `MutableClock` 또는 `Clock.fixed`를 주입하여 `clock.advance(Duration.ofSeconds(6))`와 같이 가상 시간을 결정론적으로 조작하므로, `Thread.sleep` 등 비결정론적 실시간 대기 없이 모든 시간 기반 전이(OPEN → HALF_OPEN 만료 등)를 수 밀리초 내에 빠르고 안정적으로 검증합니다 (`ProxyHandlerTest`, `CircuitBreakerTest`로 보증).
+
+### 3.4 설정 파일 및 프로퍼티 (application.yml)
 게이트웨이 애플리케이션(`gateway:app`)의 실제 `application.yml` 및 `application-local.yml` 설정 파일 내용입니다:
 
 ```yaml
@@ -366,12 +440,17 @@ gateway:
     capacity: ${GATEWAY_REQUEST_VISIBILITY_CAPACITY:200}
 ```
 
-#### 재시도, 헬스체크 및 관리 엔드포인트 핵심 설정 키
+#### 서킷 브레이커, 재시도, 헬스체크 및 관리 엔드포인트 핵심 설정 키
 
-게이트웨이의 재시도 정책(`GatewayRetryProperties`), 헬스체크(`GatewayHealthCheckProperties`), 액추에이터 엔드포인트 노출은 아래 프로퍼티 키로 제어됩니다:
+게이트웨이의 서킷 브레이커(`GatewayCircuitBreakerProperties`), 재시도 정책(`GatewayRetryProperties`), 헬스체크(`GatewayHealthCheckProperties`), 액추에이터 엔드포인트 노출은 아래 프로퍼티 키로 제어됩니다:
 
 | 설정 키 | 기본값 | 허용 범위 / 형식 | 설명 |
 |---|:---:|:---:|---|
+| `gateway.proxy.circuit-breaker.enabled` | `true` | `true`, `false` | 서킷 브레이커 기능 활성화 여부 (`GatewayCircuitBreakerPropertiesTest`로 검증). |
+| `gateway.proxy.circuit-breaker.failure-threshold` | `3` | Int (`>= 1`) | 회로를 OPEN으로 전이하기 위한 연속 실패 횟수 임계값 (`GatewayCircuitBreakerPropertiesTest`로 검증). |
+| `gateway.proxy.circuit-breaker.open-duration` | `5s` | Duration (`> 0s`) | 회로가 OPEN 상태를 유지하는 대기 시간. 경과 후 HALF_OPEN으로 전이 (`GatewayCircuitBreakerPropertiesTest`로 검증). |
+| `gateway.proxy.circuit-breaker.half-open-permits` | `1` | Int (`>= 1`) | HALF_OPEN 상태에서 허용되는 최대 probe 동시 호출 수 (`GatewayCircuitBreakerPropertiesTest`로 검증). |
+| `gateway.proxy.circuit-breaker.max-concurrent-calls` | `50` | Int (`>= 1`) | 타깃별 최대 동시 실행 호출 수. 초과 시 503 fast-fail (`GatewayCircuitBreakerPropertiesTest`로 검증). |
 | `gateway.proxy.retry.max-attempts` | `1` | `1..3` | 첫 번째 시도를 포함한 총 시도 횟수. 1이면 재시도 없음, 3이면 첫 실패 후 최대 2회 재시도 (`GatewayRetryPropertiesTest`로 검증). |
 | `gateway.proxy.retry.backoff` | `100ms` | Duration (음수 불가) | 재시도 시 적용할 기본 백오프 간격. `jitter(0.0)`의 결정론적 지수 backoff가 적용됨 (`GatewayRetryPropertiesTest`로 검증). |
 | `gateway.routes.health-check.enabled` | `false` | `true`, `false` | 백엔드 application 타겟 대상 능동 헬스체크 활성화 여부 (`GatewayRoutePropertiesTest`로 검증). |
@@ -389,7 +468,7 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 
 ---
 
-### 3.4 관측성 및 메트릭 (Metrics & Actuator)
+### 3.5 관측성 및 메트릭 (Metrics & Actuator)
 
 게이트웨이는 프록시 트래픽과 라우트 대상의 가용성 상태를 모니터링하기 위해 Micrometer 기반의 메트릭을 기본 제공합니다.
 
@@ -442,15 +521,16 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 | `ProxyHandler` (`HeaderSanitizer` 사용) | **X** | **O** | **O** | HTTP 프록시 핸들러 |
 | `WebClientConfig` (`proxyWebClient`) | **X** | **O** | **O** | 프록시 전용 WebClient |
 | `GatewayRouteSelector` / `GatewayRouteProperties` | **X** | **O** | **O** | 라우트 타겟 결정, 헬스체크 및 라운드로빈 |
+| `GatewayCircuitBreakerProperties` / `CircuitBreakerRegistry` | **X** | **O** | **O** | 타깃별 서킷 브레이커 설정 및 레지스트리 인프라 빈 |
 | `GatewayRetryProperties` | **X** | **O** | **O** | 프록시 멱등 재시도 설정 |
 | `JwtAuthFilter` | **X** | **O** | **O** | `jwt.secret` 필수 검증, 프록시 진입 전 인증 |
 
 - **공통 세 모드 (embedded, standalone, remote)**:
   `AuthTokenRateLimitFilter` 및 `RateLimiter`/`RedisRateLimiter`, `GatewayClockConfig`가 기본 등록되며, `gateway.request-visibility.enabled=true`인 경우 가시성 빈들(`RequestEventStore`, `RequestVisibilityFilter`, `RequestVisibilityHandler`, `visibilityRoutes`)이 등록됩니다.
 - **standalone 및 remote 모드**:
-  공통 빈과 함께 프록시 빈 묶음(`RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `GatewayRetryProperties`, `JwtAuthFilter`)이 활성화됩니다. 자동 설정 클래스인 `GatewayAutoConfiguration`은 `@ConditionalOnExpression("'\${gateway.mode:}' == 'standalone' || '\${gateway.mode:}' == 'remote'")` 어노테이션으로 이를 바인딩합니다. 현재 코드베이스에서 standalone과 remote는 동일한 프록시 빈 묶음을 공유하며 환경 설정값(타겟 URL 및 인프라 구성)으로 역할을 구분합니다.
+  공통 빈과 함께 프록시 및 서킷 브레이커 빈 묶음(`RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `GatewayCircuitBreakerProperties`, `CircuitBreakerRegistry`, `GatewayRetryProperties`, `JwtAuthFilter`)이 활성화됩니다. 자동 설정 클래스인 `GatewayAutoConfiguration`은 `@ConditionalOnExpression("'\${gateway.mode:}' == 'standalone' || '\${gateway.mode:}' == 'remote'")` 어노테이션으로 이를 바인딩합니다. 현재 코드베이스에서 standalone과 remote는 동일한 프록시 빈 묶음을 공유하며 환경 설정값(타겟 URL 및 인프라 구성)으로 역할을 구분합니다.
 - **embedded 모드 (In-process 직접 처리)**:
-  호스트 애플리케이션(`core:application`)에 `gateway:starter`를 의존성으로 탑재하여 동작합니다. `RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `GatewayRetryProperties`, `JwtAuthFilter` 등 프록시 관련 빈을 전혀 등록하지 않습니다.
+  호스트 애플리케이션(`core:application`)에 `gateway:starter`를 의존성으로 탑재하여 동작합니다. `RouteConfig`, `ProxyHandler`, `WebClientConfig`, `GatewayRouteSelector`, `GatewayRouteProperties`, `GatewayCircuitBreakerProperties`, `CircuitBreakerRegistry`, `GatewayRetryProperties`, `JwtAuthFilter` 등 프록시 및 서킷 브레이커 인프라 빈을 전혀 등록하지 않습니다.
   - **정확한 필터 순서**: 호스트의 스프링 시큐리티가 앞단에 개입하므로 `-100 Spring Security → -2 HttpLoggingFilter → -1 AuthTokenRateLimitFilter → 0 RequestIdFilter → 100 RequestVisibilityFilter` 순서로 동작합니다.
   - **인증 및 라우팅**: 게이트웨이 자체 `JwtAuthFilter` 대신 호스트 애플리케이션의 `SecurityConfig`가 JWT 인증을 전담합니다. 프록시용 `RouteConfig`가 없으므로 애플리케이션의 컨트롤러(`RequestMappingHandlerMapping`, `order=0`)가 직접 비즈니스 로직을 처리합니다. 단, 가시성 조회용 `visibilityRoutes` 빈은 오직 `/internal/gateway/requests` 경로에만 반응하는 Functional Router(`RouterFunctionMapping`, `order=-1`)로 등록되어 해당 경로만 컨트롤러보다 먼저 가로채어 처리합니다.
   - **가시성 설정 정책**: 가시성 기능(`request-visibility`)은 운영 환경 성능을 위해 기본적으로 `false`로 비활성화되며, `local` 프로파일 환경에서만 명시적으로 `true`로 활성화됩니다.
@@ -464,7 +544,7 @@ Request visibility는 기본 비활성화입니다. `GATEWAY_REQUEST_VISIBILITY_
 |------|----------|------|------|
 | `/api/**` | application | 8081 | 비즈니스 API 요청 (healthy 타겟 대상 라운드로빈, 모두 unhealthy 시 fail-open) |
 | `/batch/**` | batch | 8082 | 배치/스케줄 작업 요청 (단일 타겟, 헬스체크 제외) |
-| `/actuator/health`, `/actuator/metrics` | gateway 자체 | 8080 | 게이트웨이 자체 기본 노출 액추에이터 엔드포인트 (직접 서빙, 3.4절 참조) |
+| `/actuator/health`, `/actuator/metrics` | gateway 자체 | 8080 | 게이트웨이 자체 기본 노출 액추에이터 엔드포인트 (직접 서빙, 3.5절 참조) |
 | `/actuator/**` (미노출 액추에이터 경로) | application | 8081 | 게이트웨이 자체 미노출 액추에이터 요청이 catch-all 프록시로 전달됨 (아래 주의 박스 참조) |
 | `/internal/gateway/requests` | gateway | 8080 | request visibility 조회 (기본 비활성화, JWT Bearer 토큰 필수) |
 | 기타 | 게이트웨이 자신 | 8080 | 404 Not Found |

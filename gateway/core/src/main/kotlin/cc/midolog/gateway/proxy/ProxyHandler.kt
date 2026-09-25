@@ -1,5 +1,7 @@
 package cc.midolog.gateway.proxy
 
+import cc.midolog.gateway.circuitbreaker.CircuitBreakerException
+import cc.midolog.gateway.circuitbreaker.CircuitBreakerRegistry
 import cc.midolog.gateway.config.GatewayRetryProperties
 import cc.midolog.gateway.route.GatewayRouteSelector
 import io.micrometer.core.instrument.MeterRegistry
@@ -39,7 +41,8 @@ class ProxyHandler(
     private val proxyWebClient: WebClient,
     private val routeSelector: GatewayRouteSelector,
     private val retryProperties: GatewayRetryProperties = GatewayRetryProperties(),
-    private val meterRegistry: MeterRegistry? = null
+    private val meterRegistry: MeterRegistry? = null,
+    private val circuitBreakerRegistry: CircuitBreakerRegistry = CircuitBreakerRegistry()
 ) : HandlerFunction<ServerResponse> {
 
     override fun handle(request: ServerRequest): Mono<ServerResponse> = proxy(request)
@@ -51,52 +54,58 @@ class ProxyHandler(
 
         val timerSample = meterRegistry?.let { Timer.start(it) }
         var attemptCount = 0
+        val circuitBreaker = circuitBreakerRegistry.getOrCreate(targetUrl)
 
-        return proxyWebClient
-            .method(HttpMethod.valueOf(method))
-            .uri(targetUri(targetUrl, request.uri()))
-            .headers { it.addAll(HeaderSanitizer.sanitize(request.headers().asHttpHeaders())) }
-            .body(BodyInserters.fromDataBuffers(request.bodyToFlux(DataBuffer::class.java)))
-            .exchangeToMono { response ->
-                val status = response.statusCode().value()
-                if (status == 502 || status == 503 || status == 504) {
-                    response.releaseBody().then(Mono.error(RetryableStatusCodeException(status)))
-                } else {
-                    val responseHeaders = HeaderSanitizer.sanitize(response.headers().asHttpHeaders())
-                    response.bodyToMono(ByteArray::class.java)
-                        .defaultIfEmpty(ByteArray(0))
-                        .flatMap { body ->
-                            ServerResponse.status(response.statusCode())
-                                .headers { it.addAll(responseHeaders) }
-                                .bodyValue(body)
+        return Mono.defer {
+            circuitBreaker.execute(
+                proxyWebClient
+                    .method(HttpMethod.valueOf(method))
+                    .uri(targetUri(targetUrl, request.uri()))
+                    .headers { it.addAll(HeaderSanitizer.sanitize(request.headers().asHttpHeaders())) }
+                    .body(BodyInserters.fromDataBuffers(request.bodyToFlux(DataBuffer::class.java)))
+                    .exchangeToMono { response ->
+                        val status = response.statusCode().value()
+                        if (status == 502 || status == 503 || status == 504) {
+                            response.releaseBody().then(Mono.error(RetryableStatusCodeException(status)))
+                        } else {
+                            val responseHeaders = HeaderSanitizer.sanitize(response.headers().asHttpHeaders())
+                            response.bodyToMono(ByteArray::class.java)
+                                .defaultIfEmpty(ByteArray(0))
+                                .flatMap { body ->
+                                    ServerResponse.status(response.statusCode())
+                                        .headers { it.addAll(responseHeaders) }
+                                        .bodyValue(body)
+                                }
                         }
-                }
-            }
-            .doOnSubscribe { attemptCount++ }
-            .doOnError { e ->
-                if (isConnectionFailure(e)) {
-                    routeSelector.markUnhealthy(targetUrl)
-                }
-            }
-            .retryWhen(
-                Retry.backoff(maxOf(0, retryProperties.maxAttempts - 1).toLong(), retryProperties.backoff).jitter(0.0)
-                    .filter { e ->
-                        if (method != "GET" && method != "HEAD" && method != "OPTIONS") return@filter false
-                        isRetryableError(e)
-                    }
+                    },
+                isFailure = { e -> isCircuitBreakerFailure(e) }
             )
-            .onErrorResume { e ->
-                gatewayError(e, method)
+        }
+        .doOnSubscribe { attemptCount++ }
+        .doOnError { e ->
+            if (isConnectionFailure(e)) {
+                routeSelector.markUnhealthy(targetUrl)
             }
-            .doOnSuccess { response ->
-                recordMetrics(targetUrl, response?.statusCode()?.value()?.toString() ?: "500", attemptCount > 1, timerSample)
-            }
+        }
+        .retryWhen(
+            Retry.backoff(maxOf(0, retryProperties.maxAttempts - 1).toLong(), retryProperties.backoff).jitter(0.0)
+                .filter { e ->
+                    if (method != "GET" && method != "HEAD" && method != "OPTIONS") return@filter false
+                    isRetryableError(e)
+                }
+        )
+        .onErrorResume { e ->
+            gatewayError(e, method)
+        }
+        .doOnSuccess { response ->
+            recordMetrics(targetUrl, response?.statusCode()?.value()?.toString() ?: "500", attemptCount > 1, timerSample)
+        }
 
     }
 
     private fun isConnectionFailure(e: Throwable): Boolean {
         val unwrapped = Exceptions.unwrap(e)
-        if (unwrapped is TimeoutException || unwrapped is RetryableStatusCodeException) return false
+        if (unwrapped is CircuitBreakerException || unwrapped is TimeoutException || unwrapped is RetryableStatusCodeException) return false
         var cause: Throwable? = unwrapped
         while (cause != null) {
             if (cause is ConnectException || cause.javaClass.simpleName == "AnnotatedConnectException") return true
@@ -107,6 +116,14 @@ class ProxyHandler(
 
     private fun isRetryableError(e: Throwable): Boolean {
         val unwrapped = Exceptions.unwrap(e)
+        if (unwrapped is CircuitBreakerException) return false
+        if (unwrapped is TimeoutException || unwrapped is RetryableStatusCodeException) return true
+        return isConnectionFailure(e)
+    }
+
+    private fun isCircuitBreakerFailure(e: Throwable): Boolean {
+        val unwrapped = Exceptions.unwrap(e)
+        if (unwrapped is CircuitBreakerException) return false
         if (unwrapped is TimeoutException || unwrapped is RetryableStatusCodeException) return true
         return isConnectionFailure(e)
     }
@@ -124,7 +141,9 @@ class ProxyHandler(
     private fun gatewayError(error: Throwable, method: String): Mono<ServerResponse> {
         val unwrapped = Exceptions.unwrap(if (Exceptions.isRetryExhausted(error)) error.cause ?: error else error)
 
-        val status = if (unwrapped is TimeoutException) {
+        val status = if (unwrapped is CircuitBreakerException) {
+            HttpStatus.SERVICE_UNAVAILABLE
+        } else if (unwrapped is TimeoutException) {
             HttpStatus.GATEWAY_TIMEOUT
         } else if (unwrapped is RetryableStatusCodeException && (method == "GET" || method == "HEAD" || method == "OPTIONS")) {
             HttpStatus.valueOf(unwrapped.statusCode)

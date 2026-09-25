@@ -1,5 +1,7 @@
 package cc.midolog.gateway.autoconfigure
 
+import cc.midolog.gateway.circuitbreaker.CircuitBreakerRegistry
+import cc.midolog.gateway.config.GatewayCircuitBreakerProperties
 import cc.midolog.gateway.config.GatewayRouteProperties
 import cc.midolog.gateway.filter.AuthTokenRateLimitFilter
 import cc.midolog.gateway.filter.JwtAuthFilter
@@ -87,6 +89,8 @@ class GatewayAutoConfigurationTest {
             assertNotNull(context.getBean(WebClient::class.java))
             assertNotNull(context.getBean(GatewayRouteSelector::class.java))
             assertNotNull(context.getBean(GatewayRouteProperties::class.java))
+            assertNotNull(context.getBean(GatewayCircuitBreakerProperties::class.java))
+            assertNotNull(context.getBean(CircuitBreakerRegistry::class.java))
             assertNotNull(context.getBean(JwtAuthFilter::class.java))
 
             val visibilityRoutes = context.getBean("visibilityRoutes", RouterFunction::class.java)
@@ -123,6 +127,8 @@ class GatewayAutoConfigurationTest {
             assertNotNull(context.getBean(WebClient::class.java))
             assertNotNull(context.getBean(GatewayRouteSelector::class.java))
             assertNotNull(context.getBean(GatewayRouteProperties::class.java))
+            assertNotNull(context.getBean(GatewayCircuitBreakerProperties::class.java))
+            assertNotNull(context.getBean(CircuitBreakerRegistry::class.java))
             assertNotNull(context.getBean(JwtAuthFilter::class.java))
         }
     }
@@ -146,12 +152,15 @@ class GatewayAutoConfigurationTest {
             assertNotNull(context.getBean(RequestEventStore::class.java))
             assertNotNull(context.getBean(RequestVisibilityHandler::class.java))
 
-            // Proxy 빈 존재 안함 (이름 + 타입 단언)
+            // Proxy 및 Breaker 빈 존재 안함 (이름 + 타입 단언)
             assertFalse(context.containsBean("proxyHandler"))
             assertFalse(context.containsBean("routes"))
             assertFalse(context.containsBean("gatewayRouteSelector"))
+            assertFalse(context.containsBean("circuitBreakerRegistry"))
             assertFalse(context.containsBean("jwtAuthFilter"))
             assertTrue(context.getBeansOfType(GatewayRouteProperties::class.java).isEmpty())
+            assertTrue(context.getBeansOfType(GatewayCircuitBreakerProperties::class.java).isEmpty())
+            assertTrue(context.getBeansOfType(CircuitBreakerRegistry::class.java).isEmpty())
             assertTrue(context.getBeansOfType(WebClient::class.java).isEmpty())
 
             // Visibility RouterFunction 확인 및 /api/** 미매칭 검증
