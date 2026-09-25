@@ -164,6 +164,126 @@ class GenerateMyBatisDynamicSqlSourcesTaskTest {
         )
     }
 
+    @Test
+    fun `generateMyBatisDynamicSqlSources generates dynamic sql support for customer extension entity`() {
+        val projectDir = Files.createTempDirectory("mybatis-dynamic-sql-customer-test")
+        writeSettings(projectDir)
+        projectDir.resolve("src/main/kotlin").createDirectories()
+        val customerSourceDir = projectDir.resolve("customers/acme/src/main/kotlin/cc/midolog/customers/acme/model")
+        customerSourceDir.createDirectories()
+        customerSourceDir.resolve("AcmeOrderNote.kt").writeText(
+            """
+            package cc.midolog.customers.acme.model
+
+            import java.time.Instant
+
+            data class AcmeOrderNote(
+                val id: String,
+                val customerId: String,
+                val note: String,
+                val createdAt: Instant,
+            )
+            """.trimIndent(),
+        )
+        projectDir.resolve("build.gradle").writeText(
+            """
+            plugins {
+                id 'base'
+                id 'cc.midolog.jpa-dsl'
+            }
+
+            mybatisDynamicSql {
+                entity('cc.midolog.customers.acme.model.AcmeOrderNote') {
+                    table = 'acme_order_note'
+                    id = 'id'
+                    field('customerId') { column = 'customer_id' }
+                    field('note') { column = 'note' }
+                    field('createdAt') { column = 'created_at' }
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val result = gradle(projectDir, "generateMyBatisDynamicSqlSources").build()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateMyBatisDynamicSqlSources")?.outcome)
+        val generatedRoot = projectDir.resolve("build/generated/sources/mybatisDynamicSql/main/kotlin")
+        val supportFile = generatedRoot.resolve("cc/midolog/storage/mybatis/customers/acme/AcmeOrderNoteDynamicSqlSupport.kt")
+        assertTrue(supportFile.exists(), "AcmeOrderNoteDynamicSqlSupport.kt should be generated")
+        val content = supportFile.readText()
+        assertTrue(content.contains("class AcmeOrderNote : SqlTable(\"acme_order_note\")"))
+        assertTrue(content.contains("val customerId: SqlColumn<String>"))
+    }
+
+    @Test
+    fun `generateMyBatisDynamicSqlSources generates dynamic sql support for corp second customer extension entity`() {
+        val projectDir = Files.createTempDirectory("mybatis-dynamic-sql-corp-test")
+        writeSettings(projectDir)
+        projectDir.resolve("src/main/kotlin").createDirectories()
+        val corpSourceDir = projectDir.resolve("customers/corp/src/main/kotlin/cc/midolog/customers/corp/model")
+        corpSourceDir.createDirectories()
+        corpSourceDir.resolve("CorpCustomerSetting.kt").writeText(
+            """
+            package cc.midolog.customers.corp.model
+
+            data class CorpCustomerSetting(
+                val id: String,
+                val settingKey: String,
+                val settingValue: String,
+            )
+            """.trimIndent(),
+        )
+        projectDir.resolve("build.gradle").writeText(
+            """
+            plugins {
+                id 'base'
+                id 'cc.midolog.jpa-dsl'
+            }
+
+            mybatisDynamicSql {
+                entity('cc.midolog.customers.corp.model.CorpCustomerSetting') {
+                    table = 'corp_customer_setting'
+                    id = 'id'
+                    field('settingKey') { column = 'setting_key' }
+                    field('settingValue') { column = 'setting_value' }
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val result = gradle(projectDir, "generateMyBatisDynamicSqlSources").build()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateMyBatisDynamicSqlSources")?.outcome)
+        val generatedRoot = projectDir.resolve("build/generated/sources/mybatisDynamicSql/main/kotlin")
+        val supportFile = generatedRoot.resolve("cc/midolog/storage/mybatis/customers/corp/CorpCustomerSettingDynamicSqlSupport.kt")
+        assertTrue(supportFile.exists(), "CorpCustomerSettingDynamicSqlSupport.kt should be generated")
+        val content = supportFile.readText()
+        assertTrue(content.contains("class CorpCustomerSetting : SqlTable(\"corp_customer_setting\")"))
+        assertTrue(content.contains("val settingKey: SqlColumn<String>"))
+
+        val providerFile = generatedRoot.resolve("cc/midolog/storage/mybatis/customers/corp/CorpCustomerSettingSqlProvider.kt")
+        assertTrue(providerFile.exists(), "CorpCustomerSettingSqlProvider.kt should be generated")
+        val providerContent = providerFile.readText()
+        assertTrue(providerContent.contains("class CorpCustomerSettingSqlProvider"))
+        assertTrue(providerContent.contains("MERGE INTO corp_customer_setting"))
+        assertTrue(providerContent.contains("ON CONFLICT (id) DO UPDATE SET"))
+
+        val mapperFile = generatedRoot.resolve("cc/midolog/storage/mybatis/customers/corp/CorpCustomerSettingMapper.kt")
+        assertTrue(mapperFile.exists(), "CorpCustomerSettingMapper.kt should be generated")
+        assertTrue(mapperFile.readText().contains("@InsertProvider(type = CorpCustomerSettingSqlProvider::class, method = \"upsert\")"))
+
+        val autoConfigFile = generatedRoot.resolve("cc/midolog/storage/mybatis/customers/corp/CorpCustomerSettingMyBatisAutoConfiguration.kt")
+        assertTrue(autoConfigFile.exists(), "CorpCustomerSettingMyBatisAutoConfiguration.kt should be generated")
+        val autoConfigContent = autoConfigFile.readText()
+        assertTrue(autoConfigContent.contains("@ConditionalOnClass(name = [\"cc.midolog.customers.corp.model.CorpCustomerSetting\"])"))
+        assertTrue(autoConfigContent.contains("@ConditionalOnProperty(name = [\"app.customer\"], havingValue = \"corp\")"))
+
+        val resourcesRoot = projectDir.resolve("build/generated/resources/mybatisDynamicSql/main")
+        val importsFile = resourcesRoot.resolve("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+        assertTrue(importsFile.exists(), "AutoConfiguration.imports should be generated in resources")
+        assertTrue(importsFile.readText().contains("cc.midolog.storage.mybatis.customers.corp.CorpCustomerSettingMyBatisAutoConfiguration"))
+    }
+
     private fun gradle(projectDir: Path, vararg arguments: String): GradleRunner =
         GradleRunner.create()
             .withProjectDir(projectDir.toFile())

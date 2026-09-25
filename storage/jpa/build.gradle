@@ -21,9 +21,11 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
     implementation 'io.github.openfeign.querydsl:querydsl-jpa:7.6'
     kapt 'io.github.openfeign.querydsl:querydsl-apt:7.6:jakarta'
+    compileOnly project(':customers:acme')
     runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation testFixtures(project(':core:domain'))
+    testImplementation project(':customers:acme')
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-flyway'
     testRuntimeOnly 'com.h2database:h2'

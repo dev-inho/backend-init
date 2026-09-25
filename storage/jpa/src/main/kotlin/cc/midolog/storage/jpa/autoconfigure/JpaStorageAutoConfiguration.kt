@@ -23,8 +23,22 @@ import org.springframework.transaction.support.TransactionTemplate
 
 @AutoConfiguration
 @ConditionalOnProperty(prefix = "storage.persistence", name = ["provider"], havingValue = "jpa")
-@EntityScan(basePackages = ["cc.midolog.storage.jpa"])
-@EnableJpaRepositories(basePackages = ["cc.midolog.storage.jpa"])
+@EntityScan(
+    basePackages = [
+        "cc.midolog.storage.jpa.sample",
+        "cc.midolog.storage.jpa.user",
+        "cc.midolog.storage.jpa.file",
+        "cc.midolog.storage.jpa.jpadsl.fixture",
+    ]
+)
+@EnableJpaRepositories(
+    basePackages = [
+        "cc.midolog.storage.jpa.sample",
+        "cc.midolog.storage.jpa.user",
+        "cc.midolog.storage.jpa.file",
+        "cc.midolog.storage.jpa.jpadsl.fixture",
+    ]
+)
 class JpaStorageAutoConfiguration {
 
     @Bean

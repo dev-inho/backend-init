@@ -44,7 +44,11 @@ class MyBatisMapperScannerRegistrar : ImportBeanDefinitionRegistrar, ResourceLoa
             scanner.setResourceLoader(resourceLoader)
         }
         scanner.registerFilters()
-        scanner.doScan("cc.midolog.storage.mybatis")
+        scanner.doScan(
+            "cc.midolog.storage.mybatis.sample",
+            "cc.midolog.storage.mybatis.user",
+            "cc.midolog.storage.mybatis.file",
+        )
     }
 }
 

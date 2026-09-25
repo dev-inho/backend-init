@@ -21,6 +21,9 @@ abstract class GenerateJpaDslSourcesTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    @get:OutputDirectory
+    abstract val resourcesOutputDir: DirectoryProperty
+
     @get:Input
     abstract val specsFingerprint: Property<String>
 
@@ -43,16 +46,38 @@ abstract class GenerateJpaDslSourcesTask : DefaultTask() {
         outputRoot.deleteRecursively()
         outputRoot.mkdirs()
 
+        val resourcesRoot = resourcesOutputDir.get().asFile
+        resourcesRoot.deleteRecursively()
+        resourcesRoot.mkdirs()
+
         val parser = DomainSourceParser()
         val validator = JpaDslValidator()
         val renderer = JpaDslRenderer()
         val domainRoot = domainSourceDir.get().asFile
 
+        val customerAutoConfigs = mutableListOf<String>()
+
         specs.forEach { spec ->
             val domainFile = File(domainRoot, spec.domainClass.replace('.', '/') + ".kt")
-            val properties = parser.parse(spec.domainClass, domainFile)
+            val resolvedFile = parser.resolveDomainFile(spec.domainClass, domainFile)
+            val properties = parser.parse(spec.domainClass, resolvedFile)
             val idProperty = validator.validate(spec.domainClass, properties, spec)
             renderer.render(spec, properties, idProperty, outputRoot)
+
+            if (spec.domainClass.contains(".customers.")) {
+                val domainPackage = spec.domainClass.substringBeforeLast('.')
+                val domainSimpleName = spec.domainClass.simpleName()
+                val contextPackage = domainPackage
+                    .removePrefix("cc.midolog.")
+                    .removeSuffix(".model")
+                customerAutoConfigs.add("cc.midolog.storage.jpa.$contextPackage.${domainSimpleName}JpaAutoConfiguration")
+            }
+        }
+
+        if (customerAutoConfigs.isNotEmpty()) {
+            val importsFile = File(resourcesRoot, "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+            importsFile.parentFile.mkdirs()
+            importsFile.writeText(customerAutoConfigs.joinToString("\n") + "\n")
         }
     }
 }

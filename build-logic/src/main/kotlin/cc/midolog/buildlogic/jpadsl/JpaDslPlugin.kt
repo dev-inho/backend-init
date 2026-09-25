@@ -116,6 +116,9 @@ class JpaDslPlugin : Plugin<Project> {
             domainProject.layout.projectDirectory.dir("src/main/kotlin")
         }
 
+        val jpaGeneratedResourcesDir = project.layout.buildDirectory.dir("generated/resources/jpaDsl/main")
+        val mybatisGeneratedResourcesDir = project.layout.buildDirectory.dir("generated/resources/mybatisDynamicSql/main")
+
         project.tasks.register("jpaDslPluginInfo", JpaDslPluginInfoTask::class.java)
         project.tasks.register("validateJpaDslPluginScaffold", ValidateJpaDslPluginScaffoldTask::class.java)
         val generateJpaDslSources = project.tasks.register(
@@ -124,6 +127,7 @@ class JpaDslPlugin : Plugin<Project> {
         ) { task ->
             task.domainSourceDir.set(domainSourceDir)
             task.outputDir.set(generatedSourceDir)
+            task.resourcesOutputDir.set(jpaGeneratedResourcesDir)
             task.specsProvider = { jpaDsl.specs() }
             task.specsFingerprint.set(project.provider { jpaDsl.specs().fingerprint() })
         }
@@ -133,6 +137,7 @@ class JpaDslPlugin : Plugin<Project> {
         ) { task ->
             task.domainSourceDir.set(mybatisDomainSourceDir)
             task.outputDir.set(mybatisGeneratedSourceDir)
+            task.resourcesOutputDir.set(mybatisGeneratedResourcesDir)
             task.specsProvider = { mybatisDynamicSql.specs() }
             task.specsFingerprint.set(project.provider { mybatisDynamicSql.specs().fingerprint() })
         }
@@ -173,6 +178,45 @@ class JpaDslPlugin : Plugin<Project> {
                     }
                     deps
                 })
+            }
+            project.tasks.matching { it.name == "processResources" }.configureEach { task ->
+                task.dependsOn(project.provider {
+                    val deps = mutableListOf<Any>()
+                    if (jpaDsl.specs().isNotEmpty()) {
+                        deps.add(generateJpaDslSources)
+                    }
+                    if (mybatisDynamicSql.specs().isNotEmpty()) {
+                        deps.add(generateMyBatisDynamicSqlSources)
+                    }
+                    deps
+                })
+                task.doLast {
+                    val destDir = (task as? org.gradle.language.jvm.tasks.ProcessResources)?.destinationDir
+                        ?: (task as? org.gradle.api.tasks.Copy)?.destinationDir
+                    if (destDir != null) {
+                        val targetImportsFile = destDir.resolve("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+                        val existingLines = if (targetImportsFile.exists()) {
+                            targetImportsFile.readLines().map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+                        } else {
+                            mutableSetOf()
+                        }
+
+                        val jpaImports = jpaGeneratedResourcesDir.get().asFile.resolve("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+                        if (jpaImports.exists()) {
+                            existingLines.addAll(jpaImports.readLines().map { it.trim() }.filter { it.isNotEmpty() })
+                        }
+
+                        val mybatisImports = mybatisGeneratedResourcesDir.get().asFile.resolve("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+                        if (mybatisImports.exists()) {
+                            existingLines.addAll(mybatisImports.readLines().map { it.trim() }.filter { it.isNotEmpty() })
+                        }
+
+                        if (existingLines.isNotEmpty()) {
+                            targetImportsFile.parentFile.mkdirs()
+                            targetImportsFile.writeText(existingLines.sorted().joinToString("\n") + "\n")
+                        }
+                    }
+                }
             }
             project.tasks.matching { it.name == "sourcesJar" }.configureEach { task ->
                 task.dependsOn(project.provider {
