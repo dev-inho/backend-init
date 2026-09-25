@@ -304,26 +304,27 @@ jpaDsl {
   - **멱등성 및 보안 정책**: 이미 `READY` 상태인 파일에 대한 중복 Finalize 요청은 멱등하게 200 OK를 반환하며, 타 소유자의 파일 접근 시 404 차단, 스토리지 키의 UUID 형식 검증 및 Path Traversal 방어(`SecurityException`)를 적용했습니다. 아울러 `PresignUploadResponse.toString()`에서 서명 URL을 마스킹(`[PROTECTED_SIGNATURE_URL]`)하여 보안 유출을 원천 방지합니다.
   - **MinIO 실물 검증 테스트 분리 (`liveS3Test`) 및 통합 검증 가이드**:
     PM의 Docker 실물 검증 환경을 위해 `MinIOLiveS3IntegrationTest.kt`를 구현했습니다. `@Tag("live-s3")`로 격리되어 일반 단위 빌드에서는 제외되며, 실제 `FileService`와 S3 어댑터, 원자적 영속성 포트를 직접 연결하여 Presigned PUT 직접 업로드, S3 네이티브 체크섬(`x-amz-checksum-sha256`), finalize 사후 검증(크기/체크섬/누락 감지 및 FAILED 전이), 타 소유자 인가 거부, 중복 호출 멱등성, 동시 finalize/delete 원자적 경쟁 방어를 엄격하게 검증합니다.
-    - **Docker MinIO 검증 이미지 규격**: 재현성과 보안 무결성을 위해 `latest` 태그 사용을 엄격히 금지하며, PM 검증 완료 고정 다이제스트 이미지를 사용합니다:
-      `minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e`
+    - **Docker MinIO 검증 이미지 규격**: 재현성을 위해 태그가 아닌 다이제스트로 고정한 이미지를 사용합니다. 2026-09-25에 아래 이미지(MinIO `RELEASE.2026-09-22T19-25-18Z`)로 `liveS3Test` 9건 통과를 확인했습니다:
+      `cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1`
+      - Docker Hub의 `minio/minio` 저장소는 인증 없이 pull할 수 없고, `quay.io/minio/minio`에도 해당 태그가 없어서 기존에 적었던 `minio/minio:RELEASE.2025-09-07T16-13-09Z` 고정 이미지를 대체했습니다.
+      - Chainguard 이미지는 nonroot(uid 65532)로 실행되므로 데이터 경로를 쓰기 가능한 `/tmp/data`로 지정합니다.
     - **루프백 바인딩 및 임의 자격 증명 가이드**:
-      기본 `minioadmin` 하드코딩을 배제하고, 외부 노출을 방지하기 위해 루프백(`127.0.0.1`)에만 포트를 바인딩하며 안전한 임의 자격 증명을 주입하여 구동합니다:
+      기본 `minioadmin` 하드코딩을 배제하고, 외부 노출을 방지하기 위해 루프백(`127.0.0.1`)에만 포트를 바인딩하며 실행할 때마다 임의 자격 증명을 만들어 구동합니다:
       ```sh
+      export MINIO_ACCESS_KEY="test-user-$(openssl rand -hex 4)"
+      export MINIO_SECRET_KEY="test-pass-$(openssl rand -hex 8)"
       docker run -d --name minio-live-test \
         -p 127.0.0.1:9000:9000 \
-        -e MINIO_ROOT_USER="test-user-$(openssl rand -hex 4)" \
-        -e MINIO_ROOT_PASSWORD="test-pass-$(openssl rand -hex 8)" \
-        minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
-        server /data
+        -e MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+        -e MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+        cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 \
+        server /tmp/data
       ```
-    - **검증 실행 명령**:
+    - **검증 실행 명령**: 접속 정보는 환경 변수로 전달합니다. `liveS3Test` 태스크는 시스템 프로퍼티를 테스트 JVM으로 넘기지 않으므로, Gradle 명령줄의 `-Dminio.*` 옵션은 테스트에 반영되지 않습니다.
       ```sh
-      ./gradlew liveS3Test \
-        -Dminio.endpoint=http://127.0.0.1:9000 \
-        -Dminio.access-key=<CONFIGURED_USER> \
-        -Dminio.secret-key=<CONFIGURED_PASSWORD>
+      MINIO_ENDPOINT=http://127.0.0.1:9000 ./gradlew :storage:file-s3:liveS3Test
+      docker rm -f minio-live-test
       ```
-      (또는 환경변수 `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` 주입)
 - **파일 경계**:
   - `storage/file-s3/build.gradle`, `S3FileStorageAdapter.kt`, `S3FilePresignAdapter.kt`, `S3FileStorageAutoConfiguration.kt`, `MinIOLiveS3IntegrationTest.kt`
   - `storage/file-autoconfigure/build.gradle`, `FileStorageProperties.kt`, `FileStoragePropertiesValidator.kt`, `FileStorageAutoConfiguration.kt`
