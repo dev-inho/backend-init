@@ -142,7 +142,6 @@ core/application/
     │       └── FileResponse.kt
     ├── sample/
     │   ├── SampleController.kt
-    │   ├── SampleStreamController.kt
     │   └── dto/
     │       ├── CreateSampleRequest.kt
     │       └── SampleResponse.kt

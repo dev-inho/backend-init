@@ -4,8 +4,6 @@ import cc.midolog.sample.model.Sample
 import cc.midolog.sample.policy.SampleSavePolicy
 import cc.midolog.sample.port.cache.SampleCachePort
 import cc.midolog.sample.port.repository.SampleRepositoryPort
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import org.springframework.stereotype.Service
 
 /**
@@ -45,17 +43,5 @@ class SampleService(
         val saved = sampleRepositoryPort.save(processed)
         sampleCachePort.put(saved)
         return saved
-    }
-
-    /**
-     * 두 식별자의 샘플 데이터를 코루틴을 통해 병렬로 동시 조회하는 예시 메서드.
-     *
-     * [coroutineScope] 내에서 두 개의 [async] 블록을 시작하여 I/O 지연을 중첩 실행한다.
-     * 실제 호출 소비자가 없어 docs/DEAD_CODE_CANDIDATES.md #3에 삭제 후보로 등재되어 있으나 동시성 패턴 가이드 목적으로 보존한다.
-     */
-    suspend fun findPair(firstId: String, secondId: String): List<Sample> = coroutineScope {
-        val a = async { findById(firstId) }
-        val b = async { findById(secondId) }
-        listOfNotNull(a.await(), b.await())
     }
 }

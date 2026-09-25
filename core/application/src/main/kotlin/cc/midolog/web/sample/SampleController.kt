@@ -54,8 +54,4 @@ class SampleController(
         val saved = sampleService.save(Sample(id = request.id, name = request.name))
         return ApiResponse.ok(SampleResponse.from(saved))
     }
-
-    /** 요청 본문 문자열을 그대로 반환하는 에코 테스트용 샘플 엔드포인트. */
-    @PostMapping("/echo")
-    fun echo(@RequestBody body: String): ApiResponse<String> = ApiResponse.ok(body)
 }
