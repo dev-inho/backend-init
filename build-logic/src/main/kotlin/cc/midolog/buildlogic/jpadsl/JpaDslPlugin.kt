@@ -2,18 +2,12 @@ package cc.midolog.buildlogic.jpadsl
 
 import groovy.lang.Closure
 import org.gradle.api.Action
-import org.gradle.api.DefaultTask
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
-import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.testing.Test
-
-open class JpaDslPluginExtension {
-    var phase: String = "scaffold"
-}
 
 open class MyBatisDynamicSqlExtension {
     var generatedSourceDir: String = "generated/sources/mybatisDynamicSql/main/kotlin"
@@ -61,36 +55,8 @@ fun validateMyBatisEntitySpec(spec: JpaEntitySpec) {
     }
 }
 
-abstract class JpaDslPluginInfoTask : DefaultTask() {
-    init {
-        group = "jpa dsl"
-        description = "Reports the internal JPA DSL plugin scaffold status."
-    }
-
-    @TaskAction
-    fun report() {
-        logger.lifecycle("cc.midolog.jpa-dsl plugin scaffold is applied to ${project.path}")
-    }
-}
-
-abstract class ValidateJpaDslPluginScaffoldTask : DefaultTask() {
-    init {
-        group = "verification"
-        description = "Validates the internal JPA DSL plugin scaffold configuration."
-    }
-
-    @TaskAction
-    fun validate() {
-        val extension = project.extensions.getByType(JpaDslPluginExtension::class.java)
-        require(extension.phase.isNotBlank()) {
-            "jpaDslPlugin.phase must not be blank for ${project.path}"
-        }
-    }
-}
-
 class JpaDslPlugin : Plugin<Project> {
     override fun apply(project: Project) {
-        project.extensions.create("jpaDslPlugin", JpaDslPluginExtension::class.java)
         val jpaDsl = project.extensions.create("jpaDsl", JpaDslExtension::class.java)
         val mybatisDynamicSql = project.extensions.create("mybatisDynamicSql", MyBatisDynamicSqlExtension::class.java)
 
@@ -119,8 +85,6 @@ class JpaDslPlugin : Plugin<Project> {
         val jpaGeneratedResourcesDir = project.layout.buildDirectory.dir("generated/resources/jpaDsl/main")
         val mybatisGeneratedResourcesDir = project.layout.buildDirectory.dir("generated/resources/mybatisDynamicSql/main")
 
-        project.tasks.register("jpaDslPluginInfo", JpaDslPluginInfoTask::class.java)
-        project.tasks.register("validateJpaDslPluginScaffold", ValidateJpaDslPluginScaffoldTask::class.java)
         val generateJpaDslSources = project.tasks.register(
             "generateJpaDslSources",
             GenerateJpaDslSourcesTask::class.java,

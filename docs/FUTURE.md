@@ -160,8 +160,8 @@
 소비자가 없거나 다른 모듈/표준 라이브러리와 중복되는 코드 및 샘플 컴포넌트를 식별하여 유지보수 부채를 줄임
 
 ### 주요 정리 대상군
-- **미사용 샘플 컴포넌트**: `FileStoragePort`, `LocalFileStorageAdapter`, `SampleService.findPair`, `SampleController.echo`, `SampleStreamController`, `CreateSampleRequest` 등
-- **중복 유틸리티**: `CollectionExtensions.orEmpty` (Kotlin stdlib과 중복), null 검증 헬퍼 3중복(`requireField`, `Validation.requireNotNull`, `orThrow`), `NullSafety.ifNull` 등
+- **미사용 샘플 컴포넌트**: `FileStoragePort`, `LocalFileStorageAdapter`(`FileStorageIntegrationTest` 가드 대상이라 `@Deprecated`로 유지) 등. `SampleService.findPair`, `SampleController.echo`, `SampleStreamController`는 2026-09-25에 삭제됨
+- **중복 유틸리티**: null 검증 헬퍼 3중복(`requireField`, `Validation.requireNotNull`, `orThrow`) 등. `CollectionExtensions.orEmpty`와 `NullSafety.ifNull`은 2026-09-25에 삭제됨
 - **중복 로직 통합**: JWT 코덱 통합(`JwtCodec`) 및 모듈 이전으로 인한 중복 테스트 정리
 
 상세 실측 건수, 제안(삭제/유지/합치기) 및 영향도 가이드는 [`docs/DEAD_CODE_CANDIDATES.md`](./DEAD_CODE_CANDIDATES.md) 참조.

@@ -7,14 +7,6 @@ package cc.midolog.util.ext
  */
 
 /**
- * null이면 [fallback] 지연 평가 결과를 반환하고, 아니면 자기 자신을 반환한다.
- *
- * 값이 null이 아닌 경우 [fallback] 람다는 평가되지 않는다. Kotlin 기본 엘비스 연산자(`?:`)와 기능이
- * 완전히 동일한 불필요한 래퍼 함수이나(docs/DEAD_CODE_CANDIDATES.md #16), 함수 체이닝 방식으로 기본값을 지연 주입할 때 사용된다.
- */
-fun <T> T?.ifNull(fallback: () -> T): T = this ?: fallback()
-
-/**
  * null이 아니면 non-null 값을 반환하고, null이면 필드명을 포함한 [IllegalArgumentException]을 던진다.
  *
  * `Validation.requireNotNull`, `orThrow`와 함께 null 검증 후 예외를 던지는 3중복 구현이다(docs/DEAD_CODE_CANDIDATES.md #10).

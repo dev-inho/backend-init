@@ -5,57 +5,6 @@ import org.junit.jupiter.api.Test
 
 class CollectionExtensionsTest {
 
-    // --- orEmpty 테스트 ---
-
-    @Test
-    fun `Iterable orEmpty converts null to empty list`() {
-        val nullIterable: Iterable<String>? = null
-        val result = nullIterable.orEmpty()
-        assertEquals(emptyList<String>(), result.toList())
-    }
-
-    @Test
-    fun `Iterable orEmpty preserves non-null iterable`() {
-        val input: Iterable<String>? = listOf("a", "b", "c")
-        val result = input.orEmpty()
-        assertEquals(listOf("a", "b", "c"), result.toList())
-    }
-
-    @Test
-    fun `Iterable orEmpty handles empty iterable`() {
-        val input: Iterable<String>? = emptyList()
-        val result = input.orEmpty()
-        assertEquals(emptyList<String>(), result.toList())
-    }
-
-    @Test
-    fun `Collection orEmpty converts null to empty collection`() {
-        val nullCollection: Collection<Int>? = null
-        val result = nullCollection.orEmpty()
-        assertEquals(emptyList<Int>(), result.toList())
-    }
-
-    @Test
-    fun `Collection orEmpty preserves non-null collection`() {
-        val input: Collection<Int>? = listOf(1, 2, 3)
-        val result = input.orEmpty()
-        assertEquals(listOf(1, 2, 3), result.toList())
-    }
-
-    @Test
-    fun `List orEmpty converts null to empty list`() {
-        val nullList: List<Double>? = null
-        val result = nullList.orEmpty()
-        assertEquals(emptyList<Double>(), result)
-    }
-
-    @Test
-    fun `List orEmpty preserves non-null list`() {
-        val input: List<Double>? = listOf(1.0, 2.0)
-        val result = input.orEmpty()
-        assertEquals(listOf(1.0, 2.0), result)
-    }
-
     // --- chunkedBy 테스트 ---
 
     @Test

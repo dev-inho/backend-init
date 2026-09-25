@@ -93,7 +93,6 @@ cc.midolog
     │       └── FileResponse.kt
     ├── sample
     │   ├── SampleController.kt
-    │   ├── SampleStreamController.kt
     │   └── dto
     │       ├── CreateSampleRequest.kt
     │       └── SampleResponse.kt
@@ -207,7 +206,7 @@ dependencies {
   - `cc.midolog.business.service.FileServiceTest` (uploadFile 정상 흐름 및 실패 시 FAILED 전이, deleteFile 시 스토리지 물리 삭제 성공 후 DELETED 전이, false 반환 시 IllegalStateException 및 예외 전파 시 메타 상태(삭제 전 기존 상태) 불변 보존 가드, 타 소유자 파일 접근 차단 검증).
   - `cc.midolog.web.file.FileControllerTest` (파일 업로드/조회/스트리밍 다운로드/삭제 WebFlux API 통합 테스트).
   - `cc.midolog.web.file.WebFluxChunkBridgeTest` (청크 브릿지 버퍼 해제 및 스트리밍 변환 단위 테스트).
-- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#3 `SampleService.findPair`, #4 `SampleController.echo`, #5 `SampleStreamController.stream`, #20 `CreateSampleRequest`).
+- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#20 `CreateSampleRequest`는 `create`가 사용하므로 유지. #3·#4·#5는 2026-09-25에 삭제됨).
 
 ---
 
@@ -960,7 +959,7 @@ dependencies {
 ```
 
 - **이 모듈의 가드**: `cc.midolog.util.ExistingUtilCompatibilityTest` (유틸리티 API 시그니처 및 하위 호환성 유지 가드).
-- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#8 `UtilDefaults`, #9 `CollectionExtensions.orEmpty`, #10 `NullSafety`/`Validation` 중복, #11 미사용 컴포넌트군, #16 `NullSafety.ifNull`, #17 `CollectionExtensions.chunkedBy`, #18 `StringExtensions`).
+- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#8 `UtilDefaults`, #10 `NullSafety`/`Validation` 중복, #11 미사용 컴포넌트군, #17 `CollectionExtensions.chunkedBy`, #18 `StringExtensions`).
 
 ---
 
@@ -1131,13 +1130,11 @@ dependencies {
 ### 16. build-logic
 **책임**: 내부 Gradle 플러그인(`cc.midolog.jpa-dsl`) 및 스키마 마이그레이션 도구 빌드 로직 제공.
 
-**주요 태스크 (6개)**:
-1. `jpaDslPluginInfo`: `cc.midolog.jpa-dsl` 플러그인 스캐폴딩 상태 보고 태스크.
-2. `validateJpaDslPluginScaffold`: 플러그인 확장 설정 유효성 검증 태스크.
-3. `generateJpaDslSources`: 도메인 모델 클래스를 분석하여 JPA Entity, Repository, Mapper 소스코드를 build 디렉터리에 자동 생성하는 태스크.
-4. `validateJpaDslGeneratorNegativeCases`: 지원하지 않는 DSL 선언 시 `GradleException`으로 올바르게 실패하는지 검증하는 태스크.
-5. `generateMigrationDraft`: 도메인 모델 스키마와 Flyway 기존 마이그레이션 간 차이점을 분석해 신규 마이그레이션 SQL 초안을 생성하는 태스크.
-6. `verifyMigrationDraft`: 마이그레이션 초안과 도메인 기대 스키마 간 일치 여부를 검증하는 태스크.
+**주요 태스크 (4개)**:
+1. `generateJpaDslSources`: 도메인 모델 클래스를 분석하여 JPA Entity, Repository, Mapper 소스코드를 build 디렉터리에 자동 생성하는 태스크.
+2. `validateJpaDslGeneratorNegativeCases`: 지원하지 않는 DSL 선언 시 `GradleException`으로 올바르게 실패하는지 검증하는 태스크.
+3. `generateMigrationDraft`: 도메인 모델 스키마와 Flyway 기존 마이그레이션 간 차이점을 분석해 신규 마이그레이션 SQL 초안을 생성하는 태스크.
+4. `verifyMigrationDraft`: 마이그레이션 초안과 도메인 기대 스키마 간 일치 여부를 검증하는 태스크.
 
 **검증 명령어**:
 ```bash
@@ -1145,7 +1142,6 @@ dependencies {
 ```
 
 - **이 모듈의 가드**: `cc.midolog.buildlogic.jpadsl.JpaDslPluginTest`, `cc.midolog.buildlogic.jpadsl.MigrationDraftTest`.
-- **정리 후보**: [docs/DEAD_CODE_CANDIDATES.md](./DEAD_CODE_CANDIDATES.md) (#13 `jpaDslPluginInfo`, `validateJpaDslPluginScaffold`).
 
 ---
 

@@ -7,44 +7,6 @@ import org.junit.jupiter.api.Test
 class NullSafetyTest {
 
     @Test
-    fun `ifNull returns self when value is non-null`() {
-        val value: String? = "actual"
-        val result = value.ifNull { "fallback" }
-        assertEquals("actual", result)
-    }
-
-    @Test
-    fun `ifNull returns fallback when value is null`() {
-        val value: String? = null
-        val result = value.ifNull { "fallback" }
-        assertEquals("fallback", result)
-    }
-
-    @Test
-    fun `ifNull does not call fallback when value is non-null`() {
-        var fallbackCalled = false
-        val value: String? = "actual"
-        val result = value.ifNull {
-            fallbackCalled = true
-            "fallback"
-        }
-        assertEquals("actual", result)
-        assertEquals(false, fallbackCalled)
-    }
-
-    @Test
-    fun `ifNull calls fallback only when value is null`() {
-        var fallbackCalled = false
-        val value: String? = null
-        val result = value.ifNull {
-            fallbackCalled = true
-            "fallback"
-        }
-        assertEquals("fallback", result)
-        assertEquals(true, fallbackCalled)
-    }
-
-    @Test
     fun `requireField returns non-null value when value is non-null`() {
         val userId: Long? = 42L
         val result = userId.requireField("userId")

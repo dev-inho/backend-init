@@ -15,7 +15,7 @@ import org.gradle.testkit.runner.TaskOutcome
 class JpaDslPluginTest {
 
     @Test
-    fun `plugin applies and registers scaffold marker task`() {
+    fun `plugin applies and registers generation tasks`() {
         val projectDir = Files.createTempDirectory("jpa-dsl-plugin-test")
         projectDir.resolve("settings.gradle.kts").writeText("""rootProject.name = "fixture"""")
         projectDir.resolve("build.gradle.kts").writeText(
@@ -29,11 +29,11 @@ class JpaDslPluginTest {
         val result = GradleRunner.create()
             .withProjectDir(projectDir.toFile())
             .withPluginClasspath()
-            .withArguments("jpaDslPluginInfo")
+            .withArguments("tasks", "--all")
             .build()
 
-        assertEquals(TaskOutcome.SUCCESS, result.task(":jpaDslPluginInfo")?.outcome)
-        assertTrue(result.output.contains("cc.midolog.jpa-dsl plugin scaffold is applied"))
+        assertTrue(result.output.contains("generateJpaDslSources"))
+        assertTrue(result.output.contains("generateMyBatisDynamicSqlSources"))
     }
 
     @Test
@@ -55,31 +55,6 @@ class JpaDslPluginTest {
             .buildAndFail()
 
         assertTrue(result.output.contains("Plugin [id: 'cc.midolog.jpa-dsl-missing'] was not found"))
-    }
-
-    @Test
-    fun `plugin scaffold validation fails with actionable message for malformed marker DSL`() {
-        val projectDir = Files.createTempDirectory("jpa-dsl-plugin-malformed-test")
-        projectDir.resolve("settings.gradle.kts").writeText("""rootProject.name = "fixture"""")
-        projectDir.resolve("build.gradle.kts").writeText(
-            """
-            plugins {
-                id("cc.midolog.jpa-dsl")
-            }
-
-            jpaDslPlugin {
-                phase = ""
-            }
-            """.trimIndent(),
-        )
-
-        val result = GradleRunner.create()
-            .withProjectDir(projectDir.toFile())
-            .withPluginClasspath()
-            .withArguments("validateJpaDslPluginScaffold")
-            .buildAndFail()
-
-        assertTrue(result.output.contains("jpaDslPlugin.phase must not be blank"))
     }
 
     @Test
