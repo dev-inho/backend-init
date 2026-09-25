@@ -3,10 +3,13 @@ package cc.midolog.customer
 import cc.midolog.customer.autoconfigure.CustomerAutoConfiguration
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.support.BeanDefinitionBuilder
+import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.mock.env.MockEnvironment
 
 class CustomerValidationAutoConfigurationTest {
 
@@ -16,18 +19,41 @@ class CustomerValidationAutoConfigurationTest {
     @Configuration
     class AcmeDescriptorConfig {
         @Bean
+        @CustomerDescriptorMetadata(name = "acme")
         fun customerDescriptor(): CustomerDescriptor = CustomerDescriptor(name = "acme")
     }
 
     @Configuration
     class BetaDescriptorConfig {
         @Bean
+        @CustomerDescriptorMetadata(name = "beta")
         fun customerDescriptor(): CustomerDescriptor = CustomerDescriptor(name = "beta")
+    }
+
+    @Configuration
+    class MismatchedMetadataDescriptorConfig {
+        @Bean
+        @CustomerDescriptorMetadata(name = "acme")
+        fun customerDescriptor(): CustomerDescriptor = CustomerDescriptor(name = "beta")
+    }
+
+    @Configuration
+    class LegacyAcmeDescriptorConfig {
+        @Bean
+        fun someLegacyBean(): CustomerDescriptor = CustomerDescriptor(name = "acme")
+    }
+
+    @Configuration
+    class LegacyBetaDescriptorConfig {
+        @Bean
+        fun someLegacyBean(): CustomerDescriptor = CustomerDescriptor(name = "beta")
     }
 
     interface MissingPort
 
     class ConsumerBean(val missingPort: MissingPort)
+
+    class DescriptorConsumerBean(val descriptor: CustomerDescriptor)
 
     @Test
     fun `app_customer가 acme로 설정되었으나 descriptor 빈이 없으면 기동 실패하고 메시지에 app_customer와 acme가 포함되어야 한다`() {
@@ -101,5 +127,124 @@ class CustomerValidationAutoConfigurationTest {
                 assertThat(causes.any { it.message?.contains("app.customer") == true && it.message?.contains("acme") == true })
                     .isTrue()
             }
+    }
+
+    @Test
+    fun `BFPP 검증 시 CustomerDescriptor 인스턴스를 조기 획득하지 않는다`() {
+        val beanFactory = DefaultListableBeanFactory()
+        val environment = MockEnvironment()
+        environment.setProperty("app.customer", "acme")
+
+        val beanDefinition = BeanDefinitionBuilder
+            .rootBeanDefinition(CustomerDescriptor::class.java)
+            .addConstructorArgValue("acme")
+            .beanDefinition
+        beanDefinition.setAttribute("customerName", "acme")
+        beanFactory.registerBeanDefinition("customerDescriptor", beanDefinition)
+
+        val bfpp = CustomerAutoConfiguration.customerValidationBeanFactoryPostProcessor(environment)
+        bfpp.postProcessBeanFactory(beanFactory)
+
+        assertThat(beanFactory.containsSingleton("customerDescriptor"))
+            .`as`("BFPP 실행 후에도 CustomerDescriptor 싱글톤 인스턴스가 생성되지 않아야 한다")
+            .isFalse()
+    }
+
+    @Test
+    fun `메타데이터는 acme이나 런타임 인스턴스가 beta인 위장 빈은 BPP 단계에서 기동 실패해야 한다`() {
+        contextRunner
+            .withPropertyValues("app.customer=acme")
+            .withUserConfiguration(MismatchedMetadataDescriptorConfig::class.java)
+            .run { context ->
+                assertThat(context).hasFailed()
+                val cause = generateSequence(context.startupFailure) { it.cause }.last()
+                assertThat(cause.message)
+                    .contains("acme")
+                    .contains("beta")
+            }
+    }
+
+    @Test
+    fun `메타데이터 어노테이션이 없는 레거시 빈도 런타임 고객명이 일치하면 정상 기동되어야 한다`() {
+        contextRunner
+            .withPropertyValues("app.customer=acme")
+            .withUserConfiguration(LegacyAcmeDescriptorConfig::class.java)
+            .run { context ->
+                assertThat(context).hasNotFailed()
+                val descriptor = context.getBean(CustomerDescriptor::class.java)
+                assertThat(descriptor.name).isEqualTo("acme")
+            }
+    }
+
+    @Test
+    fun `메타데이터 어노테이션이 없는 레거시 빈의 런타임 고객명이 프로퍼티와 불일치하면 기동 실패해야 한다`() {
+        contextRunner
+            .withPropertyValues("app.customer=acme")
+            .withUserConfiguration(LegacyBetaDescriptorConfig::class.java)
+            .run { context ->
+                assertThat(context).hasFailed()
+                val cause = generateSequence(context.startupFailure) { it.cause }.last()
+                assertThat(cause.message)
+                    .contains("acme")
+                    .contains("beta")
+            }
+    }
+
+    @Test
+    fun `메타데이터 어노테이션이 없는 레거시 빈이 등록되었으나 app_customer 프로퍼티가 없으면 기동 실패해야 한다`() {
+        contextRunner
+            .withUserConfiguration(LegacyAcmeDescriptorConfig::class.java)
+            .run { context ->
+                assertThat(context).hasFailed()
+                val cause = generateSequence(context.startupFailure) { it.cause }.last()
+                assertThat(cause.message)
+                    .contains("app.customer")
+            }
+    }
+
+    @Test
+    fun `소비자 빈이 CustomerDescriptor를 주입받더라도 런타임 고객명 불일치 시 기동 실패해야 한다`() {
+        contextRunner
+            .withPropertyValues("app.customer=acme")
+            .withUserConfiguration(MismatchedMetadataDescriptorConfig::class.java, DescriptorConsumerBean::class.java)
+            .run { context ->
+                assertThat(context).hasFailed()
+                val cause = generateSequence(context.startupFailure) { it.cause }.last()
+                assertThat(cause.message)
+                    .contains("acme")
+                    .contains("beta")
+            }
+    }
+
+    @Test
+    fun `소비자 빈이 레거시 CustomerDescriptor를 주입받더라도 고객명이 일치하면 정상 기동되어 주입되어야 한다`() {
+        contextRunner
+            .withPropertyValues("app.customer=acme")
+            .withUserConfiguration(LegacyAcmeDescriptorConfig::class.java, DescriptorConsumerBean::class.java)
+            .run { context ->
+                assertThat(context).hasNotFailed()
+                val consumer = context.getBean(DescriptorConsumerBean::class.java)
+                assertThat(consumer.descriptor.name).isEqualTo("acme")
+            }
+    }
+
+    @Test
+    fun `메타데이터가 없는 레거시 빈 정의에 대해서도 BFPP 검증 시 CustomerDescriptor 인스턴스를 조기 획득하지 않는다`() {
+        val beanFactory = DefaultListableBeanFactory()
+        val environment = MockEnvironment()
+        environment.setProperty("app.customer", "acme")
+
+        val beanDefinition = BeanDefinitionBuilder
+            .rootBeanDefinition(CustomerDescriptor::class.java)
+            .addConstructorArgValue("acme")
+            .beanDefinition
+        beanFactory.registerBeanDefinition("arbitraryLegacyBean", beanDefinition)
+
+        val bfpp = CustomerAutoConfiguration.customerValidationBeanFactoryPostProcessor(environment)
+        bfpp.postProcessBeanFactory(beanFactory)
+
+        assertThat(beanFactory.containsSingleton("arbitraryLegacyBean"))
+            .`as`("BFPP 실행 후에도 레거시 CustomerDescriptor 싱글톤 인스턴스가 생성되지 않아야 한다")
+            .isFalse()
     }
 }
