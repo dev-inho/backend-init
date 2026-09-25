@@ -1,10 +1,10 @@
 package cc.midolog.storage.file.local
 
+import cc.midolog.file.model.FileMetadata
 import cc.midolog.file.model.FileStatus
 import cc.midolog.file.model.StoredFile
 import cc.midolog.file.port.storage.ChunkReader
 import cc.midolog.file.port.storage.FileStoragePort
-import cc.midolog.storage.file.autoconfigure.FileStorageProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
@@ -19,10 +19,12 @@ import kotlin.io.path.isSymbolicLink
 import java.util.UUID
 
 class LocalFileStorageAdapter(
-    properties: FileStorageProperties
+    rootDir: String
 ) : FileStoragePort {
 
-    private val rootPath: Path = Paths.get(properties.local.rootDir!!).toAbsolutePath().normalize()
+    constructor(properties: cc.midolog.storage.file.autoconfigure.FileStorageProperties) : this(properties.local.rootDir!!)
+
+    private val rootPath: Path = Paths.get(rootDir).toAbsolutePath().normalize()
 
     init {
         if (!Files.exists(rootPath)) {
@@ -161,5 +163,33 @@ class LocalFileStorageAdapter(
             return@withContext false
         }
         true
+    }
+
+    override suspend fun head(key: String): FileMetadata? = withContext(Dispatchers.IO) {
+        val targetPath = resolveSafePath(key)
+        if (!targetPath.exists(java.nio.file.LinkOption.NOFOLLOW_LINKS)) return@withContext null
+        if (targetPath.isSymbolicLink()) {
+            throw IllegalArgumentException("Symbolic links are not allowed")
+        }
+        if (!java.nio.file.Files.isRegularFile(targetPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return@withContext null
+        }
+        val size = Files.size(targetPath)
+        val contentType = Files.probeContentType(targetPath) ?: "application/octet-stream"
+        val digest = MessageDigest.getInstance("SHA-256")
+        Files.newInputStream(targetPath).use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val checksum = digest.digest().joinToString("") { "%02x".format(it) }
+        FileMetadata(
+            sizeBytes = size,
+            contentType = contentType,
+            checksum = checksum
+        )
     }
 }

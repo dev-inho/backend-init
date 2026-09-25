@@ -26,6 +26,18 @@ interface FilePresignPort {
     ): PresignedRequest
 
     /**
+     * 클라이언트가 스토리지에 파일을 직접 업로드할 수 있도록 사전 서명된 업로드 요청 명세를 발급한다.
+     * 키, 서명 유효 만료 시간(초), 예상 파일 크기, 콘텐츠 타입 및 기대 체크섬을 기반으로 서명을 생성한다.
+     */
+    suspend fun presignUpload(
+        key: String,
+        expirationSeconds: Long,
+        expectedSize: Long?,
+        contentType: String,
+        expectedChecksum: String?,
+    ): PresignedRequest = presignUpload(key, expirationSeconds, expectedSize, contentType)
+
+    /**
      * 클라이언트가 스토리지로부터 파일을 직접 다운로드할 수 있도록 사전 서명된 다운로드 요청 명세를 발급한다.
      * 키와 서명 유효 만료 시간(초)을 기반으로 GET 명세를 발급한다.
      */

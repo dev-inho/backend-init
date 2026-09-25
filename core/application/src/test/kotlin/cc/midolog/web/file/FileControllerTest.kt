@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Import
 import org.springframework.core.io.ByteArrayResource
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
 import org.springframework.test.context.TestPropertySource
@@ -60,6 +61,28 @@ class FileControllerTestConfig {
                 total += read
             }
             return FileMeta("id-123", ownerId, "storage-key-123", total, contentType, "checksum", FileStatus.READY, Instant.now(), Instant.now())
+        }
+
+        override suspend fun presignUpload(
+            ownerId: String,
+            contentType: String,
+            expectedSize: Long?,
+            expectedChecksum: String?,
+            expirationSeconds: Long,
+        ): Pair<FileMeta, cc.midolog.file.model.PresignedRequest> {
+            val meta = FileMeta("presign-id-123", ownerId, "storage-key-presign", expectedSize, contentType, expectedChecksum, FileStatus.PENDING, Instant.now(), Instant.now())
+            val presigned = cc.midolog.file.model.PresignedRequest("https://s3.example.com/presign-url", "PUT", expirationSeconds, mapOf("Content-Type" to contentType))
+            return Pair(meta, presigned)
+        }
+
+        override suspend fun finalizeUpload(id: String, ownerId: String, maxSizeBytes: Long): FileMeta {
+            if (id == "presign-id-123" && ownerId == "test-owner") {
+                return FileMeta("presign-id-123", ownerId, "storage-key-presign", 1000L, "image/png", "sha256-hash", FileStatus.READY, Instant.now(), Instant.now())
+            }
+            if (id == "fail-id" && ownerId == "test-owner") {
+                throw ApiException.invalidInput("File size does not match expected size")
+            }
+            throw ApiException.notFound("file not found")
         }
 
         override suspend fun getFile(id: String, ownerId: String): FileMeta {
@@ -230,6 +253,85 @@ class FileControllerTest {
     fun `다른 owner가 조회 요청 시 404 반환`() {
         val otherToken = jwtProvider.issue("other-owner")
         webTestClient.get().uri("/api/files/123")
+            .header("Authorization", "Bearer $otherToken")
+            .exchange()
+            .expectStatus().isNotFound
+    }
+
+    @Test
+    fun `정상 presign 요청 시 200 OK 및 서명 URL과 fileId 반환`() {
+        val requestBody = cc.midolog.web.file.dto.PresignUploadRequest(
+            contentType = "image/png",
+            expectedSize = 1000L,
+            expectedChecksum = "sha256-hash"
+        )
+
+        webTestClient.post().uri("/api/files/presign")
+            .header("Authorization", "Bearer $validToken")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(requestBody)
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.data.fileId").isEqualTo("presign-id-123")
+            .jsonPath("$.data.method").isEqualTo("PUT")
+            .jsonPath("$.data.uploadUrl").isNotEmpty
+    }
+
+    @Test
+    fun `비허용 content-type으로 presign 요청 시 415 반환`() {
+        val requestBody = cc.midolog.web.file.dto.PresignUploadRequest(
+            contentType = "text/plain", // allowed: image/png,image/jpeg,application/pdf
+            expectedSize = 1000L
+        )
+
+        webTestClient.post().uri("/api/files/presign")
+            .header("Authorization", "Bearer $validToken")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(requestBody)
+            .exchange()
+            .expectStatus().isEqualTo(415)
+    }
+
+    @Test
+    fun `상한 초과 크기로 presign 요청 시 413 반환`() {
+        val requestBody = cc.midolog.web.file.dto.PresignUploadRequest(
+            contentType = "image/png",
+            expectedSize = 10000L // 10000 > 8192
+        )
+
+        webTestClient.post().uri("/api/files/presign")
+            .header("Authorization", "Bearer $validToken")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(requestBody)
+            .exchange()
+            .expectStatus().isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE)
+    }
+
+    @Test
+    fun `정상 finalize 호출 시 200 OK 및 READY 응답`() {
+        webTestClient.post().uri("/api/files/presign-id-123/finalize")
+            .header("Authorization", "Bearer $validToken")
+            .exchange()
+            .expectStatus().isOk
+            .expectBody()
+            .jsonPath("$.data.id").isEqualTo("presign-id-123")
+            .jsonPath("$.data.status").isEqualTo("READY")
+            .jsonPath("$.data.sizeBytes").isEqualTo(1000)
+    }
+
+    @Test
+    fun `불일치 등 finalize 실패 시 400 Bad Request 반환`() {
+        webTestClient.post().uri("/api/files/fail-id/finalize")
+            .header("Authorization", "Bearer $validToken")
+            .exchange()
+            .expectStatus().isBadRequest
+    }
+
+    @Test
+    fun `다른 owner가 finalize 호출 시 404 반환`() {
+        val otherToken = jwtProvider.issue("other-owner")
+        webTestClient.post().uri("/api/files/presign-id-123/finalize")
             .header("Authorization", "Bearer $otherToken")
             .exchange()
             .expectStatus().isNotFound

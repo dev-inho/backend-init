@@ -36,7 +36,7 @@ class FileOrphanCleanupServiceTest {
         deletedKeys = mutableListOf()
         calledLimits = mutableListOf()
         storagePort = FakeFileStoragePort(deletedKeys)
-        repoPort = FakeFileMetaRepositoryPort(db, calledLimits)
+        repoPort = FakeFileMetaRepositoryPort(db, calledLimits, clock)
         service = FileOrphanCleanupService(clock, repoPort, storagePort)
     }
 
@@ -172,9 +172,48 @@ class FileOrphanCleanupServiceTest {
         assertEquals(1, storagePort.deleteCalls["key-id2"] ?: 0)
     }
 
+    @Test
+    fun `이전 finalize 삭제 실패로 FAILED로 남은 고아 객체가 cleanup 재시도 시 정상 삭제되고 DELETED로 전이된다`() = runBlocking {
+        addFailed("failed1", "2026-09-12T08:00:00Z") // Expired FAILED orphan
+        addPending("pending1", "2026-09-12T08:10:00Z") // Expired PENDING orphan
+
+        service.cleanup(pendingTtl, batchSize = 10)
+
+        // FAILED 객체는 스토리지 삭제 성공 후 DELETED로 전이됨
+        assertEquals(FileStatus.DELETED, db["failed1"]?.status)
+        // PENDING 객체는 스토리지 삭제 성공 후 FAILED로 전이됨
+        assertEquals(FileStatus.FAILED, db["pending1"]?.status)
+
+        assertTrue(deletedKeys.contains("key-failed1"))
+        assertTrue(deletedKeys.contains("key-pending1"))
+    }
+
+    @Test
+    fun `FAILED 고아 객체의 스토리지 삭제 실패 시 상태는 FAILED로 유지되고 후속 항목 처리는 계속된다`() = runBlocking {
+        addFailed("failed-err", "2026-09-12T08:00:00Z")
+        addPending("pending2", "2026-09-12T08:10:00Z")
+
+        storagePort.throwOnKey = "key-failed-err"
+
+        service.cleanup(pendingTtl, batchSize = 10)
+
+        // 실패한 FAILED 객체는 상태 불변 (다음 주기에 재시도 가능)
+        assertEquals(FileStatus.FAILED, db["failed-err"]?.status)
+        // 후속 정상 객체는 처리됨
+        assertEquals(FileStatus.FAILED, db["pending2"]?.status)
+
+        assertFalse(deletedKeys.contains("key-failed-err"))
+        assertTrue(deletedKeys.contains("key-pending2"))
+    }
+
     private fun addPending(id: String, updatedAtStr: String) {
         val instant = Instant.parse(updatedAtStr)
         db[id] = FileMeta(id, "owner", "key-$id", 100L, "text/plain", "hash", FileStatus.PENDING, instant, instant)
+    }
+
+    private fun addFailed(id: String, updatedAtStr: String) {
+        val instant = Instant.parse(updatedAtStr)
+        db[id] = FileMeta(id, "owner", "key-$id", 100L, "text/plain", "hash", FileStatus.FAILED, instant, instant)
     }
 
     class FakeFileStoragePort(
@@ -201,7 +240,8 @@ class FileOrphanCleanupServiceTest {
 
     class FakeFileMetaRepositoryPort(
         private val db: MutableMap<String, FileMeta>,
-        private val calledLimits: MutableList<Int>
+        private val calledLimits: MutableList<Int>,
+        private val clock: Clock = Clock.systemUTC(),
     ) : FileMetaRepositoryPort {
         var returnFalseOnUpdateId: String? = null
 
@@ -211,7 +251,7 @@ class FileOrphanCleanupServiceTest {
             if (id == returnFalseOnUpdateId) return false
             val f = db[id]
             if (f != null) {
-                db[id] = f.copy(status = status)
+                db[id] = f.copy(status = status, updatedAt = clock.instant())
                 return true
             }
             return false
@@ -219,6 +259,16 @@ class FileOrphanCleanupServiceTest {
         override suspend fun findExpiredPending(cutoffTime: Instant, limit: Int): List<FileMeta> {
             calledLimits.add(limit)
             return db.values.filter { it.status == FileStatus.PENDING && it.updatedAt.isBefore(cutoffTime) }
+                .sortedBy { it.updatedAt }
+                .take(limit)
+        }
+        override suspend fun findExpiredOrphans(
+            cutoff: Instant,
+            limit: Int,
+            statuses: Set<FileStatus>,
+        ): List<FileMeta> {
+            calledLimits.add(limit)
+            return db.values.filter { it.status in statuses && it.updatedAt.isBefore(cutoff) }
                 .sortedBy { it.updatedAt }
                 .take(limit)
         }

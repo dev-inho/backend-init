@@ -12,6 +12,7 @@ dependencyManagement {
 
 dependencies {
     implementation project(':core:domain')
+    api project(':storage:file-autoconfigure')
     implementation project(':support:util')
 
     implementation 'org.springframework.boot:spring-boot-starter'

@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import cc.midolog.storage.file.autoconfigure.FileStorageProperties
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.io.InputStream
@@ -28,7 +27,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `UUID 형식이 아닌 키는 거부해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
 
         val invalidKey = "invalid-key-../hacked"
         val reader = object : ChunkReader {
@@ -46,7 +45,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `8MiB 데이터를 정상적으로 스트리밍 저장하고 다시 읽어 체크섬을 검증해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
 
         val key = "11111111-1111-1111-1111-111111111111"
         val dataSize = 8 * 1024 * 1024 // 8MiB
@@ -100,7 +99,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `알려진 크기와 실제 크기가 다르면 예외가 발생해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
 
         val key = "22222222-2222-2222-2222-222222222222"
         val reader = object : ChunkReader {
@@ -123,7 +122,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `심볼릭 링크 파일은 읽기나 쓰기를 거부해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
         val key = "33333333-3333-3333-3333-333333333333"
         val targetPath = rootPath.resolve(key)
 
@@ -149,7 +148,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `저장 중 예외가 발생하면 임시 파일을 정리해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
 
         val key = "44444444-4444-4444-4444-444444444444"
         val reader = object : ChunkReader {
@@ -176,7 +175,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `temp 파일의 심볼릭 링크를 악의적으로 선점한 경우를 방어해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
 
         val key = "11111111-1111-1111-1111-111111111111"
         val tempPath = rootPath.resolve("$key.tmp")
@@ -206,7 +205,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `대상이 없어도 delete는 true를 반환해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
         val key = "22222222-2222-2222-2222-222222222222"
         assertTrue(adapter.delete(key), "Absent delete should return true")
     }
@@ -214,7 +213,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `디렉터리를 대상으로 할 때 load는 null, exists는 false를 반환해야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
         val key = "55555555-5555-5555-5555-555555555555"
 
         // key와 일치하는 디렉터리 생성
@@ -228,7 +227,7 @@ class LocalFileStorageAdapterTest {
     @Test
     fun `임시 파일 생성 실패 시에도 reader가 cancel 및 close 되어야 한다`() = runTest {
         val rootPath = tempDir.resolve("storage").apply { createDirectories() }
-        val adapter = LocalFileStorageAdapter(FileStorageProperties(provider = "local", local = FileStorageProperties.LocalProperties(rootPath.absolutePathString())))
+        val adapter = LocalFileStorageAdapter(rootPath.absolutePathString())
         val key = "66666666-6666-6666-6666-666666666666"
 
         // 임시 파일 생성이 실패하도록 디렉터리 쓰기 권한 제거

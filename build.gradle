@@ -141,3 +141,9 @@ tasks.register('verifyRemoteArtifacts', Exec) {
     ]
     commandLine execArgs
 }
+
+tasks.register('liveS3Test') {
+    group = 'verification'
+    description = 'Executes live MinIO S3 integration tests.'
+    dependsOn(':storage:file-s3:liveS3Test')
+}

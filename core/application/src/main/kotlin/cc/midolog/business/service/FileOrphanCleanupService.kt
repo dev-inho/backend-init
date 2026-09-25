@@ -28,7 +28,11 @@ class FileOrphanCleanupService(
 
         while (true) {
             val limit = batchSize + failedIds.size
-            val orphans = fileMetaRepositoryPort.findExpiredPending(cutoff, limit)
+            val orphans = fileMetaRepositoryPort.findExpiredOrphans(
+                cutoff,
+                limit,
+                setOf(FileStatus.PENDING, FileStatus.FAILED),
+            )
             if (orphans.isEmpty()) {
                 break
             }
@@ -43,12 +47,22 @@ class FileOrphanCleanupService(
                 try {
                     val deleted = fileStoragePort.delete(orphan.storageKey)
                     if (deleted) {
-                        val updated = fileMetaRepositoryPort.updateStatus(orphan.id, FileStatus.FAILED)
-                        if (updated) {
-                            log.info("Cleaned up orphan file, id: ${orphan.id}, storageKey: ${orphan.storageKey}")
+                        if (orphan.status != FileStatus.FAILED) {
+                            val updated = fileMetaRepositoryPort.updateStatus(orphan.id, FileStatus.FAILED)
+                            if (updated) {
+                                log.info("Cleaned up orphan file, id: ${orphan.id}, storageKey: ${orphan.storageKey}")
+                            } else {
+                                log.warn("Failed to update status to FAILED, id: ${orphan.id}")
+                                failedIds.add(orphan.id)
+                            }
                         } else {
-                            log.warn("Failed to update status to FAILED, id: ${orphan.id}")
-                            failedIds.add(orphan.id)
+                            val updated = fileMetaRepositoryPort.updateStatus(orphan.id, FileStatus.DELETED)
+                            if (updated) {
+                                log.info("Cleaned up stranded storage object for FAILED orphan, id: ${orphan.id}, storageKey: ${orphan.storageKey}")
+                            } else {
+                                log.warn("Failed to update status to DELETED for FAILED orphan, id: ${orphan.id}")
+                                failedIds.add(orphan.id)
+                            }
                         }
                     } else {
                         log.warn("Failed to delete orphan storage (returned false), id: ${orphan.id}, storageKey: ${orphan.storageKey}")

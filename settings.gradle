@@ -20,6 +20,10 @@ include 'client:storage-file'
 include 'storage:mybatis'
 include 'storage:jpa'
 include 'storage:file-local'
+include 'storage:file-s3'
+include 'storage:file-autoconfigure'
+include 'storage:file-starter-local'
+include 'storage:file-starter-s3'
 
 // support
 include 'support:util'
