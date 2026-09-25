@@ -8,6 +8,8 @@ plugins {
 group = 'cc.midolog.examples'
 version = '0.0.1-SNAPSHOT'
 
+def backendInitVersion = project.findProperty('backendInitVersion') ?: '0.0.1-SNAPSHOT'
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
@@ -21,22 +23,83 @@ kotlin {
 }
 
 repositories {
-    def localRepoDir = project.findProperty('backendInitRepo') ?
-        file(project.property('backendInitRepo')) :
-        file("$rootDir/../../build/repo")
-    maven {
-        url = localRepoDir.toURI()
+    if (project.hasProperty('backendInitRepoUrl')) {
+        def rawUrl = project.property('backendInitRepoUrl').toString()
+        URI repoUri
+        try {
+            repoUri = new URI(rawUrl)
+        } catch (Exception ignored) {
+            throw new GradleException("Invalid repository URL format for backendInitRepoUrl: malformed URI")
+        }
+
+        def scheme = repoUri.scheme?.toLowerCase()
+        def host = repoUri.host?.toLowerCase()
+        def path = repoUri.path?.replaceAll('/+$', '')
+
+        // 시크릿 유출 차단: userInfo, query, fragment는 테스트 여부와 무관하게 전면 금지
+        if (repoUri.rawUserInfo != null || repoUri.userInfo != null) {
+            throw new GradleException("Security violation: backendInitRepoUrl must not contain user credentials (userInfo)")
+        }
+        if (repoUri.rawQuery != null || repoUri.query != null) {
+            throw new GradleException("Security violation: backendInitRepoUrl must not contain query parameters")
+        }
+        if (repoUri.rawFragment != null || repoUri.fragment != null) {
+            throw new GradleException("Security violation: backendInitRepoUrl must not contain fragment")
+        }
+
+        def allowTest = project.hasProperty('allowInsecureTestUrl') &&
+            Boolean.parseBoolean(project.property('allowInsecureTestUrl').toString()) &&
+            (host == '127.0.0.1' || host == 'localhost')
+
+        if (!allowTest) {
+            if (scheme != 'https') {
+                throw new GradleException("Security violation: backendInitRepoUrl must use HTTPS scheme")
+            }
+            if (host != 'maven.pkg.github.com') {
+                throw new GradleException("Security violation: backendInitRepoUrl host must be maven.pkg.github.com")
+            }
+            if (repoUri.port != -1 && repoUri.port != 443) {
+                throw new GradleException("Security violation: backendInitRepoUrl must use standard HTTPS port (443)")
+            }
+            if (path != '/dev-inho/backend-init') {
+                throw new GradleException("Security violation: backendInitRepoUrl repository path must be /dev-inho/backend-init")
+            }
+        }
+
+        // 원격 저장소가 명시적으로 지정된 경우: 로컬 build/repo fallback을 완전히 차단하고 원격 레지스트리만 등록
+        maven {
+            url = repoUri
+            credentials {
+                username = project.findProperty('gpr.user') ?:
+                    System.getenv('GITHUB_ACTOR') ?:
+                    System.getenv('GITHUB_USERNAME') ?:
+                    'dev-inho'
+                password = project.findProperty('gpr.key') ?:
+                    System.getenv('GITHUB_TOKEN') ?:
+                    System.getenv('GH_TOKEN') ?:
+                    ''
+            }
+        }
+    } else {
+        // 로컬 저장소 모드: build/repo 경로를 명시적으로 등록
+        def localRepoDir = project.findProperty('backendInitRepo') ?
+            file(project.property('backendInitRepo')) :
+            file("$rootDir/../../build/repo")
+        maven {
+            url = localRepoDir.toURI()
+        }
     }
     mavenCentral()
     maven { url = 'https://repo.spring.io/milestone' }
 }
 
 dependencies {
-    implementation(platform("cc.midolog:backend-init-bom:0.0.1-SNAPSHOT"))
+    implementation(platform("cc.midolog:backend-init-bom:${backendInitVersion}"))
 
     implementation("cc.midolog:backend-init-domain")
     implementation("cc.midolog:backend-init-support-web")
     runtimeOnly("cc.midolog:backend-init-storage-jpa")
+    runtimeOnly("cc.midolog:backend-init-storage-mybatis")
 
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.jetbrains.kotlin:kotlin-reflect'

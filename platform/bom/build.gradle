@@ -7,18 +7,10 @@ javaPlatform {
     allowDependencies()
 }
 
-dependencies {
-    constraints {
-        api project(':core:domain')
-        api project(':support:util')
-        api project(':support:logging')
-        api project(':support:web')
-        api project(':support:jwt')
-        api project(':storage:jpa')
-        api project(':storage:mybatis')
-        api project(':storage:file-local')
-        api project(':gateway:core')
-        api project(':gateway:autoconfigure')
-        api project(':gateway:starter')
+rootProject.subprojects.each { Project sp ->
+    if (sp != project) {
+        sp.plugins.withId('cc.midolog.publishing') {
+            dependencies.constraints.add('api', sp)
+        }
     }
 }
