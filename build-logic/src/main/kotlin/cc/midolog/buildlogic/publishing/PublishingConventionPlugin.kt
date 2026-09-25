@@ -61,10 +61,10 @@ class PublishingConventionPlugin : Plugin<Project> {
         }
 
         // 3. 루트 집계 태스크: 로컬 배포
-        val rootLocalPublishTask = if (project.rootProject.tasks.findByName("publishAllToLocalRepo") != null) {
-            project.rootProject.tasks.getByName("publishAllToLocalRepo")
+        val rootLocalPublishTask = if ("publishAllToLocalRepo" in project.rootProject.tasks.names) {
+            project.rootProject.tasks.named("publishAllToLocalRepo")
         } else {
-            project.rootProject.tasks.create("publishAllToLocalRepo") { task ->
+            project.rootProject.tasks.register("publishAllToLocalRepo") { task ->
                 task.group = "publishing"
                 task.description = "Publishes all eligible library modules and BOM to the local repository"
                 task.doLast {
@@ -74,10 +74,10 @@ class PublishingConventionPlugin : Plugin<Project> {
         }
 
         // 4. 루트 사전 검사 태스크: 원격 아티팩트 사전 존재 여부 preflight 검사
-        val rootPreflightTask = if (project.rootProject.tasks.findByName("preflightCheckRemoteArtifacts") != null) {
-            project.rootProject.tasks.getByName("preflightCheckRemoteArtifacts")
+        val rootPreflightTask = if ("preflightCheckRemoteArtifacts" in project.rootProject.tasks.names) {
+            project.rootProject.tasks.named("preflightCheckRemoteArtifacts")
         } else {
-            project.rootProject.tasks.create("preflightCheckRemoteArtifacts") { task ->
+            project.rootProject.tasks.register("preflightCheckRemoteArtifacts") { task ->
                 task.group = "publishing"
                 task.description = "Preflight check ensuring target release artifacts do not already exist on remote GitHub Packages before publishing"
                 task.doFirst {
@@ -128,10 +128,10 @@ class PublishingConventionPlugin : Plugin<Project> {
         }
 
         // 5. 루트 집계 태스크: GitHub Packages 원격 배포
-        val rootGithubPublishTask = if (project.rootProject.tasks.findByName("publishAllToGithubPackages") != null) {
-            project.rootProject.tasks.getByName("publishAllToGithubPackages")
+        val rootGithubPublishTask = if ("publishAllToGithubPackages" in project.rootProject.tasks.names) {
+            project.rootProject.tasks.named("publishAllToGithubPackages")
         } else {
-            project.rootProject.tasks.create("publishAllToGithubPackages") { task ->
+            project.rootProject.tasks.register("publishAllToGithubPackages") { task ->
                 task.group = "publishing"
                 task.description = "Publishes all eligible library modules and BOM to GitHub Packages Maven repository"
                 task.dependsOn(rootPreflightTask)
@@ -175,14 +175,14 @@ class PublishingConventionPlugin : Plugin<Project> {
         project.afterEvaluate {
             val localPublishTask = project.tasks.findByName("publishMavenJavaPublicationToLocalRepoRepository")
             if (localPublishTask != null) {
-                rootLocalPublishTask.dependsOn(localPublishTask)
+                rootLocalPublishTask.configure { it.dependsOn(localPublishTask) }
             }
 
             val githubPublishTask = project.tasks.findByName("publishMavenJavaPublicationToGithubRepository")
             if (githubPublishTask != null) {
                 githubPublishTask.dependsOn(rootPreflightTask)
                 githubPublishTask.mustRunAfter(rootPreflightTask)
-                rootGithubPublishTask.dependsOn(githubPublishTask)
+                rootGithubPublishTask.configure { it.dependsOn(githubPublishTask) }
                 githubPublishTask.doFirst {
                     val password = resolveGithubPassword(project)
                     if (password.isBlank()) {

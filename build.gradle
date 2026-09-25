@@ -76,12 +76,12 @@ tasks.register('verifyBom') {
     description = 'Verifies that the published BOM contains dependency constraints for all publishing-enabled modules.'
     dependsOn('publishAllToLocalRepo')
 
-    doLast {
-        def repoBaseDir = project.findProperty('backendInitRepo') ?
-            file(project.property('backendInitRepo')) :
-            file('build/repo')
+    def repoBaseDir = project.findProperty('backendInitRepo') ?
+        file(project.property('backendInitRepo')) :
+        file('build/repo')
+    def targetVersion = project.version.toString()
 
-        def targetVersion = project.version.toString()
+    doLast {
         def bomDir = new File(repoBaseDir, "cc/midolog/backend-init-bom/${targetVersion}")
         if (!bomDir.exists()) {
             throw new GradleException("BOM publication directory not found at: ${bomDir.absolutePath}")
