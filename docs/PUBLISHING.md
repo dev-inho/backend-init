@@ -8,7 +8,7 @@
 
 모든 퍼블리시 대상 아티팩트는 그룹 `cc.midolog`를 공통으로 사용하며, `PublishingConventionPlugin`을 통해 kebab-case 명명 규칙(`backend-init-<module-path>`)이 일관되게 적용됩니다.
 
-### 1.1 대상 아티팩트 목록 (현재 15개)
+### 1.1 대상 아티팩트 목록 (현재 16개: 라이브러리 모듈 15개 + BOM)
 
 | No | 아티팩트 ID (artifactId) | 소스 모듈 경로 | 설명 |
 |:---|:---|:---|:---|
@@ -124,7 +124,7 @@ GitHub Actions 환경에서는 워크플로우 레벨에서 `permissions: conten
 3. **워크플로우 자동 실행 단계**:
    - `publish.yml` 워크플로우가 태그 푸시를 감지하여 기동합니다.
    - 태그명에서 Semantic Version을 엄격하게 정규식(`^backend-init-v([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$`)으로 검증하여 쉘 주입을 원천 차단하고 버전을 추출합니다.
-   - 베이스라인 검증(`build-logic test`, `verifyBom`)을 거쳐 `publishAllToGithubPackages -PbackendInitVersion=<version>`으로 11개 모듈 및 BOM을 원격 레지스트리에 일괄 게시합니다.
+   - 베이스라인 검증(`build-logic test`, `verifyBom`)을 거쳐 `publishAllToGithubPackages -PbackendInitVersion=<version>`으로 15개 모듈 및 BOM을 원격 레지스트리에 일괄 게시합니다.
    - 게시 직후 독립 소비자 프로젝트(`examples/artifact-consumer`)를 원격 저장소(`https://maven.pkg.github.com/dev-inho/backend-init`) 전용 모드로 실행하여 원격 아티팩트 다운로드, 해석 및 JPA/MyBatis 영속성 계약을 실시간 검증합니다.
 4. **후속 모듈 확장성**:
    - 향후 추가될 S3 저장소 모듈(`storage:file-s3` 등)도 `cc.midolog.publishing` 플러그인만 적용하면 별도 워크플로우 수정 없이 자동으로 BOM 제약 및 GitHub Packages 배포 대상에 집계됩니다.
@@ -193,8 +193,8 @@ GitHub Actions 환경에서는 워크플로우 레벨에서 `permissions: conten
 
 | 태스크명 | 그룹 | 설명 |
 |:---|:---|:---|
-| `publishAllToLocalRepo` | `publishing` | 11개 라이브러리 모듈 및 BOM을 로컬 저장소(`build/repo`)에 일괄 배포 |
-| `publishAllToGithubPackages` | `publishing` | 11개 라이브러리 모듈 및 BOM을 GitHub Packages 원격 레지스트리에 일괄 배포 (자격 증명 필수) |
+| `publishAllToLocalRepo` | `publishing` | 15개 라이브러리 모듈 및 BOM을 로컬 저장소(`build/repo`)에 일괄 배포 |
+| `publishAllToGithubPackages` | `publishing` | 15개 라이브러리 모듈 및 BOM을 GitHub Packages 원격 레지스트리에 일괄 배포 (자격 증명 필수) |
 | `verifyBom` | `verification` | 배포된 BOM pom.xml의 dependencyManagement 제약이 모든 publishing 대상 모듈과 일치하는지 동적 검증 |
 | `verifyArtifacts` | `verification` | 로컬 배포 수행 후 독립 소비자 프로젝트(`examples/artifact-consumer`)의 JPA/MyBatis 테스트 일괄 수행 |
 | `verifyRemoteArtifacts` | `verification` | 원격 GitHub Packages 레지스트리에 게시된 아티팩트를 대상으로 소비자 테스트 수행 (로컬 fallback 차단) |

@@ -1161,7 +1161,7 @@ dependencies {
 **책임**: 멀티모듈 산출물 간의 호환 버전 일괄 제어를 위한 Bill of Materials (BOM) 모듈 (`java-platform`).
 
 **특징**:
-- 프레임워크 내 11개 퍼블리시 모듈에 대한 dependency constraint를 선언.
+- 프레임워크 내 15개 퍼블리시 모듈에 대한 dependency constraint를 선언. 목록은 하드코딩하지 않고 `cc.midolog.publishing` 플러그인이 적용된 모듈에서 수집한다.
 - 외부 소비자는 `implementation(platform("cc.midolog:backend-init-bom:<version>"))` 선언만으로 세부 모듈의 버전을 생략할 수 있음.
 
 ---

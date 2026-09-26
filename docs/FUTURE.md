@@ -148,7 +148,7 @@
 - **Phase 1**: `gateway:core` 및 `gateway:autoconfigure` 분할
 - **Phase 2**: 단독 실행 애플리케이션 껍데기 `gateway/app` 및 `gateway:starter` 신설
 - **Phase 3**: 동일 프로세스 내 In-process 디스패치 또는 루프백 라우팅 및 보안 체인 분리
-- **Phase 4**: 원격 모드 대상 능동 헬스체크 및 멱등 재시도·메트릭 연동 완료 (PR #33·#35). 서킷 브레이커 도입은 미래 과제로 보존.
+- **Phase 4**: 원격 모드 대상 능동 헬스체크 및 멱등 재시도·메트릭 연동 완료 (PR #33·#35). 타깃별 서킷 브레이커도 standalone/remote 프록시에 도입 완료 (PR #63, 상세는 [`docs/GATEWAY.md`](./GATEWAY.md) 3.3절).
 
 상세 설계, 기능 매트릭스 갭 분석 및 사용자 결정 항목은 [`docs/GATEWAY_STARTER_PLAN.md`](./GATEWAY_STARTER_PLAN.md) 참조.
 
