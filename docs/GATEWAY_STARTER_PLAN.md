@@ -9,7 +9,7 @@
 | 라우팅 | 정적 URL 라우팅 (`application-url(s)`, `batch-url`) | 헤더/가중치/우선순위 기반 부재 | 하 | 초기 프로젝트는 단순 경로 매핑으로 충분함 (`GatewayRouteSelector.kt:15`) |
 | 인증/인가 | JWT 검증 | OAuth2, API Key, mTLS 부재 | 하 | 현재 JWT로 사내/B2C 요구사항 대부분 커버 가능함 (`JwtAuthFilter.kt:14`) |
 | Rate Limit | Redis 기반 Rate Limit (fail-open) | 다양한 알고리즘 부재 | 하 | fail-open 방식의 Lua 스크립트 기반 제한은 초기 트래픽 방어에 충분함 (`RedisRateLimiter.kt:12`) |
-| 회복성 | 타임아웃(10s), 멱등 재시도(GET/HEAD/OPTIONS, 1..3회, 100ms 지수 backoff) 완료, 서킷 브레이커 없음 | 서킷 브레이커 부재 | 중 | 멱등 재시도(`GatewayRetryProperties.kt`, `ProxyHandler.kt`, PR #33) 도입 완료. 서킷 브레이커는 미구현 상태로 후속 과제 보존. |
+| 회복성 | 타임아웃(10s), 멱등 재시도(GET/HEAD/OPTIONS, 1..3회, 100ms 지수 backoff), 타깃별 서킷 브레이커 완료 | 해소 | 중 | 멱등 재시도(`GatewayRetryProperties.kt`, `ProxyHandler.kt`, PR #33)와 서킷 브레이커(`circuitbreaker/CircuitBreaker.kt`, `CircuitBreakerRegistry.kt`, PR #63) 도입 완료. 상세는 `docs/GATEWAY.md` 3.3절. |
 | 관측성 | Request Id, 로깅, 가시성 필터, 능동 헬스체크(10s 주기, 3연속 실패 시 제외, fail-open), 메트릭(requests, latency, healthy 게이지), Actuator(health, metrics 기본 노출, prometheus opt-in) 완료 | 분산 추적(OTel-보류) | 하 | 능동 헬스체크(`GatewayRouteProperties.kt`, `GatewayRouteSelector.kt`, PR #35) 및 Micrometer 메트릭/Actuator 노출(PR #33) 도입 완료. OpenTelemetry는 보류 (`FUTURE.md`). |
 | 요청/응답 변환| 바이트 배열 버퍼링 | 선언적 헤더/바디/경로 재작성 부재 | 하 | 현재 API 프록시 용도로는 충분함 (`ProxyHandler.kt:39`) |
 | 캐싱 | 없음 | 응답 캐시 지원 안 함 | 하 | 백엔드 애플리케이션 단에서 처리 가능하므로 당장 필요하지 않음. |
