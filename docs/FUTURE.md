@@ -111,14 +111,18 @@
 - **보안 스캔 워크플로우 (`.github/workflows/security.yml`)**: PR 및 main push 시 자동 실행
   - OWASP Dependency-Check (의존성 보안 취약점 점검)
   - Gitleaks (시크릿 유출 탐지)
+- **빌드·테스트 워크플로우 (`.github/workflows/ci.yml`)**: PR 및 main push 시 자동 실행
+  - `./gradlew build` (전체 모듈 컴파일과 테스트, `DomainPurityTest` 등 아키텍처 가드 포함)
+  - `./gradlew -p build-logic test`
+  - PR에서는 `git diff --check`로 공백 오류 검사
+  - 실패 시 테스트 리포트를 아티팩트로 업로드
 
 ### 향후 추가 후보
-- **테스트 자동화 워크플로우 (미구현)**: GitHub Actions에 `./gradlew test` 및 `./gradlew -p build-logic test` 자동 검증 추가
 - architecture rule test (계층 규칙 검증)
 - Docker Compose 기반 PostgreSQL/Redis live smoke test
 
 ### 상태
-📌 **보안 스캔 구축 완료 + 테스트 워크플로우 후보** — 보안 검사(`.github/workflows/security.yml`)는 구축되어 있으나, 빌드/테스트를 돌리는 CI 워크플로우는 아직 없으므로 품질 게이트 자동화를 위해 후속 추가가 필요하다.
+✅ **보안 스캔 + 빌드·테스트 게이트 구축 완료** — `security.yml`과 `ci.yml`이 PR마다 실행된다. MinIO가 필요한 `liveS3Test`와 Docker 기반 live smoke test는 CI에 포함하지 않는다.
 
 ---
 

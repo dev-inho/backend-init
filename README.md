@@ -248,7 +248,7 @@ JPA DSL의 해소된 리스크와 남은 non-blocking 리스크는 [JPA DSL Risk
 ./gradlew build && ./gradlew -p build-logic test
 ```
 
-CI는 의존성·시크릿 스캔만 돌린다(`.github/workflows/security.yml`); 빌드·테스트는 로컬 `./gradlew build && ./gradlew -p build-logic test`로 검증한다.
+CI는 PR과 main push마다 이 두 명령과 `git diff --check`를 돌린다(`.github/workflows/ci.yml`). 의존성·시크릿 스캔은 `.github/workflows/security.yml`이 맡는다. MinIO가 필요한 `liveS3Test`는 CI에 포함하지 않는다.
 
 ### 포트 정보
 
